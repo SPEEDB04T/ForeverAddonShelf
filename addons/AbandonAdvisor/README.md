@@ -2,7 +2,9 @@
 
 A WoW Forever addon (Interface 16001) that rates every quest in your log and tells you which ones to abandon when you need room.
 
-Open it with `/abandon` (or `/aa`). It also opens by itself when the game refuses a quest because your log is full.
+It sits in the game's quest log: open the map / quest log and click the Abandon Advisor side tab (the book icon). The tab needs the ForeverCore addon, which the other Forever addons already use; without it the quest log gets a side button that opens the Abandon Advisor window instead.
+
+The window also opens with `/abandon` (or `/aa`), and by itself when the game refuses a quest because your log is full.
 
 ## What it tells you
 
@@ -26,4 +28,4 @@ Points toward keeping: progress made, big XP, in your current zone, a zone holdi
 
 ## Commands
 
-`/abandon` or `/aa`: no argument opens the window. `list` prints the advice in chat, `free <n>` sets the free-slot target, `auto` toggles opening on a full log, `unpin` releases all pinned quests, `scale <n>`, `reset`, `debug`.
+`/abandon` or `/aa`: no argument opens the window. `config` opens the options window (also: right-click the minimap button, or Options > AddOns), `minimap` shows or hides the minimap button, `log` opens the quest log on the Abandon Advisor tab, `list` prints the advice in chat, `free <n>` sets the free-slot target, `auto` toggles opening on a full log, `unpin` releases all pinned quests, `scale <n>`, `reset`, `debug`.

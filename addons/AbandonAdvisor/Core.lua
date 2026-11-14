@@ -2,7 +2,7 @@
 local ADDON, ns = ...
 
 ns.ADDON = ADDON
-ns.VERSION = "1.0.0"
+ns.VERSION = "1.2.0"
 
 local defaults = {
     point = nil,
@@ -82,12 +82,12 @@ end
 
 local refreshQueued = false
 function ns.Refresh()
-    if not (ns.UI and ns.UI.IsShown()) then return end
+    if not (ns.UI and ns.UI.AnyShown()) then return end
     if refreshQueued then return end
     refreshQueued = true
     ns.After(0.15, function()
         refreshQueued = false
-        if ns.UI.IsShown() then ns.UI.Update(ns.Compute()) end
+        if ns.UI.AnyShown() then ns.UI.UpdateAll(ns.Compute()) end
     end)
 end
 
@@ -179,6 +179,7 @@ local function Debug()
     ns.Print("C_QuestLog has: " .. table.concat(have, ", "))
     ns.Print("C_QuestLog missing: " .. (#missing > 0 and table.concat(missing, ", ") or "nothing"))
     ns.Print("Questie data: " .. (ns.Scan.Questie() and "yes" or "no"))
+    ns.Print("Quest log: " .. (ns.QuestLog and ns.QuestLog.Status() or "module missing"))
     local res = ns.Compute()
     local p = res.player
     ns.Print(("player level %s, max %s, xpMax %s, zone %s, grouped %s, grey range %s"):format(
@@ -195,13 +196,50 @@ local function Debug()
 end
 
 ----------------------------------------------------------------------
+-- Actions shared by the slash commands, the options window and the minimap button
+----------------------------------------------------------------------
+function ns.Unpin()
+    ns.cdb.keep = {}
+    ns.Print("All pinned quests released.")
+    ns.Refresh()
+end
+
+function ns.ResetSettings()
+    local db = ns.db
+    for key in pairs(db) do db[key] = nil end
+    for key, value in pairs(defaults) do db[key] = value end
+    ns.UI.ApplyScale()
+    ns.UI.RestorePosition()
+    if ns.Kit then ns.Kit.RefreshMinimap() end
+    ns.Refresh()
+    ns.Print("Settings reset.")
+end
+
+----------------------------------------------------------------------
 -- Slash commands
 ----------------------------------------------------------------------
+-- Kit.lua and Options.lua are new in 1.2.0. The game only finds new files after a full restart,
+-- so right after an update a /reload runs this file without them: say so instead of erroring.
+local function HasKit()
+    if ns.Kit and ns.Options then return true end
+    ns.Print("The options window and the minimap button appear after you restart the game once (this update added new files, and /reload does not load those).")
+    return false
+end
+
 local function Slash(msg)
     msg = (msg or ""):lower():gsub("^%s+", ""):gsub("%s+$", "")
     local cmd, arg = msg:match("^(%S*)%s*(.-)$")
     if cmd == "" or cmd == "show" or cmd == "toggle" then
         ns.UI.Toggle()
+    elseif cmd == "log" or cmd == "tab" then
+        ns.QuestLog.Open()
+    elseif cmd == "config" or cmd == "options" or cmd == "opt" then
+        if HasKit() then ns.Kit.Open() end
+    elseif cmd == "minimap" then
+        if HasKit() then
+            ns.Kit.SetMinimapShown(not ns.Kit.MinimapShown())
+            ns.Print("Minimap button: " .. (ns.Kit.MinimapShown() and "on" or "off"))
+        end
     elseif cmd == "list" or cmd == "report" then
         ns.Report()
     elseif cmd == "free" or cmd == "target" then
@@ -217,9 +255,7 @@ local function Slash(msg)
         ns.db.autoOpen = not ns.db.autoOpen
         ns.Print("Opening when the quest log is full: " .. (ns.db.autoOpen and "on" or "off"))
     elseif cmd == "unpin" then
-        ns.cdb.keep = {}
-        ns.Print("All pinned quests released.")
-        ns.Refresh()
+        ns.Unpin()
     elseif cmd == "scale" then
         local n = tonumber(arg)
         if n and n >= 0.5 and n <= 2 then
@@ -236,8 +272,10 @@ local function Slash(msg)
     elseif cmd == "debug" then
         Debug()
     else
-        ns.Print("Commands: /abandon (window), list, free <n>, auto, unpin, scale <n>, reset, debug")
+        ns.Print("Commands: /abandon (window), config (options), log (quest log tab), list, free <n>, auto, unpin, "
+            .. "scale <n>, minimap, reset, debug")
     end
+    if ns.Kit then ns.Kit.Sync() end      -- an open options window follows what was typed
 end
 
 SLASH_ABANDONADVISOR1 = "/abandon"
@@ -246,8 +284,11 @@ SLASH_ABANDONADVISOR3 = "/abandonadvisor"
 SlashCmdList = SlashCmdList or {}
 SlashCmdList["ABANDONADVISOR"] = Slash
 
-function AbandonAdvisor_Toggle()
-    if ns.UI and ns.db then ns.UI.Toggle() end
+-- The addon's line in the list of addons next to the minimap: left-click the window,
+-- right-click the options.
+function AbandonAdvisor_Toggle(_, mouseButton)
+    if not (ns.UI and ns.db) then return end
+    if mouseButton == "RightButton" and ns.Kit then ns.Kit.Open() else ns.UI.Toggle() end
 end
 
 ----------------------------------------------------------------------
@@ -282,6 +323,11 @@ frame:SetScript("OnEvent", function(_, event, a, b)
     if event == "PLAYER_LOGIN" then
         InitDB()
         ns.UI.Create()
+        if ns.QuestLog then ns.QuestLog.Init() end
+        if ns.Kit and ns.Options then      -- missing until the first full restart after the update
+            local ok, err = pcall(ns.Options.Init)
+            if not ok then ns.Print("options error: " .. tostring(err)) end
+        end
     elseif not ns.db then
         return
     elseif event == "UI_ERROR_MESSAGE" then

@@ -4,7 +4,8 @@ local UI = {}
 ns.UI = UI
 
 local WIDTH, HEIGHT = 540, 440
-local ROW_H = 36
+local ROW_H = 36           -- the window's rows: verdict and button side by side
+local COMPACT_ROW_H = 40   -- the quest log's narrow rows: button under the verdict
 local POPUP = "ABANDONADVISOR_CONFIRM"
 
 local VERDICT = {
@@ -13,8 +14,6 @@ local VERDICT = {
     maybe   = { label = "Maybe",   r = 1.00, g = 0.82, b = 0.10 },
     keep    = { label = "Keep",    r = 0.30, g = 0.90, b = 0.30 },
 }
-
-local rows = {}
 
 ----------------------------------------------------------------------
 -- Helpers
@@ -145,20 +144,25 @@ local function RowClick(self, button)
         if row.verdict == "turnin" then return end
         local pinned = ns.ToggleKeep(row.id)
         ns.Print((pinned and "Pinned as keep: %s" or "Unpinned: %s"):format(row.title))
-        UI.Update(ns.Compute())
+        UI.UpdateAll(ns.Compute())
     else
         OpenInQuestLog(row)
     end
 end
 
 ----------------------------------------------------------------------
--- Rows
+-- Rows. A list is one column of rated quests; the window has one and
+-- the quest log panel has another (narrower, so its rows are compact).
 ----------------------------------------------------------------------
-local function CreateRow(parent, index)
+function UI.NewList(content, compact)
+    return { content = content, rows = {}, compact = compact or false,
+        rowHeight = compact and COMPACT_ROW_H or ROW_H }
+end
+
+local function CreateRow(list, index)
+    local parent, compact = list.content, list.compact
     local row = CreateFrame("Button", nil, parent)
-    row:SetHeight(ROW_H)
-    row:SetPoint("TOPLEFT", parent, "TOPLEFT", 0, -(index - 1) * ROW_H)
-    row:SetPoint("RIGHT", parent, "RIGHT", 0, 0)
+    row:SetHeight(list.rowHeight)
     row:RegisterForClicks("LeftButtonUp", "RightButtonUp")
 
     row.bg = row:CreateTexture(nil, "BACKGROUND")
@@ -175,8 +179,6 @@ local function CreateRow(parent, index)
     row.stripe:SetWidth(4)
 
     row.button = CreateFrame("Button", nil, row, "UIPanelButtonTemplate")
-    row.button:SetSize(74, 20)
-    row.button:SetPoint("RIGHT", row, "RIGHT", -4, 0)
     row.button:SetText("Abandon")
     row.button:SetScript("OnClick", function(self)
         local data = self:GetParent().data
@@ -184,19 +186,34 @@ local function CreateRow(parent, index)
     end)
 
     row.verdict = row:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
-    row.verdict:SetPoint("RIGHT", row.button, "LEFT", -8, 0)
-    row.verdict:SetWidth(74)
     row.verdict:SetJustifyH("RIGHT")
-
     row.title = row:CreateFontString(nil, "OVERLAY", "GameFontNormal")
-    row.title:SetPoint("TOPLEFT", row, "TOPLEFT", 10, -4)
-    row.title:SetPoint("RIGHT", row.verdict, "LEFT", -6, 0)
+    row.why = row:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+
+    -- Each text is pinned by its two top corners. A top corner plus a side's
+    -- middle would make the game work the height out from the anchors.
+    local titleInset, whyInset
+    if compact then
+        row.verdict:SetWidth(84)
+        row.verdict:SetPoint("TOPRIGHT", row, "TOPRIGHT", -6, -6)
+        row.button:SetSize(66, 18)
+        row.button:SetPoint("BOTTOMRIGHT", row, "BOTTOMRIGHT", -4, 3)
+        titleInset, whyInset = 6 + 84 + 4, 4 + 66 + 4
+    else
+        row.button:SetSize(74, 20)
+        row.button:SetPoint("RIGHT", row, "RIGHT", -4, 0)
+        row.verdict:SetWidth(74)
+        row.verdict:SetPoint("RIGHT", row.button, "LEFT", -8, 0)
+        titleInset = 4 + 74 + 8 + 74 + 6
+        whyInset = titleInset
+    end
+    row.title:SetPoint("TOPLEFT", row, "TOPLEFT", 10, -5)
+    row.title:SetPoint("TOPRIGHT", row, "TOPRIGHT", -titleInset, -5)
     row.title:SetJustifyH("LEFT")
     row.title:SetWordWrap(false)
 
-    row.why = row:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
-    row.why:SetPoint("TOPLEFT", row.title, "BOTTOMLEFT", 0, -2)
-    row.why:SetPoint("RIGHT", row.verdict, "LEFT", -6, 0)
+    row.why:SetPoint("TOPLEFT", row, "TOPLEFT", 10, -21)
+    row.why:SetPoint("TOPRIGHT", row, "TOPRIGHT", -whyInset, -21)
     row.why:SetJustifyH("LEFT")
     row.why:SetWordWrap(false)
     row.why:SetTextColor(0.72, 0.72, 0.72)
@@ -240,6 +257,29 @@ local function FillRow(row, data)
     row:Show()
 end
 
+-- Lays the rated quests out in `list`, the first row `top` below the content's
+-- top edge. Returns how tall the rows are together.
+function UI.FillList(list, quests, top)
+    top = top or 0
+    local parent, height = list.content, list.rowHeight
+    for i, data in ipairs(quests) do
+        local row = list.rows[i]
+        if not row then
+            row = CreateRow(list, i)
+            list.rows[i] = row
+        end
+        row:ClearAllPoints()
+        row:SetPoint("TOPLEFT", parent, "TOPLEFT", 0, -(top + (i - 1) * height))
+        row:SetPoint("TOPRIGHT", parent, "TOPRIGHT", 0, -(top + (i - 1) * height))
+        FillRow(row, data)
+    end
+    for i = #quests + 1, #list.rows do
+        list.rows[i].data = nil
+        list.rows[i]:Hide()
+    end
+    return #quests * height
+end
+
 ----------------------------------------------------------------------
 -- Window
 ----------------------------------------------------------------------
@@ -265,8 +305,9 @@ end
 
 local function SetTarget(delta)
     ns.db.target = math.max(1, math.min(25, (ns.db.target or 3) + delta))
-    UI.Update(ns.Compute())
+    UI.UpdateAll(ns.Compute())
 end
+UI.SetTarget = SetTarget
 
 function UI.Create()
     if UI.frame then return end
@@ -301,8 +342,8 @@ function UI.Create()
     f.close:SetPoint("TOPRIGHT", f, "TOPRIGHT", -2, -2)
 
     f.summary = f:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
-    f.summary:SetPoint("TOPLEFT", f.title, "BOTTOMLEFT", 0, -8)
-    f.summary:SetPoint("RIGHT", f, "RIGHT", -16, 0)
+    f.summary:SetPoint("TOPLEFT", f, "TOPLEFT", 14, -36)
+    f.summary:SetPoint("TOPRIGHT", f, "TOPRIGHT", -16, -36)
     f.summary:SetJustifyH("LEFT")
     f.summary:SetJustifyV("TOP")
     f.summary:SetHeight(44)
@@ -334,6 +375,7 @@ function UI.Create()
     f.content = CreateFrame("Frame", nil, f.scroll)
     f.content:SetSize(WIDTH - 42, ROW_H)
     f.scroll:SetScrollChild(f.content)
+    f.list = UI.NewList(f.content, false)
 
     f.empty = f:CreateFontString(nil, "OVERLAY", "GameFontDisable")
     f.empty:SetPoint("CENTER", f.scroll, "CENTER", 0, 0)
@@ -354,21 +396,23 @@ function UI.Update(res)
     f.summary:SetText(ns.Score.Summary(res))
     f.targetText:SetText(("Aim for %d free"):format(res.target or ns.db.target))
 
-    local list = res.rows or {}
-    for i, data in ipairs(list) do
-        rows[i] = rows[i] or CreateRow(f.content, i)
-        FillRow(rows[i], data)
-    end
-    for i = #list + 1, #rows do
-        rows[i].data = nil
-        rows[i]:Hide()
-    end
-    f.content:SetHeight(math.max(ROW_H, #list * ROW_H))
-    if #list == 0 and not res.error then f.empty:Show() else f.empty:Hide() end
+    local quests = res.rows or {}
+    f.content:SetHeight(math.max(ROW_H, UI.FillList(f.list, quests, 0)))
+    if #quests == 0 and not res.error then f.empty:Show() else f.empty:Hide() end
 end
 
 function UI.IsShown()
     return UI.frame ~= nil and UI.frame:IsShown()
+end
+
+-- The window and the quest log panel show the same advice; these cover both.
+function UI.AnyShown()
+    return UI.IsShown() or (ns.QuestLog ~= nil and ns.QuestLog.IsShown())
+end
+
+function UI.UpdateAll(res)
+    if UI.IsShown() then UI.Update(res) end
+    if ns.QuestLog and ns.QuestLog.IsShown() then ns.QuestLog.Update(res) end
 end
 
 function UI.Show()
