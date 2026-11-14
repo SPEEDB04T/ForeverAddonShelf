@@ -1,0 +1,17 @@
+## Interface: 16001, 16002
+## Title: Snakes Warlock Helper
+## Notes: Quiet reminders for Soul Link, Demon Armor and your demon, plus a demon damage comparison built from your current stats.
+## Version: 1.0.0
+## SavedVariables: SnakesWarlockHelperDB
+## SavedVariablesPerCharacter: SnakesWarlockHelperCharDB
+## IconTexture: Interface\Icons\Spell_Shadow_GatherShadows
+## AddonCompartmentFunc: SnakesWarlockHelper_Toggle
+
+Core.lua
+Data.lua
+State.lua
+Reminders.lua
+PetCalc.lua
+UI.lua
+Strip.lua
+Panel.lua

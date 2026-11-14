@@ -3,5 +3,5 @@
   "addonsPath": "World of Warcraft\\_forever_\\Interface\\AddOns",
   "repo": "SPEEDB04T/ForeverAddonShelf",
   "shelfPage": "https://claude.ai/artifact/MijqsMR4n4fcHN7GA3hJSR",
-  "addons": ["ImbueAdvisor", "AbandonAdvisor", "TotemCouncil"]
+  "addons": ["ImbueAdvisor", "AbandonAdvisor", "TotemCouncil", "SnakesWarlockHelper"]
 }
