@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.0.2
+
+- Totem Council users now tell each other which totems they have down and for how long. The orange `x2` between them no longer depends on the game reporting the other shaman's casts, and it clears as soon as their totem is gone. Both shamans need 1.0.2 for this; with an older version it works as before.
+- `/totems status` says when the game is hiding another shaman's casts, which is why their totems can't be seen.
+- `/totems debug` records what the game reports about your group, to track down a problem.
+
 ## 1.0.1
 
 Fixes from a review of 1.0.0. Works together with 1.0.0 in the same group.

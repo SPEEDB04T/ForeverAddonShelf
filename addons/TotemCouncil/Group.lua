@@ -271,14 +271,25 @@ function G.ObserveCast(unit, spellID)
     local name = G.byUnit[unit]
     local m = name and G.members[name]
     if not m or m.isPlayer then return end
-    local key = ns.KeyBySpellID(spellID)
-    if not key then
-        local spellName = ns.SpellInfo(spellID)
-        key = spellName and ns.KeyByExactName(spellName)
+    m.casts = (m.casts or 0) + 1
+    if issecret(spellID) or type(spellID) ~= "number" then
+        -- the game says they cast something, but not what
+        m.hiddenCasts = (m.hiddenCasts or 0) + 1
+        if m.hiddenCasts <= 3 then ns.Debug(("cast by %s (%s): the game hides which spell"):format(name, unit)) end
+        return
     end
+    local spellName = ns.SpellInfo(spellID)
+    local key = ns.KeyBySpellID(spellID)
+    if not key then key = spellName and ns.KeyByExactName(spellName) end
     local info = key and ns.Info(key)
     local slot = info and info.slot
-    if not slot then return end
+    if not slot then
+        if type(spellName) == "string" and spellName:lower():find("totem", 1, true) then
+            ns.Debug(("cast by %s (%s): %s (spell %d) is not a totem this addon knows"):format(name, unit, spellName, spellID))
+        end
+        return
+    end
+    ns.Debug(("cast by %s (%s): %s (spell %d) = %s"):format(name, unit, tostring(spellName), spellID, key))
     local now = GetTime()
     local s = m.seen[slot]
     if s and s.key == key and now - s.start < 0.5 then return end   -- same cast reported as raidN and partyN
@@ -365,27 +376,93 @@ local function StateMessage()
     return "S;" .. ns.VERSION .. ";" .. EncodePlan(ns.cdb.plan) .. ";" .. table.concat(known, ".")
 end
 
--- One message a second at most: the state first, then whatever is queued.
--- The state never goes twice in a row while replies wait, so someone asking
--- for it over and over can't hold them back.
-local lastKind, sendErrors = nil, 0
+-- Live totems: Totem Council users tell each other what they have down and
+-- for how long ("T;earth,fire,water,air", each "key:seconds" or "-"), so
+-- doubles between them show without relying on the game reporting other
+-- players' casts. 1.0.0 and 1.0.1 ignore the message.
+local sentLive = {}     -- [slot] = { key, expires } as last sent
+
+function G.MarkLive()
+    G.liveDirty = true
+end
+
+local function LiveKey(slot, now)
+    local a = ns.active[slot]
+    if a and a.key and a.start + a.duration - now > 1 then return a.key, a.start + a.duration end
+end
+
+local function LiveMessage()
+    local now, parts = GetTime(), {}
+    for i, slot in ipairs(ns.SLOT_ORDER) do
+        local key, expires = LiveKey(slot, now)
+        parts[i] = key and ("%s:%d"):format(key, math.floor(expires - now + 0.5)) or "-"
+    end
+    return "T;" .. table.concat(parts, ",")
+end
+
+-- Is there something the others don't know yet? A totem simply running out
+-- is not news: they count it down themselves.
+local function LiveChanged()
+    local now = GetTime()
+    for slot = 1, 4 do
+        local key, expires = LiveKey(slot, now)
+        local s = sentLive[slot]
+        if key then
+            if not s or s.key ~= key or math.abs(s.expires - expires) > 2 then return true end
+        elseif s and s.expires > now + 1 then
+            return true     -- gone before its time: killed, or replaced by nothing
+        end
+    end
+    return false
+end
+
+local function RememberLive()
+    local now = GetTime()
+    for slot = 1, 4 do
+        local key, expires = LiveKey(slot, now)
+        sentLive[slot] = key and { key = key, expires = expires } or nil
+    end
+end
+
+-- Someone needs the whole picture (they just joined, reloaded or asked).
+local function ResendLive()
+    for slot = 1, 4 do sentLive[slot] = nil end
+    G.liveDirty = true
+end
+
+local function AddonPeers()
+    for _, m in pairs(G.members) do
+        if m.hasAddon and not m.isPlayer and not m.demo then return true end
+    end
+    return false
+end
+
+-- One message a second at most: the plan and the live totems first, then
+-- whatever is queued. Those two never go twice in a row while replies wait,
+-- so someone asking for the plan over and over can't hold replies back.
+local lastBroadcast, sendErrors = false, 0
 local function Flush()
     local channel = AddonChannel()
     if not channel then
         for i = #queue, 1, -1 do queue[i] = nil end
-        G.stateDirty, G.wantRequest = false, false
+        G.stateDirty, G.wantRequest, G.liveDirty = false, false, false
         return
     end
     if G.OtherShamans() == 0 and #queue == 0 then
-        G.stateDirty, G.wantRequest = false, false
+        G.stateDirty, G.wantRequest, G.liveDirty = false, false, false
         return
     end
     if G.CommsBlocked() then return end
+    if G.liveDirty and not (ns.isShaman and AddonPeers() and LiveChanged()) then G.liveDirty = false end
     local msg, kind
     if G.wantRequest then
         msg, kind = "Q", "request"
-    elseif G.stateDirty and ns.isShaman and not (lastKind == "state" and #queue > 0) then
-        msg, kind = StateMessage(), "state"
+    elseif (G.stateDirty or G.liveDirty) and ns.isShaman and not (lastBroadcast and #queue > 0) then
+        if G.stateDirty then
+            msg, kind = StateMessage(), "state"
+        else
+            msg, kind = LiveMessage(), "live"
+        end
     elseif #queue > 0 then
         msg, kind = queue[1], "queue"
     else
@@ -403,11 +480,14 @@ local function Flush()
         if not sent then return end     -- throttled or refused: try again next second
     end
     sendErrors = 0
-    lastKind = kind
+    if kind ~= "request" then lastBroadcast = (kind ~= "queue") end
     if kind == "request" then
         G.wantRequest = false
     elseif kind == "state" then
         G.stateDirty = false
+    elseif kind == "live" then
+        G.liveDirty = false
+        RememberLive()
     else
         table.remove(queue, 1)
     end
@@ -742,12 +822,17 @@ function G.OnAddonMessage(prefix, text, channel, sender)
     if prefix ~= PREFIX or type(text) ~= "string" then return end
     local from = Norm(sender)
     if not from or from == ns.playerName then return end
-    if not G.names[from] then return end    -- only people in the group are listened to
+    if not G.names[from] then               -- only people in the group are listened to
+        ns.Debug(("message from %s ignored, not in your group: %s"):format(from, text:sub(1, 40)))
+        return
+    end
+    ns.Debug(("message from %s: %s"):format(from, text:sub(1, 70)))
     local f = Split(text, ";")
     local kind = f[1]
     if kind == "S" then
         local m = G.members[from]
         if not m then return end
+        if not m.hasAddon then ResendLive() end     -- a new Totem Council user: tell them what is down
         -- the version ends up in chat (/totems status): keep it to plain characters
         m.hasAddon, m.version = true, (tostring(f[2] or ""):gsub("[^%w%._%-]", "")):sub(1, 12)
         m.plan = DecodePlan(f[3])
@@ -758,6 +843,24 @@ function G.OnAddonMessage(prefix, text, channel, sender)
         G.Touch()
     elseif kind == "Q" then
         G.stateDirty = true
+        ResendLive()
+    elseif kind == "T" then
+        -- what they have down right now; exact, so it replaces anything seen from their casts
+        local m = G.members[from]
+        if not m then return end
+        local now = GetTime()
+        m.live = true
+        local toks = Split(f[2] or "", ",")
+        for i, slot in ipairs(ns.SLOT_ORDER) do
+            local key, secs = (toks[i] or ""):match("^([^:]+):(%d+)$")
+            secs = tonumber(secs)
+            if key and secs and secs > 0 and secs <= 3600 and ns.ValidKey(key, slot) then
+                m.seen[slot] = { key = key, start = now, expires = now + secs }
+            else
+                m.seen[slot] = nil
+            end
+        end
+        G.Touch()
     elseif kind == "G" then
         OnSuggestion(from, f[2], f[3], f[4], f[5])
     elseif kind == "R" then
@@ -884,8 +987,58 @@ function G.PrintStatus()
             ns.Print(("%s (group %d, %s): %s"):format(m.name, m.subgroup,
                 m.hasAddon and ("addon " .. tostring(m.version)) or "no addon, totems as seen",
                 table.concat(parts, " / ")))
+            if G.Fixed(m) and (m.hiddenCasts or 0) > 0 and next(m.seen) == nil then
+                ns.Print(("  the game is hiding %s's casts from addons, so their totems can't be seen."):format(m.name))
+            end
         end
     end
     if n == 0 then ns.Print("no other shamans in the group.") end
     ns.Print(("plan conflicts: %d. Addon messages: %s."):format(G.conflictCount, G.CommsBlocked() or "ok"))
+end
+
+-- /totems debug: everything the addon currently believes about the group.
+function G.DebugSnapshot()
+    local now = GetTime()
+    local where = (IsInRaid and IsInRaid()) and "raid" or ((IsInGroup and IsInGroup()) and "party" or "no group")
+    ns.Debug(("Totem Council %s, you are %s (%s), %s, channel %s, messages %s"):format(ns.VERSION,
+        tostring(ns.playerName), ns.isShaman and "shaman" or "not a shaman", where,
+        tostring(AddonChannel()), G.CommsBlocked() or "ok"))
+    local names = {}
+    for name in pairs(G.names) do names[#names + 1] = name end
+    table.sort(names)
+    ns.Debug("group members seen: " .. (#names > 0 and table.concat(names, ", ") or "none"))
+    for _, m in ipairs(G.SortedMembers()) do
+        local range = "-"
+        if not m.isPlayer and not m.demo and m.unit and UnitInRange then
+            local ok, a, b = pcall(UnitInRange, m.unit)
+            range = ok and (ns.Show(a) .. "/" .. ns.Show(b)) or "error"
+        end
+        local parts = {}
+        for _, slot in ipairs(ns.SLOT_ORDER) do
+            local key, left
+            if m.isPlayer then
+                local a = ns.active[slot]
+                if a then key, left = a.key or "?", a.start + a.duration - now end
+            else
+                local s = m.seen[slot]
+                if s then key, left = s.key, s.expires - now end
+            end
+            parts[#parts + 1] = ("%s plan %s down %s"):format(ns.ELEMENTS[slot].letter,
+                tostring(G.Effective(m, slot) or "-"),
+                key and ("%s %ds"):format(key, math.floor(left)) or "-")
+        end
+        ns.Debug(("%s: unit %s, party %d, %s%s, casts seen %d (hidden %d), in range %s | %s"):format(m.name,
+            tostring(m.unit), m.subgroup,
+            m.isPlayer and "you" or (m.hasAddon and ("addon " .. tostring(m.version)) or "no addon"),
+            m.live and ", shares live totems" or "",
+            m.casts or 0, m.hiddenCasts or 0, range, table.concat(parts, "; ")))
+    end
+    if ns.isShaman then
+        local doubles = {}
+        for _, slot in ipairs(ns.SLOT_ORDER) do
+            local o = G.Overlaps(slot)
+            doubles[#doubles + 1] = ns.ELEMENTS[slot].letter .. " " .. (o and table.concat(o, "+") or "-")
+        end
+        ns.Debug("doubles right now: " .. table.concat(doubles, ", ") .. "; plan conflicts: " .. G.conflictCount)
+    end
 end

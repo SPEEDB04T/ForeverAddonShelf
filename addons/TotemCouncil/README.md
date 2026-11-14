@@ -36,19 +36,22 @@ In a raid, conflicts are checked per party, since totems only reach your own par
 
 ## Install
 
-1. Download `TotemCouncil-x.y.z.zip` from the [latest release](https://github.com/SPEEDB04T/TotemCouncil/releases/latest) (it is listed under Assets).
+1. Download the newest `TotemCouncil-x.y.z.zip` from the [releases page](https://github.com/SPEEDB04T/ForeverAddonShelf/releases) (it is listed under Assets of the newest "Totem Council" release).
 2. Unzip it into `World of Warcraft\_forever_\Interface\AddOns`, so you end up with `AddOns\TotemCouncil\TotemCouncil.toc`.
 3. Restart the game (a new addon needs a full restart, `/reload` is not enough).
 
 ## Commands
 
-`/totems` shows or hides the bar. Also: `plan`, `demo`, `status`, `lock`, `unlock`, `scale <0.5-2>`, `fade <0.1-1>`, `click`, `mouse`, `sound`, `warn`, `adopt`, `clear`, `reset`, `help`. `/totems help` says what each one does.
+`/totems` shows or hides the bar. Also: `plan`, `demo`, `status`, `lock`, `unlock`, `scale <0.5-2>`, `fade <0.1-1>`, `click`, `mouse`, `sound`, `warn`, `adopt`, `clear`, `reset`, `debug`, `help`. `/totems help` says what each one does.
 
 Non-shamans can use `/totems plan` to see and sort out the group's totems (handy for a raid leader).
 
 ## Good to know
 
 - WoW Forever can hide your totem slots from addons in combat. When that happens the timers run from your own casts and the totem's known duration, so a totem that gets killed early can keep counting until the game reports the change.
-- Other shamans' totems are seen from their casts, which the game only reports when they are near you and may not report in combat. A totem of theirs that gets killed early still counts until it would have run out, so an orange `x2` can linger. The `x2` is skipped when the game says that shaman is far away from you.
+- Shamans with Totem Council 1.0.2 or newer tell each other which totems they have down, so the orange `x2` between them is exact.
+- Shamans without it (or on an older version) are seen from their casts, which the game only reports when they are near you and may not report at all. `/totems status` says when it is hiding them. A totem of theirs that gets killed early still counts until it would have run out, so an `x2` can linger.
+- The `x2` is skipped when the game says that shaman is far away from you.
+- If something in a group does not work, `/totems debug` records what the game reports; type it again to stop, then `/reload`.
 - Accept / Decline boxes: a request nobody answers counts as declined after 45 seconds, and at most six wait their turn.
 - Plans only sync inside a party or raid, and not while the game is blocking addon messages; the group plan window tells you when that is the case.

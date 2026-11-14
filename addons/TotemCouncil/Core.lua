@@ -17,6 +17,8 @@ local defaults = {
     boardPoint = nil,
     learned = {},           -- spellID -> { slot, name, icon, dur } for totems not in Data.lua
     durations = {},         -- spellID / key -> seconds, as read from the game
+    debug = false,          -- /totems debug: record what the game reports about the group
+    debugLog = {},
 }
 local charDefaults = {
     plan = {},              -- [slot] = totem key
@@ -24,6 +26,27 @@ local charDefaults = {
 
 function ns.Print(msg)
     DEFAULT_CHAT_FRAME:AddMessage("|cff3399ffTotem Council|r: " .. tostring(msg))
+end
+
+-- A value from the game as text; the game hides ("secret") some of them.
+function ns.Show(v)
+    if issecret(v) then return "<hidden>" end
+    return tostring(v)
+end
+
+-- /totems debug: what the game reports is kept in the saved settings (and
+-- shown in chat), so a problem in a real group can be looked at afterwards.
+function ns.Debug(line)
+    if not (ns.db and ns.db.debug) then return end
+    local log = ns.db.debugLog
+    if type(log) ~= "table" then
+        log = {}
+        ns.db.debugLog = log
+    end
+    local stamp = date and date("%H:%M:%S ") or ""
+    log[#log + 1] = stamp .. line
+    while #log > 500 do table.remove(log, 1) end
+    ns.Print("|cff999999" .. line .. "|r")
 end
 
 -- Run something without letting an error repeat every frame in the error log.
@@ -62,6 +85,7 @@ ns.dirty = true
 local function SetActive(slot, entry)
     ns.active[slot] = entry
     ns.dirty = true
+    ns.Group.MarkLive()     -- other Totem Council users are told what is down
 end
 
 -- Reads one slot from the game. Returns false when the game hides it (secret),
@@ -257,12 +281,17 @@ function events.PLAYER_TOTEM_UPDATE(slot)
 end
 
 function events.UNIT_SPELLCAST_SUCCEEDED(unit, _, spellID)
-    if issecret(unit) or issecret(spellID) or type(unit) ~= "string" or type(spellID) ~= "number" then return end
+    if issecret(unit) or type(unit) ~= "string" then return end
     if unit == "player" then
+        if issecret(spellID) or type(spellID) ~= "number" then return end
         if ns.isShaman then OnPlayerCast(spellID) end
     elseif unit:find("^party%d+$") or unit:find("^raid%d+$") then
-        ns.Group.ObserveCast(unit, spellID)
+        ns.Group.ObserveCast(unit, spellID)     -- copes with a hidden spell itself
     end
+end
+
+function events.PLAYER_LOGOUT()
+    if ns.db and ns.db.debug then ns.Group.DebugSnapshot() end
 end
 
 function events.PLAYER_ENTERING_WORLD()
@@ -361,6 +390,7 @@ local function Help()
     ns.Print("  /totems warn  - warn out of combat too (" .. OnOff(ns.db.warnAlways) .. ")")
     ns.Print("  /totems adopt  - empty plan slots adopt what you drop (" .. OnOff(ns.db.autoAdopt) .. ")")
     ns.Print("  /totems clear | status | demo | reset")
+    ns.Print("  /totems debug  - record what the game reports about your group, to track down a problem (" .. OnOff(ns.db.debug) .. ")")
 end
 
 local function Status()
@@ -380,6 +410,7 @@ local function Status()
             hidden))
     end
     ns.Group.PrintStatus()
+    if ns.db.debug then ns.Group.DebugSnapshot() end
 end
 
 SLASH_TOTEMCOUNCIL1 = "/totems"
@@ -397,6 +428,16 @@ SlashCmdList.TOTEMCOUNCIL = function(msg)
         if ns.Group.demo then ns.Board.Show() end
     elseif cmd == "status" then
         Status()
+    elseif cmd == "debug" then
+        if not db.debug then
+            db.debug, db.debugLog = true, {}
+            ns.Print("recording what the game reports about your group. Drop totems with the other shaman for a minute, then /totems debug again and /reload.")
+            ns.Group.DebugSnapshot()
+        else
+            ns.Group.DebugSnapshot()
+            db.debug = false
+            ns.Print("recording stopped. /reload or log out to save it.")
+        end
     elseif cmd == "help" or cmd == "?" then
         Help()
     elseif not ns.isShaman then
