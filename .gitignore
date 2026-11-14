@@ -1,0 +1,4 @@
+site/src/
+site/addons.json
+publish-files.json
+dist/

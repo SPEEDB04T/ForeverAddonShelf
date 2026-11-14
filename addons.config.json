@@ -1,0 +1,8 @@
+{
+  "game": "WoW Forever",
+  "addonsPath": "World of Warcraft\\_forever_\\Interface\\AddOns",
+  "installerRepo": "SPEEDB04T/ForeverAddonShelf",
+  "addons": [
+    { "path": "../ImbueAdvisor", "repo": "SPEEDB04T/ImbueAdvisor" }
+  ]
+}

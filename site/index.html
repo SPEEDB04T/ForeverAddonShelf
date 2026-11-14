@@ -1,0 +1,336 @@
+<title>Forever Addon Shelf</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Marcellus&family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap">
+<style>
+/* Layout: a narrow quartermaster's ledger. One row per addon package, summary first, install help below. */
+:root {
+  --bg: #eef1f5;
+  --surface: #ffffff;
+  --line: #d5dce6;
+  --fg: #17212e;
+  --muted: #5a6676;
+  --accent: #245ea8;
+  --accent-fg: #ffffff;
+  --brass: #8a6a24;
+  --brass-bg: #f3ead6;
+  --ok: #2e7d4f;
+  --ok-bg: #e2f2e8;
+  --warn: #9a5b00;
+  --warn-bg: #fbecd2;
+  --focus: #245ea8;
+  --font-display: "Marcellus", "Palatino Linotype", Georgia, serif;
+  --font-body: "Inter", "Segoe UI", system-ui, sans-serif;
+  --font-mono: "JetBrains Mono", Consolas, ui-monospace, monospace;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #0d131b; --surface: #151e29; --line: #263244; --fg: #e5ebf2; --muted: #93a0b2;
+    --accent: #7fb0ff; --accent-fg: #0d131b; --brass: #dcb76c; --brass-bg: #2a2416;
+    --ok: #7fd3a0; --ok-bg: #17291f; --warn: #f2b66a; --warn-bg: #2d2113; --focus: #7fb0ff;
+    color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #0d131b; --surface: #151e29; --line: #263244; --fg: #e5ebf2; --muted: #93a0b2;
+  --accent: #7fb0ff; --accent-fg: #0d131b; --brass: #dcb76c; --brass-bg: #2a2416;
+  --ok: #7fd3a0; --ok-bg: #17291f; --warn: #f2b66a; --warn-bg: #2d2113; --focus: #7fb0ff;
+  color-scheme: dark;
+}
+body {
+  background: var(--bg); color: var(--fg); font-family: var(--font-body); font-size: 15px; line-height: 1.55;
+}
+.wrap {
+  max-width: 760px; margin: 0 auto;
+  padding-left: max(16px, env(safe-area-inset-left, 0px));
+  padding-right: max(16px, env(safe-area-inset-right, 0px));
+  padding-block: 40px 56px;
+  display: grid; gap: 28px;
+}
+header { display: grid; gap: 6px; }
+.eyebrow { font-size: 12px; letter-spacing: .12em; text-transform: uppercase; color: var(--brass); font-weight: 600; }
+h1 { font-family: var(--font-display); font-weight: 400; font-size: clamp(30px, 6vw, 42px); line-height: 1.1; margin: 0; text-wrap: balance; }
+.lede { color: var(--muted); margin: 0; max-width: 60ch; }
+.toolbar { display: flex; flex-wrap: wrap; gap: 10px 16px; align-items: center; justify-content: space-between; }
+.meta { color: var(--muted); font-size: 13px; font-variant-numeric: tabular-nums; }
+.list { display: grid; gap: 0; background: var(--surface); border: 1px solid var(--line); border-radius: 10px; }
+.addon { display: grid; gap: 10px; padding: 18px 20px; border-top: 1px solid var(--line); }
+.addon:first-child { border-top: 0; }
+.addon-head { display: flex; flex-wrap: wrap; gap: 8px 14px; align-items: baseline; justify-content: space-between; }
+.addon-name { display: flex; flex-wrap: wrap; gap: 6px 10px; align-items: baseline; min-width: 0; }
+h2 { font-family: var(--font-display); font-weight: 400; font-size: 22px; margin: 0; }
+.ver { font-family: var(--font-mono); font-size: 13px; color: var(--brass); background: var(--brass-bg); padding: 1px 8px; border-radius: 4px; }
+.notes { margin: 0; max-width: 62ch; }
+.facts { display: flex; flex-wrap: wrap; gap: 4px 18px; font-size: 13px; color: var(--muted); font-variant-numeric: tabular-nums; }
+.facts span b { font-weight: 500; color: var(--fg); }
+.row-end { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; justify-content: space-between; }
+.chip { font-size: 12px; font-weight: 600; padding: 2px 9px; border-radius: 999px; white-space: nowrap; }
+.chip.new { color: var(--accent); background: color-mix(in srgb, var(--accent) 14%, transparent); }
+.chip.update { color: var(--warn); background: var(--warn-bg); }
+.chip.ok { color: var(--ok); background: var(--ok-bg); }
+button, a.btn {
+  font: inherit; font-weight: 600; font-size: 14px; cursor: pointer; border-radius: 7px; padding: 8px 16px;
+  border: 1px solid var(--accent); background: var(--accent); color: var(--accent-fg); text-decoration: none; display: inline-block;
+}
+button.ghost { background: transparent; color: var(--accent); }
+button:disabled { opacity: .55; cursor: default; }
+button:focus-visible, a.btn:focus-visible, summary:focus-visible, .src:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
+.dl { display: flex; gap: 14px; align-items: center; flex-wrap: wrap; }
+.src { font-size: 13px; color: var(--muted); }
+details { font-size: 14px; }
+summary { cursor: pointer; color: var(--muted); width: fit-content; }
+.changelog { margin: 8px 0 0; padding-left: 14px; border-left: 2px solid var(--line); display: grid; gap: 4px; }
+.changelog h3 { font-family: var(--font-mono); font-size: 13px; font-weight: 500; margin: 6px 0 0; color: var(--brass); }
+.changelog ul { margin: 0; padding-left: 18px; }
+.status { font-size: 13px; min-height: 1.4em; color: var(--muted); }
+.status.err { color: var(--warn); }
+.install { display: grid; gap: 12px; }
+.install h2 { font-size: 20px; }
+.install ol { margin: 0; padding-left: 20px; display: grid; gap: 8px; max-width: 64ch; }
+.path { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+code { font-family: var(--font-mono); font-size: 13px; background: var(--surface); border: 1px solid var(--line); border-radius: 5px; padding: 2px 6px; overflow-wrap: anywhere; }
+.copy { padding: 3px 10px; font-size: 12px; }
+.empty { padding: 28px 20px; color: var(--muted); }
+.notice { font-size: 13px; color: var(--warn); background: var(--warn-bg); border-radius: 8px; padding: 10px 14px; }
+@media (prefers-reduced-motion: no-preference) { button { transition: filter .15s; } button:hover:not(:disabled) { filter: brightness(1.08); } }
+</style>
+
+<div class="wrap">
+  <header>
+    <div class="eyebrow">WoW Forever · Interface 16001</div>
+    <h1>Forever Addon Shelf</h1>
+    <p class="lede">Addons made for our group. This page marks what's new or updated since you last downloaded, so come back and grab updates when you see them.</p>
+  </header>
+
+  <div class="toolbar">
+    <div class="meta" id="built">Loading the shelf…</div>
+    <button id="all" class="ghost" disabled>Download all</button>
+  </div>
+
+  <div id="nodl" class="notice" hidden>Downloads don't work in this view. Open the page on claude.ai in a browser to download.</div>
+
+  <div class="list" id="list">
+    <div class="empty">Loading addons…</div>
+  </div>
+  <div class="status" id="status" role="status" aria-live="polite"></div>
+
+  <section class="install">
+    <h2>Installing</h2>
+    <ol>
+      <li>Download an addon (or all of them). You get a <code>.zip</code>.</li>
+      <li>Unzip it into your WoW Forever AddOns folder so each addon keeps its own folder:
+        <div class="path"><code id="addonsPath">World of Warcraft\_forever_\Interface\AddOns</code><button class="ghost copy" id="copyPath">Copy</button></div>
+      </li>
+      <li>Restart the game, or log out to character select, and tick the addon in the AddOns list.</li>
+      <li>To update, download again and overwrite the old folder. Your settings are kept.</li>
+      <li>Using WowUp? Choose "Install from URL" and paste the addon's GitHub link, and it will update by itself.</li>
+    </ol>
+  </section>
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+<script>
+(function () {
+  const $ = (id) => document.getElementById(id);
+  const KEY = "shelf.downloaded";
+  let manifest = null;
+  let downloads = null;
+
+  function loadGot() {
+    try { return JSON.parse(localStorage.getItem(KEY) || "{}") || {}; } catch (e) { return {}; }
+  }
+  function saveGot(got) {
+    try { localStorage.setItem(KEY, JSON.stringify(got)); } catch (e) { /* storage blocked: chips just reset */ }
+  }
+  function cmpVer(a, b) {
+    const pa = String(a).split(/[.\-]/).map((x) => parseInt(x, 10) || 0);
+    const pb = String(b).split(/[.\-]/).map((x) => parseInt(x, 10) || 0);
+    for (let i = 0; i < Math.max(pa.length, pb.length); i++) {
+      const d = (pa[i] || 0) - (pb[i] || 0);
+      if (d) return d;
+    }
+    return 0;
+  }
+  function kb(n) { return n < 1024 ? n + " B" : (n / 1024).toFixed(n < 10240 ? 1 : 0) + " KB"; }
+  function el(tag, cls, text) {
+    const e = document.createElement(tag);
+    if (cls) e.className = cls;
+    if (text != null) e.textContent = text;
+    return e;
+  }
+  function setStatus(msg, isErr) {
+    const s = $("status");
+    s.textContent = msg || "";
+    s.classList.toggle("err", !!isErr);
+  }
+
+  function renderChangelog(text) {
+    const box = el("div", "changelog");
+    let ul = null;
+    for (const raw of String(text || "").split("\n")) {
+      const line = raw.trim();
+      if (!line) continue;
+      if (line.startsWith("#")) { box.appendChild(el("h3", null, line.replace(/^#+\s*/, ""))); ul = null; }
+      else {
+        if (!ul) { ul = el("ul"); box.appendChild(ul); }
+        ul.appendChild(el("li", null, line.replace(/^[-*]\s*/, "")));
+      }
+    }
+    return box;
+  }
+
+  function chipFor(a, got) {
+    const have = got[a.id];
+    if (!have) return el("span", "chip new", "New");
+    if (cmpVer(a.version, have) > 0) return el("span", "chip update", "Update: " + have + " → " + a.version);
+    return el("span", "chip ok", "Up to date");
+  }
+
+  function render() {
+    const list = $("list");
+    list.textContent = "";
+    const got = loadGot();
+    if (!manifest.addons.length) {
+      list.appendChild(el("div", "empty", "No addons on the shelf yet."));
+      return;
+    }
+    for (const a of manifest.addons) {
+      const row = el("article", "addon");
+      const head = el("div", "addon-head");
+      const name = el("div", "addon-name");
+      name.appendChild(el("h2", null, a.title));
+      name.appendChild(el("span", "ver", "v" + a.version));
+      head.appendChild(name);
+      head.appendChild(chipFor(a, got));
+      row.appendChild(head);
+      if (a.notes) row.appendChild(el("p", "notes", a.notes));
+
+      const facts = el("div", "facts");
+      const fact = (label, value) => { const s = el("span"); s.append(label + " "); s.appendChild(el("b", null, value)); facts.appendChild(s); };
+      fact("Updated", a.updated);
+      fact("Interface", a.interface || "?");
+      fact("Size", kb(a.sizeBytes));
+      fact("Files", String(a.files.length));
+      row.appendChild(facts);
+
+      const end = el("div", "row-end");
+      if (a.changelog) {
+        const d = el("details");
+        d.appendChild(el("summary", null, "What's new"));
+        d.appendChild(renderChangelog(a.changelog));
+        end.appendChild(d);
+      } else {
+        end.appendChild(el("span"));
+      }
+      const dl = el("div", "dl");
+      if (a.repo) {
+        const src = el("a", "src", "GitHub");
+        src.href = "https://github.com/" + a.repo;
+        src.target = "_blank"; src.rel = "noopener";
+        dl.appendChild(src);
+      }
+      if (a.downloadUrl) {
+        // Hosted release zip: a plain link works for every viewer, signed in or not.
+        const link = el("a", "btn", "Download");
+        link.id = "dl-" + a.id;
+        link.href = a.downloadUrl;
+        link.target = "_blank"; link.rel = "noopener";
+        link.addEventListener("click", () => {
+          const got = loadGot(); got[a.id] = a.version; saveGot(got);
+          setStatus("Downloading " + a.id + "-" + a.version + ".zip. Unzip it into your AddOns folder.");
+          setTimeout(render, 0);
+        });
+        dl.appendChild(link);
+      } else {
+        const btn = el("button", null, "Download");
+        btn.id = "dl-" + a.id;
+        btn.disabled = !downloads;
+        btn.addEventListener("click", () => save([a], a.id + "-" + a.version + ".zip", btn));
+        dl.appendChild(btn);
+      }
+      end.appendChild(dl);
+      row.appendChild(end);
+      list.appendChild(row);
+    }
+  }
+
+  // Zip the published files in the browser: each addon keeps its own folder.
+  async function buildZip(addons) {
+    if (typeof JSZip === "undefined") throw { code: "zip", message: "The zip library didn't load. Reload the page and try again." };
+    const zip = new JSZip();
+    for (const a of addons) {
+      for (const path of a.files) {
+        const res = await fetch(path, { cache: "no-store" });
+        if (!res.ok) throw { code: "fetch", message: "A file of " + a.title + " is missing from the shelf (" + res.status + ")." };
+        zip.file(path.replace(/^src\//, ""), await res.arrayBuffer());
+      }
+    }
+    return zip.generateAsync({ type: "blob", compression: "DEFLATE", compressionOptions: { level: 6 } });
+  }
+
+  async function save(addons, filename, btn) {
+    if (!downloads) return;
+    btn.disabled = true;
+    setStatus("Preparing " + filename + "…");
+    try {
+      const blob = await buildZip(addons);
+      await downloads.save({ filename, data: blob });
+      const got = loadGot();
+      for (const a of addons) got[a.id] = a.version;
+      saveGot(got);
+      setStatus("Saved " + filename + ". Unzip it into your AddOns folder.");
+      render();
+    } catch (e) {
+      const code = e && e.code;
+      if (code === "declined") setStatus("Download cancelled.");
+      else if (code === "rate_limited") setStatus("A download prompt is already open. Finish it, then try again.", true);
+      else setStatus((e && e.message) || "The download didn't work. Reload the page and try again.", true);
+    } finally {
+      btn.disabled = !downloads;
+    }
+  }
+
+  $("copyPath").addEventListener("click", async () => {
+    const text = $("addonsPath").textContent;
+    try {
+      await navigator.clipboard.writeText(text);
+      $("copyPath").textContent = "Copied";
+      setTimeout(() => { $("copyPath").textContent = "Copy"; }, 1500);
+    } catch (e) {
+      const r = document.createRange();
+      r.selectNodeContents($("addonsPath"));
+      const sel = window.getSelection(); sel.removeAllRanges(); sel.addRange(r);
+    }
+  });
+
+  $("all").addEventListener("click", () => {
+    if (!manifest) return;
+    save(manifest.addons, "forever-addons-" + manifest.built.slice(0, 10) + ".zip", $("all"));
+  });
+
+  async function start() {
+    try {
+      const res = await fetch("addons.json", { cache: "no-store" });
+      manifest = await res.json();
+    } catch (e) {
+      $("list").textContent = "";
+      $("list").appendChild(el("div", "empty", "Couldn't load the addon list. Reload the page."));
+      $("built").textContent = "";
+      return;
+    }
+    $("built").textContent = manifest.addons.length + " addon" + (manifest.addons.length === 1 ? "" : "s") + " · updated " + manifest.built;
+    if (manifest.addonsPath) $("addonsPath").textContent = manifest.addonsPath;
+    render();
+
+    let dl = null;
+    try { dl = window.claude && window.claude.use ? await window.claude.use("downloads") : null; } catch (e) { dl = null; }
+    downloads = dl;
+    $("nodl").hidden = !!downloads || manifest.addons.every((a) => a.downloadUrl);
+    $("all").disabled = !downloads || manifest.addons.length < 2;
+    $("all").title = manifest.addons.length < 2 ? "Only one addon so far" : "";
+    render();
+  }
+  start();
+})();
+</script>
