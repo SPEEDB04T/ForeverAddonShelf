@@ -1,5 +1,9 @@
 # Changelog
 
+## 1.0.1
+
+- Fixed: every call ended with "could not call it: this realm blocks addon messages". The addon read a realm setting that is on for ordinary realms and has nothing to do with messages inside a group. It now just sends, and only reports a problem when the game really refuses the message.
+
 ## 1.0.0
 
 First version.

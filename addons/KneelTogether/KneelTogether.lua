@@ -62,7 +62,7 @@ local db
 local floor, ceil, max, min = math.floor, math.ceil, math.max, math.min
 local issecret = issecretvalue
 
-local VERSION = "1.0.0"
+local VERSION = "1.0.1"
 if C_AddOns and C_AddOns.GetAddOnMetadata then
     local ok, v = pcall(C_AddOns.GetAddOnMetadata, ADDON_NAME, "Version")
     if ok and type(v) == "string" and v ~= "" and not (issecret and issecret(v)) then VERSION = v end
@@ -165,28 +165,34 @@ local function ChatLocked()
     return ok and ((issecret and issecret(v)) or v) and true or false
 end
 
--- nil when addon messages can go out, otherwise why not.
-local function CommsBlocked()
-    if not (C_ChatInfo and C_ChatInfo.SendAddonMessage) then return "this client has no addon messages" end
-    if C_ChatInfo.AreOutgoingAddonChatMessagesRestricted then
-        local ok, v = pcall(C_ChatInfo.AreOutgoingAddonChatMessagesRestricted)
-        if ok and Plain(v) and v then return "this realm blocks addon messages" end
-    end
-    if ChatLocked() then return "the game locks chat here right now (a boss fight, usually)" end
-    return nil
+-- The realm's own switch for chat sent by addons. It is on for ordinary realms
+-- and says nothing about addon messages inside a group, so it never stops a
+-- call: it is only mentioned when the game has refused a message anyway.
+local function RealmRestricts()
+    return Ask(C_ChatInfo and C_ChatInfo.AreOutgoingAddonChatMessagesRestricted) == true
 end
+
+-- What SendAddonMessage hands back when it does not send (0 is "sent").
+local HELD = "the game is holding messages back, try again in a moment"
+local REFUSED = {
+    [3] = HELD,                                     -- too many addon messages
+    [8] = HELD,                                     -- too many on this channel
+    [5] = "the game says you are not in a group",
+    [11] = "the game locks addon messages here right now (a boss fight, usually)",
+}
 
 local function Send(msg)
     local channel = Channel()
     if not channel then return false, "you are not in a group" end
-    local why = CommsBlocked()
-    if why then return false, why end
+    if not (C_ChatInfo and C_ChatInfo.SendAddonMessage) then return false, "this client has no addon messages" end
+    if ChatLocked() then return false, "the game locks chat here right now (a boss fight, usually)" end
     local ok, result = pcall(C_ChatInfo.SendAddonMessage, COMM, msg, channel)
     if not ok then return false, "the game refused the message" end
-    if Plain(result) and ((type(result) == "number" and result ~= 0) or result == false) then
-        return false, "the game is holding messages back, try again in a moment"
-    end
-    return true
+    if not Plain(result) or result == 0 or result == true then return true end
+    if REFUSED[result] then return false, REFUSED[result] end
+    local why = "the game refused the message (code " .. tostring(result) .. ")"
+    if RealmRestricts() then why = why .. "; this realm reports that it limits addon chat" end
+    return false, why
 end
 
 ---------------------------------------------------------------------------
