@@ -465,6 +465,17 @@ $WindowXaml = @'
       <GradientStop Color="#8C8C8C" Offset="0.5"/>
       <GradientStop Color="#4C4C4C" Offset="1"/>
     </LinearGradientBrush>
+    <LinearGradientBrush x:Key="Pewter" StartPoint="0,0" EndPoint="0,1">
+      <GradientStop Color="#DCD4C2" Offset="0"/>
+      <GradientStop Color="#948A74" Offset="0.5"/>
+      <GradientStop Color="#544B3A" Offset="1"/>
+    </LinearGradientBrush>
+    <LinearGradientBrush x:Key="MetalTop" StartPoint="0,0" EndPoint="0,1">
+      <GradientStop Color="#F4E3AC" Offset="0"/>
+      <GradientStop Color="#C2A462" Offset="0.3"/>
+      <GradientStop Color="#8A6C38" Offset="0.7"/>
+      <GradientStop Color="#5A4320" Offset="1"/>
+    </LinearGradientBrush>
     <LinearGradientBrush x:Key="Gold" StartPoint="0,0" EndPoint="0,1">
       <GradientStop Color="#FFF29A" Offset="0"/>
       <GradientStop Color="#FFD100" Offset="0.45"/>
@@ -503,8 +514,8 @@ $WindowXaml = @'
     </LinearGradientBrush>
     <LinearGradientBrush x:Key="Gloss" StartPoint="0,0" EndPoint="0,1">
       <GradientStop Color="#50FFFFFF" Offset="0"/>
-      <GradientStop Color="#12FFFFFF" Offset="0.46"/>
-      <GradientStop Color="#00FFFFFF" Offset="0.5"/>
+      <GradientStop Color="#20FFFFFF" Offset="0.36"/>
+      <GradientStop Color="#00FFFFFF" Offset="0.7"/>
     </LinearGradientBrush>
     <LinearGradientBrush x:Key="GlowFill" StartPoint="0,0" EndPoint="0,1">
       <GradientStop Color="#6696CCFF" Offset="0"/>
@@ -600,6 +611,11 @@ $WindowXaml = @'
                   <Setter.Value><TranslateTransform X="1" Y="1"/></Setter.Value>
                 </Setter>
               </Trigger>
+              <Trigger Property="IsEnabled" Value="False">
+                <Setter TargetName="Face" Property="Background" Value="{StaticResource GreyFace}"/>
+                <Setter TargetName="Shine" Property="Opacity" Value="0.4"/>
+                <Setter TargetName="Mark" Property="Opacity" Value="0.35"/>
+              </Trigger>
             </ControlTemplate.Triggers>
           </ControlTemplate>
         </Setter.Value>
@@ -645,10 +661,10 @@ $WindowXaml = @'
               <Border Margin="3" CornerRadius="2" Background="#0A0A0A"/>
               <Grid Margin="3">
                 <Border x:Name="PART_Track"/>
-                <Border x:Name="PART_Indicator" HorizontalAlignment="Left" CornerRadius="2" Background="{TemplateBinding Foreground}">
+                <Border x:Name="PART_Indicator" HorizontalAlignment="Left" CornerRadius="2,0,0,2" Background="{TemplateBinding Foreground}">
                   <Grid>
-                    <Border CornerRadius="2" Background="{StaticResource Gloss}"/>
-                    <Ellipse x:Name="Spark" Width="30" Height="40" HorizontalAlignment="Right" VerticalAlignment="Center" Margin="0,-12,-15,-12">
+                    <Border CornerRadius="2,0,0,2" Background="{StaticResource Gloss}"/>
+                    <Ellipse x:Name="Spark" Width="12" Height="32" HorizontalAlignment="Right" VerticalAlignment="Center" Margin="0,-10,-6,-10">
                       <Ellipse.Fill>
                         <RadialGradientBrush>
                           <GradientStop Color="#FFFFFFFF" Offset="0"/>
@@ -715,12 +731,15 @@ $WindowXaml = @'
         <RowDefinition Height="Auto"/>
       </Grid.RowDefinitions>
 
-      <Grid Margin="2,0,0,10">
+      <Grid Margin="0,0,0,10">
         <Grid.ColumnDefinitions>
           <ColumnDefinition Width="*"/>
           <ColumnDefinition Width="Auto"/>
         </Grid.ColumnDefinitions>
-        <Grid VerticalAlignment="Center">
+        <Border CornerRadius="4" Background="#A8000000"/>
+        <Border CornerRadius="4" BorderThickness="1" BorderBrush="{StaticResource Pewter}" Opacity="0.6"/>
+        <Border Margin="1" CornerRadius="3" BorderThickness="1" BorderBrush="#70000000"/>
+        <Grid VerticalAlignment="Center" Margin="11,0,11,2">
           <TextBlock x:Name="FolderShadow" Foreground="#000000" Margin="1,1,-1,-1" TextTrimming="CharacterEllipsis"/>
           <TextBlock x:Name="FolderText" Foreground="#FFFFFF" TextTrimming="CharacterEllipsis"/>
         </Grid>
@@ -730,7 +749,7 @@ $WindowXaml = @'
       <Grid Grid.Row="1" MinHeight="100">
         <Border CornerRadius="5" Background="#A8000000"/>
         <Border CornerRadius="5" BorderThickness="1" BorderBrush="#000000"/>
-        <Border Margin="1" CornerRadius="4.5" BorderThickness="1.5" BorderBrush="{StaticResource Silver}" Opacity="0.75"/>
+        <Border Margin="1" CornerRadius="4.5" BorderThickness="1.5" BorderBrush="{StaticResource Pewter}" Opacity="0.8"/>
         <ScrollViewer MaxHeight="372" VerticalScrollBarVisibility="Auto" Margin="6" Focusable="False">
           <StackPanel x:Name="RowsPanel"/>
         </ScrollViewer>
@@ -767,19 +786,22 @@ $WindowXaml = @'
         </Grid>
         <Grid x:Name="Cast" Height="24" Margin="0,0,16,0" VerticalAlignment="Center" Visibility="Collapsed">
           <ProgressBar x:Name="Bar" Minimum="0" Maximum="1" Value="0"/>
+          <TextBlock Text="{Binding Text, ElementName=CastText}" Foreground="#000000" Margin="-1,-1,1,1" HorizontalAlignment="Center" VerticalAlignment="Center" FontSize="14"/>
+          <TextBlock Text="{Binding Text, ElementName=CastText}" Foreground="#000000" Margin="1,-1,-1,1" HorizontalAlignment="Center" VerticalAlignment="Center" FontSize="14"/>
+          <TextBlock Text="{Binding Text, ElementName=CastText}" Foreground="#000000" Margin="-1,1,1,-1" HorizontalAlignment="Center" VerticalAlignment="Center" FontSize="14"/>
           <TextBlock x:Name="CastShadow" Foreground="#000000" Margin="1,1,-1,-1" HorizontalAlignment="Center" VerticalAlignment="Center" FontSize="14"/>
           <TextBlock x:Name="CastText" Foreground="#FFFFFF" HorizontalAlignment="Center" VerticalAlignment="Center" FontSize="14"/>
         </Grid>
         <StackPanel Grid.Column="1" Orientation="Horizontal">
-          <Button x:Name="Go" Style="{StaticResource Panel}" Content="Install" IsDefault="True" IsEnabled="False" MinWidth="124"/>
-          <Button x:Name="CloseButton2" Style="{StaticResource Panel}" Content="Close" Margin="8,0,0,0"/>
+          <Button x:Name="Go" Style="{StaticResource Panel}" Content="Install" IsDefault="True" IsEnabled="False" MinWidth="116"/>
+          <Button x:Name="CloseButton2" Style="{StaticResource Panel}" Content="Close" MinWidth="116" Margin="8,0,0,0"/>
         </StackPanel>
       </Grid>
     </Grid>
 
     <Grid x:Name="Plaque" Width="292" Height="42" HorizontalAlignment="Center" VerticalAlignment="Top" Margin="0,-21,0,0" Background="Transparent">
       <Polygon Points="5,5 287,5 267,37 25,37" Stroke="#000000" StrokeThickness="8" StrokeLineJoin="Round" Fill="#000000"/>
-      <Polygon Points="5,5 287,5 267,37 25,37" Stroke="{StaticResource Metal}" StrokeThickness="5" StrokeLineJoin="Round">
+      <Polygon Points="5,5 287,5 267,37 25,37" Stroke="{StaticResource MetalTop}" StrokeThickness="5" StrokeLineJoin="Round">
         <Polygon.Fill>
           <LinearGradientBrush StartPoint="0,0" EndPoint="0,1">
             <GradientStop Color="#3A2E1E" Offset="0"/>
@@ -788,12 +810,12 @@ $WindowXaml = @'
           </LinearGradientBrush>
         </Polygon.Fill>
       </Polygon>
-      <Polygon Points="9,8 283,8 265,34 27,34" Stroke="#B4000000" StrokeThickness="1" StrokeLineJoin="Round"/>
-      <TextBlock Text="Forever Addons" FontFamily="{StaticResource Friz}" FontWeight="Bold" FontSize="16.5" Foreground="#000000" HorizontalAlignment="Center" VerticalAlignment="Center" Margin="1,1,-1,-1"/>
-      <TextBlock Text="Forever Addons" FontFamily="{StaticResource Friz}" FontWeight="Bold" FontSize="16.5" Foreground="#FFD100" HorizontalAlignment="Center" VerticalAlignment="Center"/>
+      <Polygon Points="9,8 283,8 265,34 27,34" Stroke="#8C000000" StrokeThickness="1" StrokeLineJoin="Round"/>
+      <TextBlock Text="Forever Addons" FontFamily="{StaticResource Friz}" FontWeight="Bold" FontSize="16.5" Foreground="#000000" HorizontalAlignment="Center" VerticalAlignment="Center" Margin="1,0,-1,0"/>
+      <TextBlock Text="Forever Addons" FontFamily="{StaticResource Friz}" FontWeight="Bold" FontSize="16.5" Foreground="#FFD100" HorizontalAlignment="Center" VerticalAlignment="Center" Margin="0,0,0,2"/>
     </Grid>
 
-    <Button x:Name="CloseX" Style="{StaticResource CloseButton}" HorizontalAlignment="Right" VerticalAlignment="Top" Margin="0,7,7,0"/>
+    <Button x:Name="CloseX" Style="{StaticResource CloseButton}" HorizontalAlignment="Right" VerticalAlignment="Top" Margin="0,3,3,0"/>
   </Grid>
 </Window>
 '@
@@ -839,7 +861,7 @@ $RowXaml = @'
       <ColumnDefinition Width="*"/>
       <ColumnDefinition Width="Auto"/>
     </Grid.ColumnDefinitions>
-    <Grid Width="26" Height="26" VerticalAlignment="Center">
+    <Grid x:Name="Box" Width="26" Height="26" VerticalAlignment="Center">
       <Border CornerRadius="4" Background="#000000"/>
       <Border Margin="1" CornerRadius="3.5" Background="{DynamicResource Metal}"/>
       <Border Margin="3" CornerRadius="2" Background="#0B0907"/>
@@ -849,25 +871,25 @@ $RowXaml = @'
         <Path Data="M7,17 L13,25 L29,5" Stroke="{DynamicResource Gold}" StrokeThickness="3.6" StrokeStartLineCap="Round" StrokeEndLineCap="Round" StrokeLineJoin="Round"/>
       </Grid>
     </Grid>
-    <StackPanel Grid.Column="1" Margin="14,0,18,0" VerticalAlignment="Center">
+    <StackPanel Grid.Column="1" Margin="14,0,12,0" VerticalAlignment="Center">
       <Grid>
         <TextBlock x:Name="NameShadow" FontFamily="{DynamicResource Friz}" FontWeight="Bold" FontSize="15.5" Foreground="#000000" Margin="1,1,-1,-1" TextTrimming="CharacterEllipsis"/>
         <TextBlock x:Name="Name" FontFamily="{DynamicResource Friz}" FontWeight="Bold" FontSize="15.5" Foreground="#FFD100" TextTrimming="CharacterEllipsis"/>
       </Grid>
-      <TextBlock x:Name="Notes" Foreground="#D4D4D4" TextTrimming="CharacterEllipsis" Margin="0,3,0,0"/>
+      <TextBlock x:Name="Notes" Foreground="#D4D4D4" TextWrapping="Wrap" TextTrimming="CharacterEllipsis" LineHeight="17" LineStackingStrategy="BlockLineHeight" MaxHeight="40" Margin="0,3,0,0"/>
     </StackPanel>
-    <Grid Grid.Column="2" VerticalAlignment="Center">
-      <TextBlock x:Name="StatusShadow" Foreground="#000000" Margin="1,1,-1,-1"/>
-      <TextBlock x:Name="Status"/>
+    <Grid Grid.Column="2" VerticalAlignment="Center" MinWidth="72">
+      <TextBlock x:Name="StatusShadow" Foreground="#000000" Margin="1,1,-1,-1" HorizontalAlignment="Right"/>
+      <TextBlock x:Name="Status" HorizontalAlignment="Right"/>
     </Grid>
   </Grid>
 </Grid>
 '@
 
 # The soft shadow under the panel is a stack of faint rings: it costs nothing to draw, unlike a blur.
-$WindowXaml = $WindowXaml.Replace('<!--SHADOW-->', (-join (0..10 | ForEach-Object {
-    $m = 22 - 2 * $_
-    '<Border Margin="-{0},{1},-{0},-{2}" CornerRadius="{3}" BorderThickness="22" BorderBrush="#{4:X2}000000"/>' -f $m, (5 - $m), ($m + 5), ($m + 1), [int](255 * (0.02 + 0.012 * $_))
+$WindowXaml = $WindowXaml.Replace('<!--SHADOW-->', (-join (0..21 | ForEach-Object {
+    $m = 22 - $_
+    '<Border Margin="-{0},{1},-{0},-{2}" CornerRadius="{3}" BorderThickness="{4}" BorderBrush="#{5:X2}000000"/>' -f $m, (5 - $m), ($m + 5), ($m + 12), ($m + 12), [int][Math]::Round(255 * (0.006 + 0.0034 * $_))
 })))
 
 # Start talking to GitHub before the window is even built: by the time it paints, the answer is usually in.
@@ -890,7 +912,7 @@ $Ellipsis = [string][char]0x2026
 $Gold = '#FFD100'; $White = '#FFFFFF'; $Grey = '#808080'; $Green = '#19FF19'; $Red = '#FF1919'; $Orange = '#FF8040'
 $StatusColors = @{
     'Not installed' = '#C8C8C8'; 'Update available' = $Orange; 'Up to date' = $Green
-    'Unavailable' = $Grey; 'Failed' = $Red; 'Installing' = $Gold; '' = $Grey
+    'Unavailable' = $Grey; 'Failed' = $Red; 'Installing' = $Gold; 'Queued' = '#C8C8C8'; '' = $Grey
 }
 $BrushCache = @{}
 function Get-Brush([string]$hex) {
@@ -950,7 +972,13 @@ function Show-Row($it) {
     $dead = (-not $it.Latest -and $S.Fresh)
     $ui.Name.Foreground = Get-Brush $(if ($dead) { $Grey } else { $Gold })
     $ui.Notes.Opacity = $(if ($dead) { 0.55 } else { 1.0 })
-    $state = $(if ($S.Phase -eq 'installing' -and $S.Current -eq $it.Name) { 'Installing' } elseif (-not $it.Latest -and -not $S.Fresh) { '' } else { $it.Status })
+    $busy = ($S.Phase -eq 'installing' -or $S.Phase -eq 'finishing')
+    $ui.Box.Opacity = $(if ($busy) { 0.45 } else { 1.0 })
+    # While installing: the one in flight, then the ones still waiting their turn.
+    $order = @($(if ($S.Phase -eq 'installing') { $S.Todo | ForEach-Object { $_.Name } }))
+    $turn = [array]::IndexOf($order, $it.Name)
+    $now = $(if ($S.Current) { [array]::IndexOf($order, $S.Current) } else { -1 })
+    $state = $(if ($turn -ge 0 -and $turn -eq $now) { 'Installing' } elseif ($turn -gt $now) { 'Queued' } elseif (-not $it.Latest -and -not $S.Fresh) { '' } else { $it.Status })
     $text = switch ($state) {
         'Update available' { "Update $($it.Latest)" }
         'Installing' { "Installing$Ellipsis" }
@@ -966,7 +994,7 @@ function Show-Row($it) {
 function Add-Row($it) {
     $row = [Windows.Markup.XamlReader]::Parse($RowXaml)
     $ui = @{ Row = $row; On = $false }
-    foreach ($n in 'Tick', 'Name', 'NameShadow', 'Notes', 'Status', 'StatusShadow') { $ui[$n] = $row.FindName($n) }
+    foreach ($n in 'Box', 'Tick', 'Name', 'NameShadow', 'Notes', 'Status', 'StatusShadow') { $ui[$n] = $row.FindName($n) }
     # The hover card, like the game's own: the name in gold, then what it does.
     $tip = New-Object System.Windows.Controls.StackPanel
     $ui.TipTitle = New-Object System.Windows.Controls.TextBlock
@@ -1003,6 +1031,8 @@ function Show-Footer {
     $busy = ($S.Phase -eq 'installing' -or $S.Phase -eq 'finishing')
     $Go.IsEnabled = ($S.Phase -eq 'ready') -and $n -gt 0 -and [bool]$S.Wow
     $CloseButton2.IsEnabled = -not $busy
+    $CloseX.IsEnabled = -not $busy
+    $ChangeButton.IsEnabled = -not $busy
     $hasStatus = [bool]$StatusText.Text
     $Cast.Visibility = $(if ($busy) { 'Visible' } else { 'Collapsed' })
     $StatusRow.Visibility = $(if (-not $busy -and $hasStatus) { 'Visible' } else { 'Collapsed' })
@@ -1158,13 +1188,14 @@ function Start-Install {
     $todo = @($S.Items | Where-Object { $_.Want -and $_.Latest })
     if (-not $todo.Count -or -not $S.Wow) { return }
     foreach ($it in $todo) { $it.Error = $null }
-    $S.Phase = 'installing'; $S.Current = ''; $S.Todo = $todo; $S.BarAt = -1; $S.Ticks = 0
+    # The first addon counts as in flight from the first frame, so the list and the bar never show a vague in-between state.
+    $S.Phase = 'installing'; $S.Current = $todo[0].Name; $S.Todo = $todo; $S.BarAt = -1; $S.Ticks = 0
     $S.Sync = [hashtable]::Synchronized(@{ Done = 0; Current = '' })
     $Bar.BeginAnimation([System.Windows.Controls.Primitives.RangeBase]::ValueProperty, $null)
     $Bar.Foreground = $window.FindResource('Gold')
     $Bar.Maximum = $todo.Count; $Bar.Value = 0
     $Cast.BeginAnimation([System.Windows.UIElement]::OpacityProperty, $null); $Cast.Opacity = 1
-    $CastText.Text = "Installing$Ellipsis"; $CastShadow.Text = $CastText.Text
+    $CastText.Text = $todo[0].Title; $CastShadow.Text = $CastText.Text
     $StatusText.Text = ''
     foreach ($it in $S.Items) { Show-Row $it }
     Show-Footer
@@ -1222,6 +1253,7 @@ function Complete-Install([string]$err) {
             Start-Fade $Cast 0.0 180
             Start-Later 190 {
                 $S.Phase = 'ready'
+                foreach ($it in $S.Items) { Show-Row $it }
                 Set-Status $S.Result[0] $S.Result[1]
                 Add-Timing 'install finished' -Save
                 if ($env:FOREVER_SNAPSHOT) { Start-Later 500 { Save-Snapshot 'done.png'; $window.Close() } }
