@@ -78,12 +78,15 @@ button:disabled { opacity: .55; cursor: default; }
 button:focus-visible, a.btn:focus-visible, summary:focus-visible, .src:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
 .dl { display: flex; gap: 14px; align-items: center; flex-wrap: wrap; }
 .src { font-size: 13px; color: var(--muted); }
-.quick { display: flex; flex-wrap: wrap; gap: 14px 24px; align-items: center; justify-content: space-between; border: 1px solid var(--line); border-radius: 10px; padding: 18px 20px; background: var(--surface); }
+.quick { display: grid; gap: 14px; border: 1px solid var(--line); border-radius: 10px; padding: 18px 20px; background: var(--surface); }
 .quick[hidden] { display: none; }
 .quick-text { display: grid; gap: 6px; max-width: 60ch; }
 .quick-text h2 { font-size: 20px; }
 .quick-text p { margin: 0; }
-.hint { font-size: 13px; color: var(--muted); }
+.hint { font-size: 13px; color: var(--muted); margin: 0; }
+.os { display: grid; gap: 10px; }
+.os-row { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
+.os-name { font-weight: 600; font-size: 14px; min-width: 72px; }
 details { font-size: 14px; }
 summary { cursor: pointer; color: var(--muted); width: fit-content; }
 .changelog { margin: 8px 0 0; padding-left: 14px; border-left: 2px solid var(--line); display: grid; gap: 4px; }
@@ -112,10 +115,20 @@ code { font-family: var(--font-mono); font-size: 13px; background: var(--surface
   <section class="quick" id="quick" hidden>
     <div class="quick-text">
       <h2>Quick install</h2>
-      <p>One file for Windows. Double-click it: it finds your WoW Forever folder, lets you tick the addons you want, and installs or updates them. Run it again any time to update.</p>
-      <p class="hint">Your browser or Windows may warn about a downloaded script. Choose Keep, then More info → Run anyway.</p>
+      <p>Finds WoW Forever, lets you tick the addons you want, and installs or updates them. Run it again any time to update.</p>
     </div>
-    <a class="btn" id="installer" target="_blank" rel="noopener">Download installer</a>
+    <div class="os">
+      <div class="os-row">
+        <span class="os-name">Windows</span>
+        <a class="btn" id="installer" target="_blank" rel="noopener">Download installer</a>
+      </div>
+      <div class="os-row" id="linuxRow" hidden>
+        <span class="os-name">Linux</span>
+        <code id="linuxCmd"></code>
+        <button class="ghost copy" id="copyLinux">Copy</button>
+      </div>
+    </div>
+    <p class="hint">Windows may warn about a downloaded file: choose Keep, then More info → Run anyway. On Linux, paste the command into a terminal; it works with Wine, Lutris, Bottles and Steam.</p>
   </section>
 
   <div class="toolbar">
@@ -306,7 +319,17 @@ code { font-family: var(--font-mono); font-size: 13px; background: var(--surface
     }
   }
 
-  $("copyPath").addEventListener("click", async () => {
+  $("copyLinux").addEventListener("click", async () => {
+    try {
+      await navigator.clipboard.writeText($("linuxCmd").textContent);
+      $("copyLinux").textContent = "Copied";
+      setTimeout(() => { $("copyLinux").textContent = "Copy"; }, 1500);
+    } catch (e) {
+      const r = document.createRange();
+      r.selectNodeContents($("linuxCmd"));
+      const sel = window.getSelection(); sel.removeAllRanges(); sel.addRange(r);
+    }
+  });  $("copyPath").addEventListener("click", async () => {
     const text = $("addonsPath").textContent;
     try {
       await navigator.clipboard.writeText(text);
@@ -337,6 +360,7 @@ code { font-family: var(--font-mono); font-size: 13px; background: var(--surface
     $("built").textContent = manifest.addons.length + " addon" + (manifest.addons.length === 1 ? "" : "s") + " · updated " + manifest.built;
     if (manifest.addonsPath) $("addonsPath").textContent = manifest.addonsPath;
     if (manifest.installerUrl) { $("installer").href = manifest.installerUrl; $("quick").hidden = false; }
+    if (manifest.installerShUrl) { $("linuxCmd").textContent = "bash <(curl -fsSL " + manifest.installerShUrl + ")"; $("linuxRow").hidden = false; }
     render();
 
     let dl = null;
