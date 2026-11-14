@@ -1,0 +1,14 @@
+## Interface: 16001, 16002
+## Title: Abandon Advisor
+## Notes: Rates every quest in your log and tells you which ones to abandon when you need room.
+## Version: 1.0.0
+## OptionalDeps: Questie
+## SavedVariables: AbandonAdvisorDB
+## SavedVariablesPerCharacter: AbandonAdvisorCharDB
+## IconTexture: Interface\Icons\INV_Misc_Book_08
+## AddonCompartmentFunc: AbandonAdvisor_Toggle
+
+Core.lua
+Scan.lua
+Score.lua
+UI.lua
