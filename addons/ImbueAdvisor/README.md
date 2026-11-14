@@ -4,12 +4,16 @@ A WoW Forever addon (Interface 16001) that works out the best Shaman weapon imbu
 
 ## Install
 
-1. Download `ImbueAdvisor-x.y.z.zip` from the latest release.
+1. Download `ImbueAdvisor-x.y.z.zip` from https://github.com/SPEEDB04T/ForeverAddonShelf/releases.
 2. Unzip it into `World of Warcraft\_forever_\Interface\AddOns`, so you end up with `AddOns\ImbueAdvisor\ImbueAdvisor.toc`.
 3. Restart the game or type `/reload`.
 
-WowUp users: add this repo's URL with "Install from URL" and it will auto-update.
+Or use the installer on the Forever Addon Shelf (https://github.com/SPEEDB04T/ForeverAddonShelf/releases/latest): it installs and updates every addon on the shelf.
+
+## Using another imbue
+
+The buttons cast the imbue the advisor works out. When you want a different one, point at the frame: a list of every imbue you know opens under it, best first, one column per hand. Click one and it goes on that hand, and that hand's button keeps using it (a small blue corner marks it). The green one in the list is the advisor's pick; click it to go back.
 
 ## Commands
 
-`/imbue` or `/ia`: `report`, `mode auto|melee|tank|caster|heal|pvp`, `target <level diff>`, `lock`, `unlock`, `scale <n>`, `warn`, `debug`, `reset`.
+`/imbue` or `/ia`: `config` (options window), `minimap` (minimap button on or off), `report`, `others hover|always|off` (the list of other imbues), `pick mh|oh <imbue>` (use your own choice on a hand), `advisor` (back to the advisor's picks), `mode auto|melee|tank|caster|heal|pvp`, `target <level diff>`, `lock`, `unlock`, `scale <n>`, `warn`, `debug`, `reset`.

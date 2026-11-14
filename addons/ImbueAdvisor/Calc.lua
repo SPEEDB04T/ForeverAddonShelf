@@ -321,7 +321,8 @@ function Calc.Evaluate(db)
         res.slots[16] = Calc.ScoreSlot(16, st, imbues, mode, db, nil)
     end
     if st.dualWield then
-        res.slots[17] = Calc.ScoreSlot(17, st, imbues, mode, db, res.slots[16] and res.slots[16].best)
+        -- worked out for what the main hand really uses (your own pick, if you made one)
+        res.slots[17] = Calc.ScoreSlot(17, st, imbues, mode, db, (ns.UseKey(res, 16)))
     end
     return res
 end

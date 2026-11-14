@@ -2,7 +2,7 @@
 local ADDON, ns = ...
 
 ns.ADDON = ADDON
-ns.VERSION = "1.0.0"
+ns.VERSION = "1.2.0"
 ns.current = {}   -- [16]/[17] = imbue key currently on that weapon (or nil)
 
 local defaults = {
@@ -18,6 +18,8 @@ local defaults = {
     tankRockbiterThreat = 2.0,  -- threat multiplier for Rockbiter in tank mode
     pvpSlowBonus = 0.5,         -- Frostbrand slow is worth +50% of the best dps option in PvP
     enchantCache = {},          -- enchantID -> imbue key, learned from tooltips
+    others = "hover",           -- the list of other imbues: hover | always | off
+    picks = {},                 -- "Name-Realm" -> { [16] = key, [17] = key }: imbues you chose yourself
 }
 
 ----------------------------------------------------------------------
@@ -140,6 +142,50 @@ function ns.WeaponEnchants()
 end
 
 ----------------------------------------------------------------------
+-- Your own picks: an imbue you chose for a hand is used there instead of the advisor's,
+-- on this character, until you go back.
+----------------------------------------------------------------------
+function ns.Pick(slot)
+    local mine = ns.db and ns.db.picks and ns.charKey and ns.db.picks[ns.charKey]
+    return mine and mine[slot] or nil
+end
+
+-- The imbue a hand's button casts: your pick while you still know it, else the advisor's.
+-- Returns the key, and true when it is your own pick and not the advisor's.
+function ns.UseKey(res, slot)
+    local sr = res and res.slots[slot]
+    if not sr or not sr.best then return nil, false end
+    local pick = ns.Pick(slot)
+    if pick and pick ~= sr.best and sr.scores[pick] and res.imbues[pick] then return pick, true end
+    return sr.best, false
+end
+
+-- key = nil goes back to the advisor's pick for that hand.
+function ns.SetPick(slot, key)
+    if not ns.charKey then return end
+    if type(ns.db.picks) ~= "table" then ns.db.picks = {} end
+    local picks = ns.db.picks
+    local mine = picks[ns.charKey]
+    if key then
+        if not mine then mine = {}; picks[ns.charKey] = mine end
+        mine[slot] = key
+    elseif mine then
+        mine[slot] = nil
+        if next(mine) == nil then picks[ns.charKey] = nil end
+    end
+    ns.PicksChanged()
+end
+
+function ns.ClearPicks()
+    if ns.charKey and type(ns.db.picks) == "table" then ns.db.picks[ns.charKey] = nil end
+    ns.PicksChanged()
+end
+
+function ns.HasPicks()
+    return (ns.Pick(16) or ns.Pick(17)) and true or false
+end
+
+----------------------------------------------------------------------
 -- Which imbue is on a weapon right now (tooltip scan, cached by enchant ID)
 ----------------------------------------------------------------------
 local scanTip
@@ -246,13 +292,26 @@ local function OnUpdate(_, e)
     end
 end
 
+-- The off hand is worked out for what the main hand uses, so a new pick means a new calculation.
+-- In a fight the buttons can't change: everything waits for the fight to end.
+function ns.PicksChanged()
+    dirty = true
+    if InCombatLockdown() then
+        ns.UI.pending = true
+        ns.Print("the buttons change when the fight is over.")
+    elseif ns.enabled then
+        dirty = false
+        ns.Refresh()
+    end
+end
+
 local function WarnMissing()
     if not ns.db.warnMissing or not ns.result then return end
     local ench = ns.WeaponEnchants()
     for _, slot in ipairs({ 16, 17 }) do
-        local sr = ns.result.slots[slot]
-        if sr and sr.best and not ench[slot].has then
-            local name = ns.result.imbues[sr.best].name
+        local key = ns.UseKey(ns.result, slot)
+        if key and not ench[slot].has then
+            local name = ns.result.imbues[key].name
             UIErrorsFrame:AddMessage(("No imbue on %s: use %s"):format(slot == 16 and "main hand" or "off hand", name), 1, 0.3, 0.3)
         end
     end
@@ -271,6 +330,7 @@ local globalEvents = {
 
 local function OnEvent(_, event, arg1)
     if event == "PLAYER_REGEN_DISABLED" then
+        ns.UI.CombatStart()     -- hiding is still allowed here; a moment later it is not
         WarnMissing()
         return
     elseif event == "PLAYER_REGEN_ENABLED" then
@@ -291,12 +351,18 @@ local function Init()
         end
     end
     ns.db = ImbueAdvisorDB
+    if ns.db.others ~= "hover" and ns.db.others ~= "always" and ns.db.others ~= "off" then ns.db.others = "hover" end
+    ns.charKey = (UnitName("player") or "?") .. "-" .. (GetRealmName and GetRealmName() or "")
 
     local _, class = UnitClass("player")
     if class ~= "SHAMAN" then return end
     ns.enabled = true
 
     ns.UI.Create()
+    if ns.Kit and ns.Options then       -- both missing until the first full restart after the update
+        local ok, err = pcall(ns.Options.Init)
+        if not ok then ns.Print("options error: " .. tostring(err)) end
+    end
     for ev in pairs(playerEvents) do
         if driver.RegisterUnitEvent then
             pcall(driver.RegisterUnitEvent, driver, ev, "player")
@@ -317,15 +383,90 @@ loader:RegisterEvent("PLAYER_LOGIN")
 loader:SetScript("OnEvent", Init)
 
 ----------------------------------------------------------------------
+-- Actions shared by the slash commands, the options window and the minimap button
+----------------------------------------------------------------------
+function ns.ToggleFrame()
+    if InCombatLockdown() then ns.Print("can't toggle in combat.") return end
+    ns.db.shown = not ns.db.shown
+    ns.UI.ApplySecure()
+end
+
+function ns.ResetSettings()
+    if InCombatLockdown() then ns.Print("can't reset in combat.") return end
+    local cache, picks = ns.db.enchantCache, ns.db.picks
+    for k in pairs(ns.db) do ns.db[k] = nil end
+    for k, v in pairs(defaults) do ns.db[k] = type(v) == "table" and {} or v end
+    ns.db.enchantCache = cache
+    if type(picks) == "table" then      -- your other characters keep the imbues they picked
+        if ns.charKey then picks[ns.charKey] = nil end
+        ns.db.picks = picks
+    end
+    ns.UI.RestorePosition(); ns.UI.frame:SetScale(1); ns.MarkDirty()
+    ns.UI.ApplySecure()
+    if ns.Kit then ns.Kit.RefreshMinimap() end
+    ns.Print("settings reset")
+end
+
+----------------------------------------------------------------------
 -- Slash commands
 ----------------------------------------------------------------------
+-- Kit.lua and Options.lua are new in 1.1.0. The game only finds new files after a full restart,
+-- so right after an update a /reload runs this file without them: say so instead of erroring.
+local function HasKit()
+    if ns.Kit and ns.Options then return true end
+    ns.Print("the options window and the minimap button appear after you restart the game once (this update added new files, and /reload does not load those).")
+    return false
+end
+
 local MODES = { auto = true, melee = true, tank = true, caster = true, heal = true, pvp = true }
+local OTHERS = { hover = "opens when you point at the frame", always = "always open", off = "off" }
+local HANDS = { mh = 16, main = 16, mainhand = 16, oh = 17, off = 17, offhand = 17 }
+
+-- "wf", "windfury", "wind": which imbue was typed
+local function ImbueFromWord(word)
+    if not word or word == "" then return nil end
+    for _, key in ipairs(ns.IMBUE_ORDER) do
+        if ns.IMBUES[key].short:lower() == word or key:sub(1, #word) == word then return key end
+    end
+end
+
+local function PickCommand(arg)
+    local hand, word = arg:match("^(%S+)%s+(%S+)")
+    local slot = hand and HANDS[hand]
+    local res = ns.result
+    if not slot or not word then
+        ns.Print("usage: /imbue pick mh|oh windfury|flametongue|frostbrand|rockbiter|earthliving|advisor")
+        return
+    end
+    local hname = slot == 16 and "main hand" or "off hand"
+    if word == "advisor" or word == "auto" or word == "best" then
+        ns.SetPick(slot, nil)
+        ns.Print(hname .. ": back to the advisor's pick")
+        return
+    end
+    local key = ImbueFromWord(word)
+    if not key then
+        ns.Print("no imbue called '" .. word .. "'. Try wf, ft, fb, rb or el.")
+    elseif not res or not res.slots[slot] or not res.slots[slot].best then
+        ns.Print("nothing to imbue in your " .. hname .. ".")
+    elseif not res.imbues[key] then
+        ns.Print("you don't know " .. ns.IMBUES[key].english .. ".")
+    else
+        ns.SetPick(slot, key ~= res.slots[slot].best and key or nil)
+        ns.Print(hname .. ": " .. res.imbues[key].name .. " from now on")
+    end
+end
 
 local function Help()
     ns.Print("commands:")
     ns.Print("  /imbue  - show or hide the frame")
+    ns.Print("  /imbue config  - open the options window")
+    ns.Print("  /imbue minimap  - show or hide the minimap button")
     ns.Print("  /imbue mode auto|melee|tank|caster|heal|pvp  (now: " .. ns.db.mode .. ")")
     ns.Print("  /imbue report  - print the numbers behind the recommendation")
+    ns.Print("  /imbue others hover|always|off  - the list of your other imbues (now: " .. tostring(ns.db.others) .. ")")
+    ns.Print("  /imbue pick mh|oh <imbue>  - use an imbue of your own choice on that hand")
+    ns.Print("  /imbue advisor  - go back to the advisor's picks")
     ns.Print("  /imbue target <0-3>  - target level difference (now: " .. ns.db.targetLevelDiff .. ")")
     ns.Print("  /imbue lock | unlock | scale <0.5-2> | warn | reset | debug")
 end
@@ -337,15 +478,30 @@ SlashCmdList.IMBUEADVISOR = function(msg)
     if not ns.enabled then ns.Print("only works on a Shaman.") return end
     local cmd, arg = (msg or ""):lower():match("^%s*(%S*)%s*(.-)%s*$")
     if cmd == "" then
-        if InCombatLockdown() then ns.Print("can't toggle in combat.") return end
-        ns.db.shown = not ns.db.shown
-        ns.UI.ApplySecure()
+        ns.ToggleFrame()
+    elseif cmd == "config" or cmd == "options" or cmd == "opt" then
+        if HasKit() then ns.Kit.Open() end
+    elseif cmd == "minimap" then
+        if HasKit() then
+            ns.Kit.SetMinimapShown(not ns.Kit.MinimapShown())
+            ns.Print("minimap button " .. (ns.Kit.MinimapShown() and "on" or "off"))
+        end
     elseif cmd == "mode" then
         if MODES[arg] then
             ns.db.mode = arg; ns.MarkDirty(); ns.Print("mode set to " .. arg)
         else
             ns.Print("modes: auto, melee, tank, caster, heal, pvp")
         end
+    elseif cmd == "others" or cmd == "other" then
+        if OTHERS[arg] then
+            ns.db.others = arg; ns.UI.ApplySecure(); ns.Print("other imbues: " .. OTHERS[arg])
+        else
+            ns.Print("usage: /imbue others hover|always|off   (now: " .. tostring(ns.db.others) .. ")")
+        end
+    elseif cmd == "pick" or cmd == "use" then
+        PickCommand(arg)
+    elseif cmd == "advisor" then
+        ns.ClearPicks(); ns.Print("back to the advisor's picks")
     elseif cmd == "report" then
         ns.UI.PrintReport()
     elseif cmd == "debug" then
@@ -370,14 +526,9 @@ SlashCmdList.IMBUEADVISOR = function(msg)
         ns.db.warnMissing = not ns.db.warnMissing
         ns.Print("missing-imbue warning " .. (ns.db.warnMissing and "on" or "off"))
     elseif cmd == "reset" then
-        if InCombatLockdown() then ns.Print("can't reset in combat.") return end
-        local cache = ns.db.enchantCache
-        for k in pairs(ns.db) do ns.db[k] = nil end
-        for k, v in pairs(defaults) do ns.db[k] = type(v) == "table" and {} or v end
-        ns.db.enchantCache = cache
-        ns.UI.RestorePosition(); ns.UI.frame:SetScale(1); ns.MarkDirty()
-        ns.Print("settings reset")
+        ns.ResetSettings()
     else
         Help()
     end
+    if ns.Kit then ns.Kit.Sync() end      -- an open options window follows what was typed
 end
