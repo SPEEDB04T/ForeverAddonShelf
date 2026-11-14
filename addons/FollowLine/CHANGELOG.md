@@ -1,5 +1,9 @@
 # Changelog
 
+## 1.0.1
+
+- Fixed: calling a line failed with "can't send the line: this realm blocks addon messages" on ordinary realms. The addon read a realm setting that has nothing to do with messages inside a group. It now sends, and the status line shows the game's answer if a message is ever refused.
+
 ## 1.0.0
 
 First version.

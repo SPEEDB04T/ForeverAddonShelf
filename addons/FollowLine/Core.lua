@@ -4,7 +4,7 @@ local ADDON, ns = ...
 local issecret = issecretvalue or function() return false end
 ns.issecret = issecret
 
-ns.VERSION = "1.0.0"
+ns.VERSION = "1.0.1"
 do
     local get = C_AddOns and C_AddOns.GetAddOnMetadata
     if get then

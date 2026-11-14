@@ -506,18 +506,23 @@ local function AddonChannel()
     return "PARTY"
 end
 
--- nil when messages can go out, otherwise why not.
+-- nil when messages can go out, otherwise why not. The realm's switch
+-- AreOutgoingAddonChatMessagesRestricted is not asked: it is on for ordinary
+-- realms, and addon messages inside a group go out all the same.
 function L.CommsBlocked()
     if not (C_ChatInfo and C_ChatInfo.SendAddonMessage) then return "this client has no addon messages" end
-    if C_ChatInfo.AreOutgoingAddonChatMessagesRestricted then
-        local ok, v = pcall(C_ChatInfo.AreOutgoingAddonChatMessagesRestricted)
-        if ok and not issecret(v) and v then return "this realm blocks addon messages" end
-    end
     if C_ChatInfo.InChatMessagingLockdown then
         local ok, v = pcall(C_ChatInfo.InChatMessagingLockdown)
         if ok and (issecret(v) or v) then return "chat is locked right now" end
     end
     return nil
+end
+
+-- For the status line: a block, or what the game answered when it refused
+-- the last message (cleared by the next one that goes out).
+local refused
+function L.CommsProblem()
+    return L.CommsBlocked() or refused
 end
 
 local function Enqueue(msg)
@@ -579,9 +584,14 @@ local function Flush(now)
             if sendErrors < 3 then return end
         else
             local sent = not (type(result) == "number" and result ~= 0) and result ~= false
-            if not sent then return end     -- throttled or refused: try again next second
+            if not sent then                -- throttled or refused: try again next second
+                if result ~= 3 and result ~= 8 then     -- 3 and 8 are the game's throttles
+                    refused = "the game refused the last message (code " .. tostring(result) .. ")"
+                end
+                return
+            end
         end
-        sendErrors = 0
+        sendErrors, refused = 0, nil
         if kind == "request" then
             L.wantRequest = false
             return
@@ -903,11 +913,11 @@ end
 function L.PrintStatus()
     local line = L.line
     if not line then
-        ns.Print("no line called. Addon messages: " .. (L.CommsBlocked() or "ok") .. ".")
+        ns.Print("no line called. Addon messages: " .. (L.CommsProblem() or "ok") .. ".")
     else
         local on, followers, total = L.Summary()
         ns.Print(("line of %d called by %s, %d of %d following. Addon messages: %s."):format(
-            total, line.by, on, followers, L.CommsBlocked() or "ok"))
+            total, line.by, on, followers, L.CommsProblem() or "ok"))
         for i, name in ipairs(line.order) do
             local m = L.members[name]
             ns.Print(("  %d. %s: %s"):format(i, name, m and (L.Describe(m)) or "?"))
