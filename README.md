@@ -46,13 +46,17 @@ Installers already on people's machines show the new version the next time they 
 Edit `installer.template.bat` or `installer.template.sh`, run `powershell -NoProfile -File build.ps1`, test, commit, push, then attach both files from `dist/` to a new release tagged with the next number and marked latest:
 
 ```
-gh release create v5 dist\Install-ForeverAddons.bat dist\install-forever-addons.sh --title "Installer 5" --notes "..." --latest
+gh release create v6 dist\Install-ForeverAddons.bat dist\install-forever-addons.sh --title "Installer 6" --notes "..." --latest
 ```
 
 The Windows installer's shortcut copy updates itself from the latest release.
 
+The Windows list needs no work as the shelf grows: rows are roomy while every addon fits on the screen, go compact (one line of description; the hover card keeps all of it) when they don't, and the list scrolls only when even compact rows don't fit. A scrolling list shows an arrow at the edge that has more, and follows the addon being installed.
+
 ### Testing without anything appearing on screen
 
-Windows: set `FOREVER_WOW` to a test folder and `FOREVER_SNAPSHOT` to an empty folder. The window runs off-screen, installs everything, and saves pictures of itself and its timings there. `FOREVER_SELECT=all` runs it in the console instead.
+Windows: set `FOREVER_WOW` to a test folder and `FOREVER_SNAPSHOT` to an empty folder. The window runs off-screen, installs everything, and saves pictures of itself (`ready.png`, `installing.png`, `done.png`), its timings and its layout (`layout.txt`: rows, compact or not, how far the list scrolls, window height and position) there. `FOREVER_SELECT=all` runs it in the console instead.
+
+To try a shelf of any length, also set `FOREVER_SHELF_FILE` to a list in the `addons.tsv` format: it stands in for GitHub's answer, with the list built into the installer as what was known before, so the window opens with the old list and grows to the new one. `FOREVER_SCREEN=<height>` makes a snapshot run pretend the screen is that high (try 728 for a small laptop). A snapshot run of more than six addons also saves `installing-late.png`, three quarters of the way down the list.
 
 Linux: `bash dist/install-forever-addons.sh --text --select all "<test World of Warcraft folder>"`.

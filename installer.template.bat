@@ -19,6 +19,8 @@ exit /b %ERRORLEVEL%
 #
 # Test hooks: FOREVER_WOW=<folder> skips the search. FOREVER_SELECT=all|Name,Name runs without a window and prints
 # to the console. FOREVER_SNAPSHOT=<dir> runs the window off-screen, saves pictures of it (ready, installing, done) and timings, closes.
+# FOREVER_SHELF_FILE=<tsv> stands in for GitHub's answer, and the list built into this file for what was known before,
+# so a shelf that has grown since can be tried. FOREVER_SCREEN=<height> makes a snapshot run pretend the screen is that high.
 $ErrorActionPreference = 'Stop'
 $ProgressPreference = 'SilentlyContinue'
 [Net.ServicePointManager]::SecurityProtocol = [Net.ServicePointManager]::SecurityProtocol -bor [Net.SecurityProtocolType]::Tls12
@@ -145,6 +147,7 @@ function Read-Shelf([string]$text) {
 
 # What we knew last time (or what was built in), so there is something to show at once.
 function Get-KnownShelf {
+    if ($env:FOREVER_SHELF_FILE) { return @(Read-Shelf $FallbackShelf) }
     try {
         if (Test-Path -LiteralPath $CacheFile) {
             $list = @(Read-Shelf ([IO.File]::ReadAllText($CacheFile)))
@@ -167,11 +170,14 @@ function Save-ShelfCache($items) {
 function Update-Shelf($known, [scriptblock]$meanwhile) {
     $known = @($known)
     $task = $null
-    try { $task = (New-WebClient).DownloadStringTaskAsync($ShelfUrl) } catch { }
+    if (-not $env:FOREVER_SHELF_FILE) { try { $task = (New-WebClient).DownloadStringTaskAsync($ShelfUrl) } catch { } }
     if ($meanwhile) { try { & $meanwhile } catch { } }
     try {
-        if ($task -and $task.Wait(10000)) {
-            $remote = @(Read-Shelf $task.Result)
+        $text = $null
+        if ($env:FOREVER_SHELF_FILE) { $text = [IO.File]::ReadAllText($env:FOREVER_SHELF_FILE) }
+        elseif ($task -and $task.Wait(10000)) { $text = $task.Result }
+        if ($text) {
+            $remote = @(Read-Shelf $text)
             if ($remote.Count) {
                 $byName = @{}
                 foreach ($it in $known) { $byName[$it.Name] = $it }
@@ -180,7 +186,7 @@ function Update-Shelf($known, [scriptblock]$meanwhile) {
                     if ($k) { $k.Title = $r.Title; $k.Notes = $r.Notes; $k.Latest = $r.Latest; $k.Url = $r.Url; $k.Fresh = $true; $k }
                     else { $r.Fresh = $true; $r }
                 })
-                Save-ShelfCache $items
+                if (-not $env:FOREVER_SHELF_FILE) { Save-ShelfCache $items }
                 return $items
             }
         }
@@ -192,9 +198,11 @@ function Get-InstalledVersion([string]$wow, [string]$name) {
     if (-not $wow) { return $null }
     $toc = Join-Path $wow "Interface\AddOns\$name\$name.toc"
     if (-not (Test-Path -LiteralPath $toc)) { return $null }
-    foreach ($line in [IO.File]::ReadAllLines($toc)) {
-        if ($line -match '^##\s*Version:\s*(.+)$') { return $Matches[1].Trim() }
-    }
+    try {
+        foreach ($line in [IO.File]::ReadAllLines($toc)) {
+            if ($line -match '^##\s*Version:\s*(.+)$') { return $Matches[1].Trim() }
+        }
+    } catch { return $null }    # the folder is being replaced right now
     return '?'
 }
 
@@ -394,6 +402,7 @@ try {
     foreach ($j in $jobs) {
         $Sync.Current = $j.It.Name
         if ($Hold) { Start-Sleep -Milliseconds 700; $Hold = $false }
+        if ($HoldLate -and $j.It.Name -eq $HoldLate) { Start-Sleep -Milliseconds 1100 }
         try { Complete-AddonInstall $j $Wow } catch { $j.It.Error = Get-ErrorText $_ }
         $Sync.Done = $Sync.Done + 1
     }
@@ -722,6 +731,32 @@ $WindowXaml = @'
         <ScrollViewer x:Name="RowsScroll" MaxHeight="372" VerticalScrollBarVisibility="Auto" Margin="6" Focusable="False">
           <StackPanel x:Name="RowsPanel"/>
         </ScrollViewer>
+        <Grid x:Name="MoreAbove" Height="36" VerticalAlignment="Top" Margin="3,3,22,0" IsHitTestVisible="False" Opacity="0">
+          <Border CornerRadius="3,3,0,0">
+            <Border.Background>
+              <LinearGradientBrush StartPoint="0,0" EndPoint="0,1">
+                <GradientStop Color="#FF060504" Offset="0"/>
+                <GradientStop Color="#FF060504" Offset="0.7"/>
+                <GradientStop Color="#00060504" Offset="1"/>
+              </LinearGradientBrush>
+            </Border.Background>
+          </Border>
+          <Path Data="M0,8 L9,0 L18,8" Stroke="#000000" StrokeThickness="5" StrokeStartLineCap="Round" StrokeEndLineCap="Round" StrokeLineJoin="Round" HorizontalAlignment="Center" VerticalAlignment="Top" Margin="0,6,0,0"/>
+          <Path Data="M0,8 L9,0 L18,8" Stroke="{StaticResource Gold}" StrokeThickness="2.4" StrokeStartLineCap="Round" StrokeEndLineCap="Round" StrokeLineJoin="Round" HorizontalAlignment="Center" VerticalAlignment="Top" Margin="0,6,0,0"/>
+        </Grid>
+        <Grid x:Name="MoreBelow" Height="36" VerticalAlignment="Bottom" Margin="3,0,22,3" IsHitTestVisible="False" Opacity="0">
+          <Border CornerRadius="0,0,3,3">
+            <Border.Background>
+              <LinearGradientBrush StartPoint="0,1" EndPoint="0,0">
+                <GradientStop Color="#FF060504" Offset="0"/>
+                <GradientStop Color="#FF060504" Offset="0.7"/>
+                <GradientStop Color="#00060504" Offset="1"/>
+              </LinearGradientBrush>
+            </Border.Background>
+          </Border>
+          <Path Data="M0,0 L9,8 L18,0" Stroke="#000000" StrokeThickness="5" StrokeStartLineCap="Round" StrokeEndLineCap="Round" StrokeLineJoin="Round" HorizontalAlignment="Center" VerticalAlignment="Bottom" Margin="0,0,0,6"/>
+          <Path Data="M0,0 L9,8 L18,0" Stroke="{StaticResource Gold}" StrokeThickness="2.4" StrokeStartLineCap="Round" StrokeEndLineCap="Round" StrokeLineJoin="Round" HorizontalAlignment="Center" VerticalAlignment="Bottom" Margin="0,0,0,6"/>
+        </Grid>
       </Grid>
 
       <Grid Grid.Row="2" Margin="0,16,0,0" MinHeight="32">
@@ -824,7 +859,7 @@ $RowXaml = @'
       </Style>
     </Border.Style>
   </Border>
-  <Grid Margin="10,10,14,10">
+  <Grid x:Name="Inner" Margin="10,10,14,10">
     <Grid.ColumnDefinitions>
       <ColumnDefinition Width="Auto"/>
       <ColumnDefinition Width="*"/>
@@ -963,7 +998,7 @@ function Show-Row($it) {
 function Add-Row($it) {
     $row = [Windows.Markup.XamlReader]::Parse($RowXaml)
     $ui = @{ Row = $row; On = $false }
-    foreach ($n in 'Box', 'Tick', 'Name', 'NameShadow', 'Notes', 'Status', 'StatusShadow') { $ui[$n] = $row.FindName($n) }
+    foreach ($n in 'Inner', 'Box', 'Tick', 'Name', 'NameShadow', 'Notes', 'Status', 'StatusShadow') { $ui[$n] = $row.FindName($n) }
     # The hover card, like the game's own: the name in gold, then what it does.
     $tip = New-Object System.Windows.Controls.StackPanel
     $ui.TipTitle = New-Object System.Windows.Controls.TextBlock
@@ -992,6 +1027,102 @@ function Add-Row($it) {
 function Show-Rows {
     $RowsPanel.Children.Clear(); $S.Rows = @{}; $S.ByName = @{}
     foreach ($it in $S.Items) { $S.ByName[$it.Name] = $it; Add-Row $it; Show-Row $it }
+    Set-RowFit
+}
+
+# ---- a shelf that keeps growing
+# Rows are roomy while every addon fits on the screen. Past that they go compact (one line of description; the
+# hover card still has all of it), and only when even those don't fit does the list scroll.
+function Set-RowFit {
+    if (-not $S.Rows.Count) { return }
+    $max = $(if ($S.ListMax) { $S.ListMax } else { $RowsScroll.MaxHeight })
+    $room = New-Object System.Windows.Size -ArgumentList 520, ([double]::PositiveInfinity)   # 520: the list's width inside the window
+    foreach ($compact in $false, $true) {
+        foreach ($ui in $S.Rows.Values) {
+            $ui.Notes.TextWrapping = $(if ($compact) { 'NoWrap' } else { 'Wrap' })
+            $ui.Notes.TextTrimming = $(if ($compact) { 'CharacterEllipsis' } else { 'None' })
+            $ui.Inner.Margin = $(if ($compact) { '10,6,14,6' } else { '10,10,14,10' })
+            # Measuring the list again only looks at parts marked as changed, so mark the whole way up from the text.
+            $e = $ui.Notes
+            while ($e -and $e -ne $RowsPanel) { $e.InvalidateMeasure(); $e = $e.Parent }
+        }
+        $S.Compact = $compact
+        $RowsPanel.InvalidateMeasure()
+        $RowsPanel.Measure($room)
+        if ($RowsPanel.DesiredSize.Height -le $max) { break }
+    }
+    # A list that has to scroll ends 28 px into a row: the rows in view are whole, and the cut one is under the arrow's dark edge.
+    $fit = $max
+    if ($RowsPanel.DesiredSize.Height -gt $max) {
+        $row = $RowsPanel.Children[0].DesiredSize.Height
+        if ($row -gt 0 -and $max -gt $row + 28) { $fit = [Math]::Floor(($max - 28) / $row) * $row + 28 }
+    }
+    $RowsScroll.MaxHeight = $fit
+}
+
+# The dark edge with an arrow, at the top or bottom of the list, says there is more that way.
+function Show-ScrollHints {
+    $up = $RowsScroll.VerticalOffset -gt 1
+    $down = $RowsScroll.VerticalOffset -lt $RowsScroll.ScrollableHeight - 1
+    if ($S.HintUp -ne $up) { $S.HintUp = $up; Start-Fade $MoreAbove $(if ($up) { 1.0 } else { 0.0 }) 120 }
+    if ($S.HintDown -ne $down) { $S.HintDown = $down; Start-Fade $MoreBelow $(if ($down) { 1.0 } else { 0.0 }) 120 }
+}
+
+function Start-Scroll([double]$to) {
+    $S.ScrollFrom = $RowsScroll.VerticalOffset
+    $S.ScrollTo = [Math]::Max(0, [Math]::Min($RowsScroll.ScrollableHeight, $to))
+    $S.ScrollStep = 0
+    if (-not $S.ScrollTimer) {
+        $S.ScrollTimer = New-Object System.Windows.Threading.DispatcherTimer
+        $S.ScrollTimer.Interval = [TimeSpan]::FromMilliseconds(15)
+        $S.ScrollTimer.Add_Tick({
+            $S.ScrollStep = $S.ScrollStep + 1
+            $t = [Math]::Min(1.0, $S.ScrollStep / 12.0)
+            $RowsScroll.ScrollToVerticalOffset($S.ScrollFrom + ($S.ScrollTo - $S.ScrollFrom) * (1 - [Math]::Pow(1 - $t, 3)))
+            if ($t -ge 1) { $S.ScrollTimer.Stop() }
+        })
+    }
+    $S.ScrollTimer.Start()
+}
+
+# Glides a scrolling list so a row sits in the middle of it: the one being installed, or one that failed.
+function Show-RowInView([string]$name) {
+    $ui = $S.Rows[$name]
+    if (-not $ui -or $RowsScroll.ScrollableHeight -le 0) { return }
+    $y = $ui.Row.TranslatePoint((New-Object System.Windows.Point -ArgumentList 0, 0), $RowsPanel).Y
+    Start-Scroll ($y - ($RowsScroll.ViewportHeight - $ui.Row.ActualHeight) / 2)
+}
+
+# The usable part of the screen the window is on (before it is shown: the screen with the mouse, which is where it
+# opens), top and height in the window's own units. A second screen can be a different size from the main one.
+function Get-ScreenArea {
+    $sp = [System.Windows.SystemParameters]
+    if ($env:FOREVER_SNAPSHOT) {
+        $h = 0.0
+        [void][double]::TryParse([string]$env:FOREVER_SCREEN, [ref]$h)
+        return @{ Top = -30000.0; Height = $(if ($h -gt 0) { $h } else { $sp::WorkArea.Height }) }
+    }
+    $area = @{ Top = $sp::WorkArea.Top; Height = $sp::WorkArea.Height }
+    try {
+        if ($sp::VirtualScreenWidth -gt $sp::PrimaryScreenWidth + 1 -or $sp::VirtualScreenHeight -gt $sp::PrimaryScreenHeight + 1) {
+            Add-Type -AssemblyName System.Windows.Forms
+            $scale = [System.Windows.Forms.Screen]::PrimaryScreen.Bounds.Height / $sp::PrimaryScreenHeight
+            $screen = $(if ($S.Shown) { [System.Windows.Forms.Screen]::FromHandle((New-Object System.Windows.Interop.WindowInteropHelper -ArgumentList $window).Handle) }
+                else { [System.Windows.Forms.Screen]::FromPoint([System.Windows.Forms.Cursor]::Position) })
+            if ($scale -gt 0) { $area = @{ Top = $screen.WorkingArea.Top / $scale; Height = $screen.WorkingArea.Height / $scale } }
+        }
+    } catch { }
+    return $area
+}
+
+# The window gets taller when the fresh list has more addons than the remembered one: it must not run off the screen.
+function Set-OnScreen {
+    if (-not $S.Shown) { return }
+    try {
+        $a = Get-ScreenArea
+        $bottom = $a.Top + $a.Height
+        if ($window.Top + $window.ActualHeight -gt $bottom + 0.5) { $window.Top = $a.Top + [Math]::Max(0, ($a.Height - $window.ActualHeight) / 2) }
+    } catch { }
 }
 
 function Show-Footer {
@@ -1141,10 +1272,17 @@ function Complete-Refresh($result, [string]$err) {
     if ($S.Touched) { foreach ($it in $S.Items) { if (-not $it.Latest) { $it.Want = $false } } } else { Set-Wants }
     if ($sameRows) { foreach ($it in $S.Items) { $S.ByName[$it.Name] = $it } } else { Show-Rows }
     Show-Idle
+    Set-RowFit      # the fresh descriptions may be longer or shorter than the remembered ones
     Add-Timing 'versions checked' -Save
     if ($env:FOREVER_SELF -and [string]::Equals($env:FOREVER_SELF, $LocalCopy, [StringComparison]::OrdinalIgnoreCase)) { [void](Start-Work 'Update-LocalCopy' @{}) }
     if ($env:FOREVER_SNAPSHOT) {
         Start-Later 500 {
+            [IO.File]::WriteAllLines((Join-Path $env:FOREVER_SNAPSHOT 'layout.txt'), @(
+                "rows $($S.Items.Count)", "compact $($S.Compact)", "scroll $([int]$RowsScroll.ScrollableHeight)",
+                "list $([int]$RowsScroll.ActualHeight)", "window $([int]$window.ActualHeight)",
+                "top $([int]($window.Top - $S.Area.Top))", "screen $([int]$S.Area.Height)",
+                "hints $($MoreAbove.Opacity) $($MoreBelow.Opacity)",
+                "room $([int]$S.ListMax) rows-need $([int]$RowsPanel.DesiredSize.Height) row $($RowsPanel.Children[0].DesiredSize.Height) list-max $($RowsScroll.MaxHeight)"))
             Save-Snapshot 'ready.png'
             $S.WantShortcut = $false
             foreach ($it in $S.Items) { $it.Want = [bool]$it.Latest }
@@ -1170,8 +1308,12 @@ function Start-Install {
     Show-Footer
     $spark = Get-Spark
     if ($spark) { $spark.BeginAnimation([System.Windows.UIElement]::OpacityProperty, $null); $spark.Opacity = 1 }
+    Show-RowInView $todo[0].Name
     $S.After = { param($result, $err) Complete-Install $err }
-    $S.Work = Start-Work $InstallScript @{ Todo = $todo; Wow = $S.Wow; Sync = $S.Sync; Hold = [bool]$env:FOREVER_SNAPSHOT }
+    # Test hook: a snapshot run of a long list also pauses three quarters of the way down, for a picture there.
+    $S.Late = $(if ($env:FOREVER_SNAPSHOT -and $todo.Count -gt 6) { $todo[[int][Math]::Floor($todo.Count * 0.75)].Name } else { '' })
+    $S.LateTicks = 0
+    $S.Work = Start-Work $InstallScript @{ Todo = $todo; Wow = $S.Wow; Sync = $S.Sync; Hold = [bool]$env:FOREVER_SNAPSHOT; HoldLate = $S.Late }
     Show-InstallProgress
 }
 
@@ -1179,6 +1321,10 @@ function Show-InstallProgress {
     if ($env:FOREVER_SNAPSHOT) {
         $S.Ticks = [int]$S.Ticks + 1
         if ($S.Ticks -eq 12) { try { Save-Snapshot 'installing.png' } catch { } }
+        if ($S.Late -and $S.Current -eq $S.Late) {
+            $S.LateTicks = [int]$S.LateTicks + 1
+            if ($S.LateTicks -eq 14) { try { Save-Snapshot 'installing-late.png' } catch { } }
+        }
     }
     $cur = [string]$S.Sync.Current
     if ($cur -and $cur -ne $S.Current) {
@@ -1186,6 +1332,7 @@ function Show-InstallProgress {
         foreach ($it in $S.Todo) { Update-Status $it $S.Wow }
         foreach ($it in $S.Items) { Show-Row $it }
         $CastText.Text = $S.ByName[$cur].Title; $CastShadow.Text = $CastText.Text
+        Show-RowInView $cur
     }
     # Glide the bar to "this many done, plus most of the one in flight".
     $target = [Math]::Min($S.Todo.Count, [double]$S.Sync.Done + 0.8)
@@ -1211,6 +1358,7 @@ function Complete-Install([string]$err) {
         else { @('Done. Your addons are ready.', $Green) }
     )
     $S.CastOk = (-not $err -and -not $failed.Count)
+    if ($failed.Count) { Show-RowInView $failed[0].Name } else { Start-Scroll 0 }
     Start-Glide $Bar $Bar.Maximum 180
     Show-Footer
     Start-Later 200 {
@@ -1237,14 +1385,16 @@ try {
     $S.OfferShortcut = -not (Test-Path -LiteralPath (Get-ShortcutPath)); $S.WantShortcut = $true; $S.ShortOn = $false
     $window = [Windows.Markup.XamlReader]::Parse($WindowXaml)
     Add-Timing 'window parsed'
-    foreach ($n in 'Rock', 'DragZone', 'Plaque', 'FolderText', 'FolderShadow', 'ChangeButton', 'CloseX', 'RowsScroll', 'RowsPanel', 'ShortcutRow', 'ShortTick',
+    foreach ($n in 'Rock', 'DragZone', 'Plaque', 'FolderText', 'FolderShadow', 'ChangeButton', 'CloseX', 'RowsScroll', 'RowsPanel', 'MoreAbove', 'MoreBelow', 'ShortcutRow', 'ShortTick',
         'StatusRow', 'StatusText', 'StatusShadow', 'Cast', 'Bar', 'CastText', 'CastShadow', 'Go', 'CloseButton2') {
         Set-Variable -Name $n -Value $window.FindName($n)
     }
     try { $Rock.Background = New-RockBrush } catch { }
     # The list grows to show every addon and only scrolls when the screen is too short for them.
     # 290 = the rest of the window (224) plus some room above and below it.
-    try { $RowsScroll.MaxHeight = [Math]::Max(372, [System.Windows.SystemParameters]::WorkArea.Height - 290) } catch { }
+    $S.Area = Get-ScreenArea
+    $S.ListMax = [Math]::Max(180, $S.Area.Height - 290)
+    $RowsScroll.MaxHeight = $S.ListMax
     if ($S.Shared.Icon) { $window.Icon = $S.Shared.Icon; $S.IconSet = $true }
     if ($env:FOREVER_SNAPSHOT) {
         # Far off-screen, out of the taskbar, never focused: a test run must not show up on anyone's desktop.
@@ -1275,6 +1425,8 @@ try {
     })
 
     $ShortcutRow.Add_MouseLeftButtonDown({ $S.WantShortcut = -not $S.WantShortcut; Show-Footer })
+    $RowsScroll.Add_ScrollChanged({ try { Show-ScrollHints } catch { } })
+    $window.Add_SizeChanged({ Set-OnScreen })
 
     $ChangeButton.Add_Click({
         if ($S.Phase -eq 'installing' -or $S.Phase -eq 'finishing') { return }
@@ -1318,7 +1470,13 @@ try {
         }
     })
 
-    $window.Add_Loaded({ Add-Timing 'window loaded'; $timer.Start(); Start-Fade $window 1.0 110 })
+    $window.Add_Loaded({
+        Add-Timing 'window loaded'
+        # A snapshot run sits in the middle of its pretend screen, the way the real window sits in the middle of the real one.
+        if ($env:FOREVER_SNAPSHOT) { $window.Top = $S.Area.Top + [Math]::Max(0, ($S.Area.Height - $window.ActualHeight) / 2) }
+        $S.Shown = $true
+        $timer.Start(); Start-Fade $window 1.0 110
+    })
     $window.Add_ContentRendered({
         Add-Timing 'window on screen' -Save
         # Only says "checking" if GitHub is slow enough for anyone to wonder.
