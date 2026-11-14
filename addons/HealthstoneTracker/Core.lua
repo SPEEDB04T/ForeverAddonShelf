@@ -2,7 +2,7 @@
 local ADDON, ns = ...
 local issecret = ns.issecret
 
-ns.VERSION = "1.1.0"
+ns.VERSION = "1.2.0"
 do
     local get = C_AddOns and C_AddOns.GetAddOnMetadata
     if get then
@@ -281,6 +281,7 @@ local function Init()
     -- each part on its own, so one failing does not take the others with it
     ns.Safe(ns.Group.Init)
     ns.Safe(ns.UI.Create)
+    if ns.Kit and ns.Options then ns.Safe(ns.Options.Init) end   -- missing until the first full restart after the update
     ns.Safe(ns.ScanBags)
     ns.Safe(ReadCooldown)
 
@@ -297,6 +298,36 @@ loader:RegisterEvent("PLAYER_LOGIN")
 loader:SetScript("OnEvent", function() ns.Safe(Init) end)
 
 ----------------------------------------------------------------------
+-- Actions shared by the slash commands, the options window and the minimap button
+----------------------------------------------------------------------
+function ns.ToggleWindow()
+    local db = ns.db
+    db.shown = not db.shown
+    if not db.shown then
+        ns.Print("window hidden. /hst shows it again.")
+    elseif not ns.UI.ShouldShow() then
+        ns.Print("window on. It appears when you are in a group with a warlock (/hst always for any group, /hst demo for a preview).")
+    end
+    ns.dirty = true
+end
+
+function ns.ToggleDemo()
+    ns.Group.SetDemo(not ns.Group.demo)
+    ns.Print(ns.Group.demo and "demo on: six pretend players joined. /hst demo again to remove them." or "demo off.")
+    ns.dirty = true
+end
+
+function ns.ResetSettings()
+    local db = ns.db
+    for k in pairs(db) do db[k] = nil end
+    for k, v in pairs(defaults) do db[k] = v end
+    ns.UI.ApplyLayout()
+    if ns.Kit then ns.Kit.RefreshMinimap() end
+    ns.Print("settings reset.")
+    ns.dirty = true
+end
+
+----------------------------------------------------------------------
 -- Slash commands
 ----------------------------------------------------------------------
 local function OnOff(v) return v and "on" or "off" end
@@ -309,7 +340,17 @@ local function Help()
     ns.Print("  /hst soul  - show the soulstone part of the window (" .. OnOff(ns.db.soul) .. ")")
     ns.Print("  /hst always  - show in groups without a warlock too (" .. OnOff(ns.db.always) .. ")")
     ns.Print("  /hst trade  - warlock: click a name to open a trade and offer your stone (" .. OnOff(ns.db.clickTrade) .. ")")
+    ns.Print("  /hst config  - open the options window")
+    ns.Print("  /hst minimap  - show or hide the minimap button")
     ns.Print("  /hst lock | unlock | scale <0.5-2> | status | demo | reset")
+end
+
+-- Kit.lua and Options.lua are new in 1.2.0. The game only finds new files after a full restart,
+-- so right after an update a /reload runs this file without them: say so instead of erroring.
+local function HasKit()
+    if ns.Kit and ns.Options then return true end
+    ns.Print("the options window and the minimap button appear after you restart the game once (this update added new files, and /reload does not load those).")
+    return false
 end
 
 SLASH_HEALTHSTONETRACKER1 = "/hst"
@@ -320,11 +361,13 @@ SlashCmdList.HEALTHSTONETRACKER = function(msg)
     local cmd, arg = (msg or ""):lower():match("^%s*(%S*)%s*(.-)%s*$")
     local db = ns.db
     if cmd == "" then
-        db.shown = not db.shown
-        if not db.shown then
-            ns.Print("window hidden. /hst shows it again.")
-        elseif not ns.UI.ShouldShow() then
-            ns.Print("window on. It appears when you are in a group with a warlock (/hst always for any group, /hst demo for a preview).")
+        ns.ToggleWindow()
+    elseif cmd == "config" or cmd == "options" or cmd == "opt" then
+        if HasKit() then ns.Kit.Open() end
+    elseif cmd == "minimap" then
+        if HasKit() then
+            ns.Kit.SetMinimapShown(not ns.Kit.MinimapShown())
+            ns.Print("minimap button " .. OnOff(ns.Kit.MinimapShown()) .. ".")
         end
     elseif FILTERS[cmd] then
         db.filter = cmd
@@ -352,17 +395,14 @@ SlashCmdList.HEALTHSTONETRACKER = function(msg)
             ns.Print("usage: /hst scale 1.2")
         end
     elseif cmd == "demo" then
-        ns.Group.SetDemo(not ns.Group.demo)
-        ns.Print(ns.Group.demo and "demo on: six pretend players joined. /hst demo again to remove them." or "demo off.")
+        ns.ToggleDemo()
     elseif cmd == "status" then
         ns.Group.PrintStatus()
     elseif cmd == "reset" then
-        for k in pairs(db) do db[k] = nil end
-        for k, v in pairs(defaults) do db[k] = v end
-        ns.UI.ApplyLayout()
-        ns.Print("settings reset.")
+        ns.ResetSettings()
     else
         Help()
     end
     ns.dirty = true
+    if ns.Kit then ns.Kit.Sync() end      -- an open options window follows what was typed
 end

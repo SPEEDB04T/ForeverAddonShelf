@@ -40,6 +40,8 @@ Who carries a soulstone is read from the buffs of everyone in the group, so it w
 ## Commands
 
 - `/hst` shows or hides the window
+- `/hst config` opens the options window (also: right-click the minimap button, or Options > AddOns)
+- `/hst minimap` shows or hides the minimap button
 - `/hst all`, `/hst missing`, `/hst auto` choose who is listed (right-clicking the title switches too)
 - `/hst announce` posts who still needs a healthstone, and who has the soulstone, in party or raid chat
 - `/hst soul` shows or hides the soulstone part

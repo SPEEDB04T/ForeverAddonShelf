@@ -1,5 +1,13 @@
 # Changelog
 
+## 1.2.0
+
+Options window and minimap button.
+
+- Options window: `/hst config`, a right-click on the minimap button, or Options > AddOns. Every setting is a tick, a choice or a slider there.
+- Minimap button: left-click shows or hides the window, right-click opens the options, drag moves it. `/hst minimap` hides it.
+- The addon is in the addon list next to the minimap.
+
 ## 1.1.0
 
 Soulstones.
