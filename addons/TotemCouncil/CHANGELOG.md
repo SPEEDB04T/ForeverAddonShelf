@@ -1,5 +1,9 @@
 # Changelog
 
+## 1.1.1
+
+- Fixed: plans and live totems were not shared with other shamans on ordinary realms. The addon read a realm setting ("this realm blocks addon messages") that has nothing to do with messages inside a group, and sent nothing. It now sends, and `/totems status` shows the game's answer if a message is ever refused.
+
 ## 1.1.0
 
 - Options window: `/totems config`, a right-click on the minimap button, or Options > AddOns. Every bar, warning and plan setting is there, including when a timer turns yellow, which had no command before.

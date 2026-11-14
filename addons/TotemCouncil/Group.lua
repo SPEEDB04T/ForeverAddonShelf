@@ -350,18 +350,23 @@ local function AddonChannel()
     return "PARTY"
 end
 
--- nil when messages can go out, otherwise why not.
+-- nil when messages can go out, otherwise why not. The realm's switch
+-- AreOutgoingAddonChatMessagesRestricted is not asked: it is on for ordinary
+-- realms, and addon messages inside a group go out all the same.
 function G.CommsBlocked()
     if not (C_ChatInfo and C_ChatInfo.SendAddonMessage) then return "this client has no addon messages" end
-    if C_ChatInfo.AreOutgoingAddonChatMessagesRestricted then
-        local ok, v = pcall(C_ChatInfo.AreOutgoingAddonChatMessagesRestricted)
-        if ok and not issecret(v) and v then return "this realm blocks addon messages" end
-    end
     if C_ChatInfo.InChatMessagingLockdown then
         local ok, v = pcall(C_ChatInfo.InChatMessagingLockdown)
         if ok and (issecret(v) or v) then return "chat is locked right now (plans sync again afterwards)" end
     end
     return nil
+end
+
+-- For the status lines: a block, or what the game answered when it refused
+-- the last message (cleared by the next one that goes out).
+local refused
+function G.CommsProblem()
+    return G.CommsBlocked() or refused
 end
 
 local function Enqueue(msg)
@@ -478,9 +483,14 @@ local function Flush()
         if sendErrors < 3 then return end
     else
         local sent = not (type(result) == "number" and result ~= 0) and result ~= false
-        if not sent then return end     -- throttled or refused: try again next second
+        if not sent then                -- throttled or refused: try again next second
+            if result ~= 3 and result ~= 8 then     -- 3 and 8 are the game's throttles
+                refused = "the game refused the last message (code " .. tostring(result) .. ")"
+            end
+            return
+        end
     end
-    sendErrors = 0
+    sendErrors, refused = 0, nil
     if kind ~= "request" then lastBroadcast = (kind ~= "queue") end
     if kind == "request" then
         G.wantRequest = false
@@ -996,7 +1006,7 @@ function G.PrintStatus()
         end
     end
     if n == 0 then ns.Print("no other shamans in the group.") end
-    ns.Print(("plan conflicts: %d. Addon messages: %s."):format(G.conflictCount, G.CommsBlocked() or "ok"))
+    ns.Print(("plan conflicts: %d. Addon messages: %s."):format(G.conflictCount, G.CommsProblem() or "ok"))
 end
 
 -- /totems debug: everything the addon currently believes about the group.
@@ -1005,7 +1015,7 @@ function G.DebugSnapshot()
     local where = (IsInRaid and IsInRaid()) and "raid" or ((IsInGroup and IsInGroup()) and "party" or "no group")
     ns.Debug(("Totem Council %s, you are %s (%s), %s, channel %s, messages %s"):format(ns.VERSION,
         tostring(ns.playerName), ns.isShaman and "shaman" or "not a shaman", where,
-        tostring(AddonChannel()), G.CommsBlocked() or "ok"))
+        tostring(AddonChannel()), G.CommsProblem() or "ok"))
     local names = {}
     for name in pairs(G.names) do names[#names + 1] = name end
     table.sort(names)

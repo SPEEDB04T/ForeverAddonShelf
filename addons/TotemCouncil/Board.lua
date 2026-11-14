@@ -397,7 +397,7 @@ function Board.Refresh()
         status = "|cff40ff40No conflicts.|r Every group gets each totem once."
     end
     if #list > MAX_ROWS then status = status .. (" (+%d more shamans not shown)"):format(#list - MAX_ROWS) end
-    local blocked = others > 0 and G.CommsBlocked()
+    local blocked = others > 0 and G.CommsProblem()
     if blocked then status = status .. "\n|cffaaaaaaPlans can't sync: " .. blocked .. ".|r" end
     frame.status:SetText(status)
     frame.resolve:SetEnabled(others > 0)
