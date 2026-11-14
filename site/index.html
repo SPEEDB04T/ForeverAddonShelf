@@ -290,7 +290,16 @@ code { font-family: var(--font-mono); font-size: 13px; background: var(--surface
       for (const path of a.files) {
         const res = await fetch(path, { cache: "no-store" });
         if (!res.ok) throw { code: "fetch", message: "A file of " + a.title + " is missing from the shelf (" + res.status + ")." };
-        zip.file(path.replace(/^src\//, ""), await res.arrayBuffer());
+        const name = path.replace(/^src\//, "");
+        if (name.endsWith(".b64")) {
+          // A file the page host can't serve as it is (a texture): published as base64 text, restored here.
+          const bin = atob((await res.text()).trim());
+          const bytes = new Uint8Array(bin.length);
+          for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+          zip.file(name.slice(0, -4), bytes);
+        } else {
+          zip.file(name, await res.arrayBuffer());
+        }
       }
     }
     return zip.generateAsync({ type: "blob", compression: "DEFLATE", compressionOptions: { level: 6 } });

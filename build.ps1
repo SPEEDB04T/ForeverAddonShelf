@@ -27,6 +27,13 @@ function Read-Toc([string]$tocPath) {
     return $meta
 }
 
+# True for a file the shelf page can publish as text: valid UTF-8 with no control bytes besides tab and line ends.
+function Test-PlainText([string]$path) {
+    $bytes = [System.IO.File]::ReadAllBytes($path)
+    if ([Text.Encoding]::GetEncoding(28591).GetString($bytes) -match '[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]') { return $false }
+    try { [void](New-Object System.Text.UTF8Encoding($false, $true)).GetString($bytes); return $true } catch { return $false }
+}
+
 # A release download answers with a redirect when it exists and 404 when it doesn't.
 function Test-Download([string]$url) {
     try {
@@ -55,8 +62,15 @@ foreach ($name in @($config.addons)) {
         $rel = $f.FullName.Substring($folder.Length).TrimStart('\', '/') -replace '\\', '/'
         $dest = Join-Path $src "$name/$rel"
         New-Item -ItemType Directory -Force (Split-Path $dest -Parent) | Out-Null
-        Copy-Item $f.FullName $dest
         $published = "src/$name/$rel"
+        if (Test-PlainText $f.FullName) {
+            Copy-Item $f.FullName $dest
+        } else {
+            # The page host only takes text here. A texture (.tga) goes up as base64 text, named "<file>.b64";
+            # the page's "Download all" turns it back into the real file.
+            $published += '.b64'
+            [System.IO.File]::WriteAllText("$dest.b64", [Convert]::ToBase64String([System.IO.File]::ReadAllBytes($f.FullName)), (New-Object System.Text.ASCIIEncoding))
+        }
         $list += $published
         $size += $f.Length
         $publish[$published] = [ordered]@{ from = "addon-hub/site/$published"; contentType = 'text/plain' }

@@ -39,7 +39,7 @@ Installers already on people's machines show the new version the next time they 
 
 ### Republishing the page
 
-`build.ps1` (run by `release-addon.ps1`) writes `site/addons.json`, a copy of every addon file under `site/src/`, and `publish-files.json`, the map of files the page needs. Publish `site/index.html` to the shelf page address in `addons.config.json` (`shelfPage`) with those files. The page then shows the new version, its changelog and its files.
+`build.ps1` (run by `release-addon.ps1`) writes `site/addons.json`, a copy of every addon file under `site/src/`, and `publish-files.json`, the map of files the page needs. The page host only takes text files there, so a file that isn't plain text (a `.tga` texture) is written as base64 text named `<file>.b64`, and the page's "Download all" turns it back into the real file. Publish `site/index.html` to the shelf page address in `addons.config.json` (`shelfPage`) with those files. The page then shows the new version, its changelog and its files.
 
 ### Changing the installers
 
