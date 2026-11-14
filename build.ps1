@@ -19,7 +19,7 @@ if (-not $repo) { throw 'addons.config.json needs "repo" (the one GitHub repo th
 
 function Read-Toc([string]$tocPath) {
     $meta = @{}
-    foreach ($line in Get-Content $tocPath) {
+    foreach ($line in Get-Content $tocPath -Encoding UTF8) {   # UTF-8, as the game reads it (a title can have accents)
         if ($line -match '^##\s*([^:]+):\s*(.*)$') {
             $meta[$Matches[1].Trim()] = ($Matches[2].Trim() -replace '\|c[0-9a-fA-F]{8}', '' -replace '\|r', '')
         }

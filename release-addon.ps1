@@ -20,7 +20,7 @@ $toc = Join-Path $Source "$Name.toc"
 if (-not (Test-Path -LiteralPath $toc)) { throw "No $Name.toc in $Source" }
 
 $meta = @{}
-foreach ($line in Get-Content -LiteralPath $toc) { if ($line -match '^##\s*([^:]+):\s*(.*)$') { $meta[$Matches[1].Trim()] = $Matches[2].Trim() } }
+foreach ($line in Get-Content -LiteralPath $toc -Encoding UTF8) { if ($line -match '^##\s*([^:]+):\s*(.*)$') { $meta[$Matches[1].Trim()] = $Matches[2].Trim() } }
 $version = $meta['Version']
 if (-not $version -or $version -notmatch '^[0-9A-Za-z.\-]+$') { throw "$Name.toc needs a plain '## Version:' line (found '$version')." }
 $title = $(if ($meta['Title']) { $meta['Title'] -replace '\|c[0-9a-fA-F]{8}', '' -replace '\|r', '' } else { $Name })
