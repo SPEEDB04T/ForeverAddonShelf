@@ -1,10 +1,7 @@
 {
   "game": "WoW Forever",
   "addonsPath": "World of Warcraft\\_forever_\\Interface\\AddOns",
-  "installerRepo": "SPEEDB04T/ForeverAddonShelf",
+  "repo": "SPEEDB04T/ForeverAddonShelf",
   "shelfPage": "https://claude.ai/artifact/MijqsMR4n4fcHN7GA3hJSR",
-  "addons": [
-    { "path": "../ImbueAdvisor", "repo": "SPEEDB04T/ImbueAdvisor" },
-    { "path": "../AbandonAdvisor", "repo": "SPEEDB04T/AbandonAdvisor" }
-  ]
+  "addons": ["ImbueAdvisor"]
 }
