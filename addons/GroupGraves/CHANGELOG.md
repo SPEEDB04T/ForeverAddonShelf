@@ -1,5 +1,9 @@
 # Changelog
 
+## 1.0.1
+
+- Fixed: positions were not shared with the group on ordinary realms. The addon read a realm setting ("this realm blocks addon messages") that has nothing to do with messages inside a group, and sent nothing. It now sends.
+
 ## 1.0.0
 
 First version.

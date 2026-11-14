@@ -438,13 +438,12 @@ local function Channel()
     return "PARTY"
 end
 
--- nil when messages can go out, otherwise why not.
+-- nil when messages can go out, otherwise why not. The realm's switch
+-- AreOutgoingAddonChatMessagesRestricted is not asked: it is on for ordinary
+-- realms, and addon messages inside a group go out all the same. A message the
+-- game does refuse shows up in lastProblem.
 local function CommsBlocked()
     if not (C_ChatInfo and C_ChatInfo.SendAddonMessage) then return "this client has no addon messages" end
-    if C_ChatInfo.AreOutgoingAddonChatMessagesRestricted then
-        local ok, v = pcall(C_ChatInfo.AreOutgoingAddonChatMessagesRestricted)
-        if ok and not (issecret and issecret(v)) and v then return "this realm blocks addon messages" end
-    end
     if C_ChatInfo.InChatMessagingLockdown then
         local ok, v = pcall(C_ChatInfo.InChatMessagingLockdown)
         if ok and ((issecret and issecret(v)) or v) then return "chat is locked right now (it is sent afterwards)" end

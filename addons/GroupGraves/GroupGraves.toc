@@ -1,7 +1,7 @@
 ## Interface: 16001, 16002
 ## Title: Group Graves
 ## Notes: Marks where the members of your group died on the world map and keeps the marker after they release. Everyone with the addon shares the positions. /graves for options.
-## Version: 1.0.0
+## Version: 1.0.1
 ## SavedVariables: GroupGravesDB
 ## IconTexture: Interface\Icons\INV_Misc_Bone_HumanSkull_01
 ## AddonCompartmentFunc: GroupGraves_OnAddonCompartmentClick
