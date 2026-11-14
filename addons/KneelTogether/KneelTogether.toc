@@ -1,0 +1,11 @@
+## Interface: 16001, 16002
+## Title: Kneel Together
+## Notes: One call and everyone in your group who has the addon kneels on the same beat. /kneelall
+## Version: 1.0.0
+## SavedVariables: KneelTogetherDB
+## IconTexture: Interface\Icons\Spell_Holy_PrayerOfHealing
+## AddonCompartmentFunc: KneelTogether_OnAddonCompartmentClick
+
+KneelTogether.lua
+Kit.lua
+Options.lua
