@@ -1,0 +1,5 @@
+<Bindings>
+	<!-- The key clicks the addon's own Follow button, so it works whether the button is on screen or not.
+	     Key Bindings > AddOns > Follow Line. -->
+	<Binding name="CLICK FollowLineJoinButton:LeftButton" header="BINDING_HEADER_FOLLOWLINE" category="ADDONS"/>
+</Bindings>
