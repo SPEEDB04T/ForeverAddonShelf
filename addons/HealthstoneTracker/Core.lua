@@ -2,7 +2,7 @@
 local ADDON, ns = ...
 local issecret = ns.issecret
 
-ns.VERSION = "1.0.0"
+ns.VERSION = "1.1.0"
 do
     local get = C_AddOns and C_AddOns.GetAddOnMetadata
     if get then
@@ -18,10 +18,12 @@ local defaults = {
     filter = "auto",        -- "auto" (everyone in a party, only the missing in a raid) | "all" | "missing"
     always = false,         -- show in groups without a warlock too
     clickTrade = true,      -- warlock: click a name to open a trade and offer the stone
+    soul = true,            -- show the soulstone part of the window
     point = nil,            -- { left, top } of the window
 }
 local charDefaults = {
     seen = {},              -- [name] = { givenAt, givenBy, givenItem, usedAt } for players without the addon
+                            -- also soulItem: the last soulstone carried, to ask its cooldown once it is used up
 }
 local FILTERS = { auto = true, all = true, missing = true }
 
@@ -46,7 +48,8 @@ end
 ----------------------------------------------------------------------
 -- The player's own healthstones
 ----------------------------------------------------------------------
-ns.me = { count = 0, item = nil, byItem = {}, where = nil, cdEnd = nil }
+ns.me = { count = 0, item = nil, byItem = {}, where = nil, cdEnd = nil,
+          soulCount = 0, soulItem = nil, soulCdEnd = nil }
 ns.dirty = true
 
 local function StackAt(bag, slot)
@@ -65,6 +68,7 @@ end
 function ns.ScanBags()
     if not (C_Container and C_Container.GetContainerNumSlots and C_Container.GetContainerItemID) then return end
     local byItem, count, best, bestScore, where = {}, 0, nil, -1, nil
+    local soulCount, soulItem = 0, nil
     for bag = 0, 4 do
         local ok, slots = pcall(C_Container.GetContainerNumSlots, bag)
         if not ok or issecret(slots) then return end
@@ -79,13 +83,18 @@ function ns.ScanBags()
                     byItem[id] = (byItem[id] or 0) + n
                     local score = stone.rank * 10 + stone.bonus
                     if score > bestScore then best, bestScore, where = id, score, { bag, slot } end
+                elseif type(id) == "number" and ns.IsSoulItem(id) then
+                    soulCount = soulCount + StackAt(bag, slot)
+                    if not soulItem or (ns.SOUL_ITEMS[id] or 0) > (ns.SOUL_ITEMS[soulItem] or 0) then soulItem = id end
                 end
             end
         end
     end
     local me = ns.me
-    local changed = (count ~= me.count) or (best ~= me.item)
+    local changed = (count ~= me.count) or (best ~= me.item) or (soulCount ~= me.soulCount) or (soulItem ~= me.soulItem)
     me.count, me.item, me.byItem, me.where = count, best, byItem, where
+    me.soulCount, me.soulItem = soulCount, soulItem
+    if soulItem and ns.cdb then ns.cdb.soulItem = soulItem end
     if changed then
         ns.Group.MarkState(false)
         ns.dirty = true
@@ -95,18 +104,35 @@ end
 
 -- The real cooldown, read from the stone in the bags. Without a stone the
 -- timer started by the player's own use keeps counting.
-local function ReadCooldown()
-    local me = ns.me
-    if not me.item then return end
+-- true and when the item's cooldown ends (nil = ready), or false when the game won't say.
+local function ItemCooldown(itemID)
     local read = (C_Container and C_Container.GetItemCooldown) or (C_Item and C_Item.GetItemCooldown)
-    if not read then return end
-    local ok, start, duration = pcall(read, me.item)
-    if not ok or issecret(start) or issecret(duration) or type(start) ~= "number" or type(duration) ~= "number" then return end
+    if not read or type(itemID) ~= "number" then return false end
+    local ok, start, duration = pcall(read, itemID)
+    if not ok or issecret(start) or issecret(duration) or type(start) ~= "number" or type(duration) ~= "number" then return false end
     local cdEnd = (duration > 2 and start > 0) and (start + duration) or nil
     if cdEnd and cdEnd <= GetTime() then cdEnd = nil end
-    local old = me.cdEnd
-    if (cdEnd == nil) ~= (old == nil) or (cdEnd and old and math.abs(cdEnd - old) > 1.5) then
+    return true, cdEnd
+end
+
+local function Differs(a, b)
+    return (a == nil) ~= (b == nil) or (a and b and math.abs(a - b) > 1.5) or false
+end
+
+local function ReadCooldown()
+    local me = ns.me
+    local ok, cdEnd = ItemCooldown(me.item)
+    if ok and Differs(cdEnd, me.cdEnd) then
         me.cdEnd = cdEnd
+        ns.Group.MarkState(false)
+        ns.dirty = true
+    end
+    -- The soulstone is used up when it is cast, so its cooldown is asked by the
+    -- last one carried. Without one in the bags "no cooldown" is not trusted.
+    if not ns.isWarlock then return end
+    local ok2, soulEnd = ItemCooldown(me.soulItem or (ns.cdb and ns.cdb.soulItem))
+    if ok2 and (soulEnd or (me.soulCount or 0) > 0) and Differs(soulEnd, me.soulCdEnd) then
+        me.soulCdEnd = soulEnd
         ns.Group.MarkState(false)
         ns.dirty = true
     end
@@ -165,14 +191,48 @@ function events.BAG_UPDATE_COOLDOWN()
     ReadCooldown()
 end
 
+-- The game names who a cast is aimed at only when it starts.
+local soulTarget, soulTargetAt
+
+function events.UNIT_SPELLCAST_SENT(unit, target, _, spellID)
+    if issecret(unit) or issecret(spellID) or unit ~= "player" or type(spellID) ~= "number" then return end
+    if not ns.IsSoulSpell(spellID) then return end
+    soulTarget = (not issecret(target)) and ns.Norm(target) or nil
+    soulTargetAt = GetTime()
+end
+
 function events.UNIT_SPELLCAST_SUCCEEDED(unit, _, spellID)
     if issecret(unit) or issecret(spellID) or type(unit) ~= "string" or type(spellID) ~= "number" then return end
-    if not ns.IsStoneSpell(spellID) then return end
-    if unit == "player" then
-        OnPlayerUse()
-    elseif unit:find("^party%d+$") or unit:find("^raid%d+$") then
-        ns.Group.ObserveUse(unit)
+    local mine = (unit == "player")
+    local theirs = (unit:find("^party%d+$") or unit:find("^raid%d+$")) and true or false
+    if not (mine or theirs) then return end
+    if ns.IsStoneSpell(spellID) then
+        if mine then OnPlayerUse() else ns.Group.ObserveUse(unit) end
+    elseif ns.SOUL_REZ[spellID] then
+        ns.Group.ObserveSoulRez(unit)
+    elseif ns.IsSoulSpell(spellID) then
+        if mine then
+            local target = (soulTargetAt and GetTime() - soulTargetAt < 15) and soulTarget or nil
+            soulTarget, soulTargetAt = nil, nil
+            ns.me.soulCdEnd = GetTime() + ns.SOUL_COOLDOWN
+            ns.Group.PlayerSoulstoned(target)
+            C_Timer.After(0.5, function()
+                ns.Safe(ns.ScanBags)
+                ns.Safe(ReadCooldown)
+            end)
+        else
+            ns.Group.ObserveSoulCast(unit)
+        end
     end
+end
+
+function events.UNIT_AURA(unit)
+    ns.Group.OnUnitAura(unit)
+end
+
+-- out of the fight, buffs can be read again
+function events.PLAYER_REGEN_ENABLED()
+    ns.Group.scanAll = true
 end
 
 function events.PLAYER_ENTERING_WORLD()
@@ -209,6 +269,7 @@ local function Init()
     for k, v in pairs(charDefaults) do
         if type(HealthstoneTrackerCharDB[k]) ~= type(v) then HealthstoneTrackerCharDB[k] = {} end
     end
+    if type(HealthstoneTrackerCharDB.soulItem) ~= "number" then HealthstoneTrackerCharDB.soulItem = nil end
     ns.db, ns.cdb = HealthstoneTrackerDB, HealthstoneTrackerCharDB
     if not FILTERS[ns.db.filter] then ns.db.filter = "auto" end
 
@@ -244,7 +305,8 @@ local function Help()
     ns.Print("commands:")
     ns.Print("  /hst  - show or hide the window")
     ns.Print("  /hst all | missing | auto  - who is listed (now: " .. ns.db.filter .. "; auto = everyone in a party, only the missing in a raid)")
-    ns.Print("  /hst announce  - post who still needs a healthstone in group chat")
+    ns.Print("  /hst announce  - post who still needs a healthstone, and who has the soulstone, in group chat")
+    ns.Print("  /hst soul  - show the soulstone part of the window (" .. OnOff(ns.db.soul) .. ")")
     ns.Print("  /hst always  - show in groups without a warlock too (" .. OnOff(ns.db.always) .. ")")
     ns.Print("  /hst trade  - warlock: click a name to open a trade and offer your stone (" .. OnOff(ns.db.clickTrade) .. ")")
     ns.Print("  /hst lock | unlock | scale <0.5-2> | status | demo | reset")
@@ -275,6 +337,9 @@ SlashCmdList.HEALTHSTONETRACKER = function(msg)
     elseif cmd == "trade" then
         db.clickTrade = not db.clickTrade
         ns.Print("click a name to trade your stone: " .. OnOff(db.clickTrade) .. (ns.isWarlock and "" or " (warlocks only)"))
+    elseif cmd == "soul" or cmd == "soulstone" or cmd == "soulstones" or cmd == "ss" then
+        db.soul = not db.soul
+        ns.Print("soulstones in the window: " .. OnOff(db.soul) .. ".")
     elseif cmd == "lock" or cmd == "unlock" then
         db.locked = (cmd == "lock")
         ns.Print(db.locked and "window locked." or "window unlocked: drag it to move it.")
@@ -288,7 +353,7 @@ SlashCmdList.HEALTHSTONETRACKER = function(msg)
         end
     elseif cmd == "demo" then
         ns.Group.SetDemo(not ns.Group.demo)
-        ns.Print(ns.Group.demo and "demo on: five pretend players joined. /hst demo again to remove them." or "demo off.")
+        ns.Print(ns.Group.demo and "demo on: six pretend players joined. /hst demo again to remove them." or "demo off.")
     elseif cmd == "status" then
         ns.Group.PrintStatus()
     elseif cmd == "reset" then

@@ -1,4 +1,5 @@
 -- Healthstone Tracker: the window. One line per player: stone icon, name, state.
+-- Under the list: who carries a soulstone, and each warlock's own soulstone.
 local ADDON, ns = ...
 local issecret = ns.issecret
 
@@ -15,10 +16,16 @@ local COLOR = {
     used    = { 1.00, 0.62, 0.22 },
     unknown = { 0.62, 0.62, 0.62 },
     cooling = { 1.00, 0.85, 0.30 },
+    gold    = { 1.00, 0.82, 0.00 },
+    canRes  = { 0.45, 0.90, 1.00 },
 }
+-- the soulstone item, next to the buff icon in ns.SOUL_ICON
+local SOUL_ITEM_ICON = "Interface\\Icons\\INV_Misc_Orb_04"
+local SOUL_GAP = 4      -- space above the soulstone part
 
 local frame, title, count, note
 local rows = {}
+local soulRows = {}
 
 local function Hex(c)
     return ("|cff%02x%02x%02x"):format(c[1] * 255, c[2] * 255, c[3] * 255)
@@ -89,6 +96,8 @@ local function RowTooltip(row)
     else
         GameTooltip:AddLine("No addon: worked out from trades and uses seen.", 0.6, 0.6, 0.6, true)
     end
+    local soul = ns.Group.DescribeSoul(m)
+    if soul then GameTooltip:AddLine("Has a " .. soul .. ".", 0.72, 0.55, 1, true) end
     if ns.isWarlock and ns.db.clickTrade and not m.isPlayer and not m.demo then
         GameTooltip:AddLine("Click: open a trade and offer your healthstone.", 1, 0.82, 0)
     end
@@ -102,7 +111,32 @@ local function TitleTooltip(self)
     GameTooltip:AddLine("Healthstone Tracker")
     GameTooltip:AddLine(("%d of %d have one, %d need one, %d not known."):format(have, total, need, unknown), 1, 1, 1, true)
     GameTooltip:AddLine("Players with the addon report their own bags. The others are worked out from trades and uses seen.", 0.6, 0.6, 0.6, true)
-    GameTooltip:AddLine("Drag to move. Right-click: list everyone / only the missing. /hst for more.", 1, 0.82, 0, true)
+    GameTooltip:AddLine("Drag to move. Right-click: list everyone / only the missing. /hst help for more.", 1, 0.82, 0, true)
+    GameTooltip:Show()
+end
+
+local function SoulTooltip(row)
+    if not GameTooltip then return end
+    local m, kind = row.member, row.kind
+    GameTooltip:SetOwner(row, "ANCHOR_RIGHT")
+    if kind == "head" then
+        GameTooltip:AddLine("Soulstones")
+        GameTooltip:AddLine("Who carries a soulstone and for how long, then each warlock's own stone: ready, on cooldown, or none in the bags.", 1, 1, 1, true)
+        GameTooltip:AddLine("Read from everyone's buffs, so it works for players without the addon. /hst soul hides this part.", 0.6, 0.6, 0.6, true)
+    elseif m then
+        local r, g, b = ClassColor(m.class)
+        GameTooltip:AddLine(m.name, r, g, b)
+        if kind == "holder" then
+            local text = ns.Group.DescribeSoul(m)
+            if text then GameTooltip:AddLine("Has a " .. text .. ".", 1, 1, 1, true) end
+            if row.dead then
+                GameTooltip:AddLine("Dead: can use it to come back to life.", COLOR.canRes[1], COLOR.canRes[2], COLOR.canRes[3], true)
+            end
+        else
+            local text = ns.Group.DescribeSoulStone(m)
+            GameTooltip:AddLine(text:sub(1, 1):upper() .. text:sub(2) .. ".", 1, 1, 1, true)
+        end
+    end
     GameTooltip:Show()
 end
 
@@ -130,11 +164,10 @@ local function StopMove()
     UI.ApplyLayout()
 end
 
-local function MakeRow(i)
+-- A line of the window: icon, name on the left, state on the right.
+local function NewRow()
     local row = CreateFrame("Button", nil, frame)
     row:SetHeight(ROW_H)
-    row:SetPoint("TOPLEFT", frame, "TOPLEFT", PAD, -(PAD + TITLE_H + (i - 1) * ROW_H))
-    row:SetPoint("TOPRIGHT", frame, "TOPRIGHT", -PAD, -(PAD + TITLE_H + (i - 1) * ROW_H))
 
     local hl = row:CreateTexture(nil, "HIGHLIGHT")
     hl:SetAllPoints(row)
@@ -161,14 +194,100 @@ local function MakeRow(i)
     row:RegisterForDrag("LeftButton")
     row:SetScript("OnDragStart", StartMove)
     row:SetScript("OnDragStop", StopMove)
-    row:SetScript("OnEnter", RowTooltip)
     row:SetScript("OnLeave", HideTooltip)
+    row:Hide()
+    return row
+end
+
+-- top = distance from the top of the window
+local function PlaceRow(row, top)
+    row:ClearAllPoints()
+    row:SetPoint("TOPLEFT", frame, "TOPLEFT", PAD, -top)
+    row:SetPoint("TOPRIGHT", frame, "TOPRIGHT", -PAD, -top)
+end
+
+local function MakeRow(i)
+    local row = NewRow()
+    PlaceRow(row, PAD + TITLE_H + (i - 1) * ROW_H)
+    row:SetScript("OnEnter", RowTooltip)
     row:SetScript("OnClick", function(self)
         if ns.isWarlock and ns.db.clickTrade and self.member then ns.Safe(ns.Trade.Offer, self.member) end
     end)
-    row:Hide()
     rows[i] = row
     return row
+end
+
+local function MakeSoulRow(i)
+    local row = NewRow()
+    row:SetScript("OnEnter", SoulTooltip)
+    soulRows[i] = row
+    return row
+end
+
+-- What the right-hand column says for a warlock's own soulstone.
+local function SoulStoneText(m)
+    local st, left = ns.Group.SoulStatus(m)
+    if st == "ready" then return "ready", COLOR.has, true end
+    if st == "cooldown" then return "cd " .. ns.Clock(left), COLOR.cooling, false end
+    if st == "nostone" then return "no stone", COLOR.used, false end
+    return "?", COLOR.unknown, false
+end
+
+-- The soulstone part under the list: a heading, who carries one, then the
+-- warlocks. Returns the height it took.
+local function DrawSouls(top)
+    local G = ns.Group
+    local holders = ns.db.soul and G.SoulHolders() or {}
+    local locks = ns.db.soul and G.SoulWarlocks() or {}
+    local used = 0
+    if #holders > 0 or #locks > 0 then
+        local function line(kind, m)
+            used = used + 1
+            local row = soulRows[used] or MakeSoulRow(used)
+            PlaceRow(row, top + SOUL_GAP + (used - 1) * ROW_H)
+            row.kind, row.member, row.dead = kind, m, false
+            if m then
+                local r, g, b = ClassColor(m.class)
+                row.name:SetText(m.name)
+                row.name:SetTextColor(r, g, b)
+            end
+            row.icon:SetDesaturated(false)
+            row.icon:SetAlpha(1)
+            row:Show()
+            return row
+        end
+
+        local head = line("head")
+        head.icon:SetTexture(ns.SOUL_ICON)
+        head.name:SetText("Soulstones")
+        head.name:SetTextColor(COLOR.gold[1], COLOR.gold[2], COLOR.gold[3])
+        local c = (#holders > 0) and COLOR.has or COLOR.none
+        head.state:SetText((#holders > 0) and (#holders .. " up") or "none up")
+        head.state:SetTextColor(c[1], c[2], c[3])
+
+        for _, h in ipairs(holders) do
+            local row = line("holder", h.m)
+            row.dead = h.dead and true or false
+            row.icon:SetTexture(ns.SOUL_ICON)
+            local color = (h.dead and COLOR.canRes) or (h.left < 300 and COLOR.cooling) or COLOR.has
+            row.state:SetText(h.dead and "can res" or ns.Clock(h.left))
+            row.state:SetTextColor(color[1], color[2], color[3])
+        end
+        for _, m in ipairs(locks) do
+            local row = line("warlock", m)
+            local text, color, ready = SoulStoneText(m)
+            row.icon:SetTexture(SOUL_ITEM_ICON)
+            row.icon:SetDesaturated(not ready)
+            row.icon:SetAlpha(ready and 1 or 0.4)
+            row.state:SetText(text)
+            row.state:SetTextColor(color[1], color[2], color[3])
+        end
+    end
+    for i = used + 1, #soulRows do
+        soulRows[i].member, soulRows[i].kind = nil, nil
+        soulRows[i]:Hide()
+    end
+    return used > 0 and (SOUL_GAP + used * ROW_H) or 0
 end
 
 function UI.ApplyLayout()
@@ -294,6 +413,7 @@ function UI.Refresh()
         note:Hide()
     end
 
-    frame:SetHeight(PAD * 2 + TITLE_H + lines * ROW_H)
+    local soulHeight = DrawSouls(PAD + TITLE_H + lines * ROW_H)
+    frame:SetHeight(PAD * 2 + TITLE_H + lines * ROW_H + soulHeight)
     if not frame:IsShown() then frame:Show() end
 end

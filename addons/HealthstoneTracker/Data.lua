@@ -27,6 +27,17 @@ ns.USE_SPELLS = {
     [11732] = 5, [23476] = 5, [23477] = 5,
 }
 
+-- Soulstones. A warlock uses the item on a player, who then carries the
+-- "Soulstone Resurrection" buff for half an hour; the item has a half-hour cooldown.
+ns.SOUL_COOLDOWN = 1800
+ns.SOUL_DURATION = 1800
+ns.SOUL_ICON = "Interface\\Icons\\Spell_Shadow_SoulGem"
+ns.SOUL_ITEMS = { [5232] = 1, [16892] = 2, [16893] = 3, [16895] = 4, [16896] = 5 }
+-- [spellID] = rank: cast by using the item, and the buff it leaves
+ns.SOUL_SPELLS = { [20707] = 1, [20762] = 2, [20763] = 3, [20764] = 4, [20765] = 5 }
+-- cast by a dead player who takes the resurrection
+ns.SOUL_REZ = { [3026] = true, [20758] = true, [20759] = true, [20760] = true, [20761] = true }
+
 -- Short label shown in the list. Rank 0 = a healthstone this file doesn't know.
 ns.RANK_LABEL = { [0] = "has one", "Minor", "Lesser", "Regular", "Greater", "Major" }
 
@@ -70,6 +81,43 @@ function ns.IsStoneSpell(spellID)
         end
     end
     spellCache[spellID] = cached
+    return cached
+end
+
+-- Soulstone items and spells, with the same fallback by name for unlisted ranks.
+local soulItemCache = {}
+function ns.IsSoulItem(itemID)
+    if ns.SOUL_ITEMS[itemID] then return true end
+    local cached = soulItemCache[itemID]
+    if cached ~= nil then return cached end
+    cached = false
+    if C_Item and C_Item.GetItemSpell then
+        local ok, spellName, spellID = pcall(C_Item.GetItemSpell, itemID)
+        if not ok or issecret(spellName) or issecret(spellID) then return false end
+        if (type(spellID) == "number" and ns.SOUL_SPELLS[spellID]) or spellName == "Soulstone Resurrection" then
+            cached = true
+            if type(spellID) == "number" and not ns.SOUL_SPELLS[spellID] then ns.SOUL_SPELLS[spellID] = 0 end
+        end
+    end
+    soulItemCache[itemID] = cached
+    return cached
+end
+
+local soulSpellCache = {}
+function ns.IsSoulSpell(spellID)
+    if ns.SOUL_SPELLS[spellID] then return true end
+    local cached = soulSpellCache[spellID]
+    if cached ~= nil then return cached end
+    cached = false
+    if C_Spell and C_Spell.GetSpellName then
+        local ok, name = pcall(C_Spell.GetSpellName, spellID)
+        if not ok or issecret(name) then return false end
+        if name == "Soulstone Resurrection" then
+            cached = true
+            ns.SOUL_SPELLS[spellID] = 0
+        end
+    end
+    soulSpellCache[spellID] = cached
     return cached
 end
 

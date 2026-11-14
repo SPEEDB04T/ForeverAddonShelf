@@ -11,7 +11,9 @@ ns.Group = G
 
 local PREFIX = "HSTracker"
 
-G.members = {}      -- [name] = { name, unit, class, subgroup, isPlayer, hasAddon, version, item, count, cdEnd, seen, demo }
+G.members = {}      -- [name] = { name, unit, class, subgroup, isPlayer, hasAddon, version, item, count, cdEnd, seen, demo,
+                    --            soul = { expires, by, setAt } (the soulstone buff on them),
+                    --            soulItem, soulCount, soulCdEnd (a warlock's own soulstone) }
 G.byUnit = {}       -- unit token -> name
 G.grouped = false
 G.warlocks = 0
@@ -127,14 +129,18 @@ end
 local DEMO = {
     { name = "Demo Mage",    class = "MAGE",    hasAddon = true, item = 9421, count = 1 },
     { name = "Demo Warrior", class = "WARRIOR", hasAddon = true, count = 0 },
-    { name = "Demo Priest",  class = "PRIEST",  given = 240 },
+    { name = "Demo Priest",  class = "PRIEST",  given = 240, soul = 1130 },
     { name = "Demo Rogue",   class = "ROGUE",   used = 35 },
     { name = "Demo Hunter",  class = "HUNTER" },
+    { name = "Demo Warlock", class = "WARLOCK", hasAddon = true, item = 9421, count = 1, soulCd = 1130 },
 }
 
 local function DemoMember(d)
     local m = { name = d.name, class = d.class, subgroup = 1, demo = true,
                 hasAddon = d.hasAddon, version = d.hasAddon and ns.VERSION or nil, item = d.item, count = d.count }
+    if d.hasAddon then m.soulCount = 0 end
+    if d.soulCd then m.soulCdEnd = GetTime() + d.soulCd end
+    if d.soul then m.soul = { expires = GetTime() + d.soul, by = "Demo Warlock" } end
     if d.given then m.seen = { givenAt = time() - d.given, givenBy = ns.playerName or "a warlock", givenItem = 9421 } end
     if d.used then
         m.seen = { usedAt = time() - d.used }
@@ -226,6 +232,7 @@ function G.Rebuild()
         if me then me.seen = nil end
     end
     G.grouped = grouped
+    G.scanAll = true        -- look at everyone's buffs for a soulstone
     ns.dirty = true
 end
 
@@ -262,6 +269,231 @@ local function RecordGift(m, by, item)
 end
 
 ----------------------------------------------------------------------
+-- Soulstones
+----------------------------------------------------------------------
+-- Who carries the "Soulstone Resurrection" buff is read from the buffs of
+-- everyone in the group, so it works for players without the addon. Players
+-- with the addon also report their own buff, and a warlock with the addon
+-- says who they used it on, for the moments the game hides buffs from addons.
+local SOUL_NAME = "Soulstone Resurrection"
+local dirtyUnits = {}
+local soulScanIn = 0
+
+local function AurasLocked()
+    local f = C_Secrets and C_Secrets.ShouldAurasBeSecret
+    if type(f) ~= "function" then return false end
+    local ok, v = pcall(f)
+    return (not ok) or issecret(v) or v == true
+end
+
+local function AuraDetails(aura)
+    local exp, src = aura.expirationTime, aura.sourceUnit
+    local by
+    if not issecret(src) and type(src) == "string" then by = FullUnitName(src) end
+    if issecret(exp) or type(exp) ~= "number" or exp <= GetTime() then exp = nil end
+    return true, exp, by
+end
+
+-- Is the soulstone buff on this unit? Returns true (with when it runs out and
+-- who cast it, where the game says), false, or nil when it can't be told.
+local function ReadSoulAura(unit)
+    local UA = C_UnitAuras
+    if not UA then return nil end
+    -- asking by spell works even while buffs are hidden from addons
+    if UA.GetUnitAuraBySpellID then
+        for id in pairs(ns.SOUL_SPELLS) do
+            local ok, aura = pcall(UA.GetUnitAuraBySpellID, unit, id)
+            if ok and not issecret(aura) and type(aura) == "table" then return AuraDetails(aura) end
+        end
+    end
+    if AurasLocked() or not UA.GetAuraDataByIndex then return nil end
+    local seen = 0
+    for i = 1, 60 do
+        local ok, aura = pcall(UA.GetAuraDataByIndex, unit, i, "HELPFUL")
+        if not ok or issecret(aura) then return nil end
+        if type(aura) ~= "table" then break end
+        local id, name = aura.spellId, aura.name
+        if issecret(id) or issecret(name) then return nil end
+        seen = seen + 1
+        if (type(id) == "number" and ns.SOUL_SPELLS[id]) or name == SOUL_NAME then
+            return AuraDetails(aura)
+        end
+    end
+    -- no buffs at all usually means they can't be read (out of sight), not that
+    -- the player has none; only the player's own are always there to read
+    if seen == 0 and unit ~= "player" then return nil end
+    return false
+end
+
+local function InSight(m)
+    if m.isPlayer then return true end
+    if not m.unit then return false end
+    if UnitIsConnected then
+        local ok, on = pcall(UnitIsConnected, m.unit)
+        if not ok or issecret(on) or not on then return false end
+    end
+    if UnitIsVisible then
+        local ok, v = pcall(UnitIsVisible, m.unit)
+        if not ok or issecret(v) or not v then return false end
+    end
+    return true
+end
+
+local function ScanSoul(m, now)
+    if m.demo then return end
+    local unit = m.isPlayer and "player" or m.unit
+    if not unit then return end
+    local found, exp, by = ReadSoulAura(unit)
+    if found == nil then return end
+    local s = m.soul
+    local changed = false
+    if found then
+        if not s then
+            s = { expires = exp or (now + ns.SOUL_DURATION) }
+            m.soul = s
+            changed = true
+            -- a cast just seen names the warlock when the buff itself does not
+            local cast = G.lastSoulCast
+            if not by and cast and now - cast.at < 6 then by = cast.name end
+        elseif exp and math.abs(exp - s.expires) > 2 then
+            s.expires = exp
+            changed = true
+        end
+        if by then s.by = by end
+    elseif s and InSight(m) then
+        if now - (s.setAt or 0) > 5 then
+            m.soul = nil
+            changed = true
+        else
+            -- just told about it: the buff may not be there to read yet, look again shortly
+            G.rescanAt = (s.setAt or now) + 5.5
+        end
+    end
+    if changed then
+        ns.dirty = true
+        if m.isPlayer then G.MarkState(false) end
+    end
+end
+
+function G.OnUnitAura(unit)
+    if issecret(unit) or type(unit) ~= "string" then return end
+    if unit == "player" or G.byUnit[unit] then dirtyUnits[unit] = true end
+end
+
+local function MemberOfUnit(unit)
+    local name = (unit == "player") and ns.playerName or G.byUnit[unit]
+    return name and G.members[name]
+end
+
+-- Once a second: the units whose buffs changed, and everyone now and then.
+local function ScanSouls(now)
+    soulScanIn = soulScanIn - 1
+    if G.rescanAt and now >= G.rescanAt then
+        G.rescanAt = nil
+        G.scanAll = true
+    end
+    if G.scanAll or soulScanIn <= 0 then
+        G.scanAll = false
+        soulScanIn = 10
+        for unit in pairs(dirtyUnits) do dirtyUnits[unit] = nil end
+        for _, m in pairs(G.members) do ScanSoul(m, now) end
+        return
+    end
+    for unit in pairs(dirtyUnits) do
+        dirtyUnits[unit] = nil
+        local m = MemberOfUnit(unit)
+        if m then ScanSoul(m, now) end
+    end
+end
+
+local function IsDead(m)
+    if m.demo or not UnitIsDead then return false end
+    local unit = m.isPlayer and "player" or m.unit
+    if not unit then return false end
+    local ok, dead = pcall(UnitIsDead, unit)
+    return ok and not issecret(dead) and dead and true or false
+end
+
+-- Players carrying a soulstone, the one running out first on top:
+-- { { m = member, left = seconds, dead = true when they can use it now }, ... }
+function G.SoulHolders()
+    local now, list = GetTime(), {}
+    for _, m in pairs(G.members) do
+        local s = m.soul
+        if s and s.expires > now then
+            list[#list + 1] = { m = m, left = s.expires - now, dead = IsDead(m) }
+        end
+    end
+    table.sort(list, function(a, b)
+        if a.left ~= b.left then return a.left < b.left end
+        return a.m.name < b.m.name
+    end)
+    return list
+end
+
+function G.SoulWarlocks()
+    local list = {}
+    for _, m in pairs(G.members) do
+        if m.class == "WARLOCK" then list[#list + 1] = m end
+    end
+    table.sort(list, function(a, b) return a.name < b.name end)
+    return list
+end
+
+-- A warlock's own soulstone, and the seconds left on its cooldown:
+--   "ready"     has one and can use it
+--   "cooldown"  used one less than half an hour ago
+--   "nostone"   off cooldown but carries none (they can make one)
+--   "unknown"   no addon (or an older one) and no use seen
+function G.SoulStatus(m)
+    local src = m.isPlayer and ns.me or m
+    local now = GetTime()
+    if src.soulCdEnd and src.soulCdEnd > now then return "cooldown", src.soulCdEnd - now end
+    if m.isPlayer or (m.hasAddon and src.soulCount) then
+        return ((src.soulCount or 0) > 0) and "ready" or "nostone"
+    end
+    return "unknown"
+end
+
+function G.DescribeSoul(m)
+    local s = m.soul
+    if not s or s.expires <= GetTime() then return nil end
+    return ("soulstone%s, %s left"):format(s.by and (" from " .. tostring(s.by)) or "", ns.Clock(s.expires - GetTime()))
+end
+
+function G.DescribeSoulStone(m)
+    local st, left = G.SoulStatus(m)
+    if st == "ready" then return "soulstone ready to use", st end
+    if st == "cooldown" then return "soulstone on cooldown for " .. ns.Clock(left), st end
+    if st == "nostone" then return "no soulstone in the bags (can make one)", st end
+    return "soulstone not known (no addon, or an older version)", st
+end
+
+-- One line of plain text for chat.
+function G.SoulLine()
+    local holders = G.SoulHolders()
+    if #holders > 0 then
+        local parts = {}
+        for i, h in ipairs(holders) do
+            parts[i] = ("%s (%d min)"):format(h.m.name, math.max(1, math.floor(h.left / 60 + 0.5)))
+        end
+        return "Soulstone on: " .. table.concat(parts, ", ") .. "."
+    end
+    local ready, soonest, who = {}, nil, nil
+    for _, m in ipairs(G.SoulWarlocks()) do
+        local st, left = G.SoulStatus(m)
+        if st == "ready" or st == "nostone" then
+            ready[#ready + 1] = m.name
+        elseif st == "cooldown" and (not soonest or left < soonest) then
+            soonest, who = left, m.name
+        end
+    end
+    if #ready > 0 then return "No soulstone up. Off cooldown: " .. table.concat(ready, ", ") .. "." end
+    if who then return ("No soulstone up. Next: %s in %d min."):format(who, math.max(1, math.ceil(soonest / 60))) end
+    return "No soulstone up."
+end
+
+----------------------------------------------------------------------
 -- Sending
 ----------------------------------------------------------------------
 local function AddonChannel()
@@ -293,11 +525,15 @@ local function Enqueue(msg)
     queue[#queue + 1] = msg
 end
 
--- "S;version;itemID;count;cooldown seconds left"
+-- "S;version;itemID;count;cooldown seconds left;soulstone itemID;count;cooldown
+-- seconds left;seconds left on the soulstone buff on me". Version 1.0.0 sends
+-- and reads only the first five fields.
 local function StateMessage()
-    local me = ns.me
-    local cd = me.cdEnd and math.max(0, math.ceil(me.cdEnd - GetTime())) or 0
-    return ("S;%s;%d;%d;%d"):format(ns.VERSION, me.item or 0, me.count or 0, cd)
+    local me, now = ns.me, GetTime()
+    local function left(t) return (t and t > now) and math.min(3600, math.ceil(t - now)) or 0 end
+    local mine = ns.playerName and G.members[ns.playerName]
+    return ("S;%s;%d;%d;%d;%d;%d;%d;%d"):format(ns.VERSION, me.item or 0, me.count or 0, left(me.cdEnd),
+        me.soulItem or 0, me.soulCount or 0, left(me.soulCdEnd), left(mine and mine.soul and mine.soul.expires))
 end
 
 -- One message a second at most: a request first, then the player's state,
@@ -354,6 +590,40 @@ function G.NoteGave(name, item)
     end
 end
 
+-- The player used their soulstone, on `target` when the game said who.
+function G.PlayerSoulstoned(target)
+    local now = GetTime()
+    G.MarkState(false)
+    G.scanAll = true
+    ns.dirty = true
+    local m = target and G.members[target]
+    if not m or m.demo then return end
+    m.soul = { expires = now + ns.SOUL_DURATION, by = ns.playerName, setAt = now }
+    Enqueue(("R;%s;%d"):format(Qualified(m.name), ns.SOUL_DURATION))
+end
+
+-- Someone else in the group was seen using a soulstone on somebody.
+function G.ObserveSoulCast(unit)
+    local m = MemberOfUnit(unit)
+    if not m or m.isPlayer then return end
+    local now = GetTime()
+    if m.lastSoulCast and now - m.lastSoulCast < 1 then return end      -- reported as raidN and partyN
+    m.lastSoulCast = now
+    m.soulCdEnd = now + ns.SOUL_COOLDOWN
+    G.lastSoulCast = { name = m.name, at = now }
+    G.scanAll = true        -- the buff shows who got it
+    ns.dirty = true
+end
+
+-- A dead player took the resurrection: their soulstone is spent.
+function G.ObserveSoulRez(unit)
+    local m = MemberOfUnit(unit)
+    if not m or not m.soul then return end
+    m.soul = nil
+    if m.isPlayer then G.MarkState(false) end
+    ns.dirty = true
+end
+
 ----------------------------------------------------------------------
 -- Receiving
 ----------------------------------------------------------------------
@@ -375,9 +645,32 @@ function G.OnAddonMessage(prefix, text, channel, sender)
         m.item = item > 0 and item or nil
         m.count = count
         m.cdEnd = cd > 0 and (GetTime() + cd) or nil
+        -- soulstone fields, from version 1.1.0 on
+        local sItem, sCount, sCd, buff = Int(f[6], 0, 9999999), Int(f[7], 0, 200), Int(f[8], 0, 3600), Int(f[9], 0, 3600)
+        if sItem and sCount and sCd and buff then
+            local now = GetTime()
+            m.soulItem = sItem > 0 and sItem or nil
+            m.soulCount = sCount
+            m.soulCdEnd = sCd > 0 and (now + sCd) or nil
+            if buff > 0 then
+                if m.soul then m.soul.expires = now + buff else m.soul = { expires = now + buff } end
+            elseif m.soul and now - (m.soul.setAt or 0) > 5 then
+                m.soul = nil
+            end
+        end
         ns.dirty = true
     elseif kind == "Q" then
         G.MarkState(true)
+    elseif kind == "R" then
+        -- a warlock used their soulstone on someone
+        local target = Norm(f[2])
+        local tm = target and G.members[target]
+        local left = Int(f[3], 1, 3600)
+        if not tm or tm.demo or not left or m.class ~= "WARLOCK" then return end
+        local now = GetTime()
+        tm.soul = { expires = now + left, by = from, setAt = now }
+        if tm.isPlayer then G.MarkState(false) end
+        ns.dirty = true
     elseif kind == "G" then
         local target = Norm(f[2])
         local tm = target and G.members[target]
@@ -432,10 +725,12 @@ function G.Announce()
     end
     if #need == 0 and #unknown == 0 then
         pcall(send, "Healthstones: everyone has one.", channel)
-        return
     end
     if #need > 0 then SendNames(send, channel, "Need a healthstone: ", need) end
     if #unknown > 0 then SendNames(send, channel, "Healthstone not known (no addon): ", unknown) end
+    if ns.db.soul and (G.warlocks > 0 or #G.SoulHolders() > 0) then
+        pcall(send, G.SoulLine(), channel)
+    end
 end
 
 ----------------------------------------------------------------------
@@ -444,11 +739,21 @@ end
 function G.Tick(now)
     for _, m in pairs(G.members) do
         if m.cdEnd and m.cdEnd <= now then m.cdEnd = nil end
+        if m.soulCdEnd and m.soulCdEnd <= now then m.soulCdEnd = nil end
+        if m.soul and m.soul.expires <= now then
+            m.soul = nil
+            if m.isPlayer then G.MarkState(false) end
+        end
     end
     if ns.me.cdEnd and ns.me.cdEnd <= now then
         ns.me.cdEnd = nil
         G.MarkState(false)
     end
+    if ns.me.soulCdEnd and ns.me.soulCdEnd <= now then
+        ns.me.soulCdEnd = nil
+        G.MarkState(false)
+    end
+    if G.grouped then ScanSouls(now) end
     Flush(now)
 end
 
@@ -491,5 +796,12 @@ function G.PrintStatus()
     for _, m in ipairs(G.SortedMembers()) do
         local who = (m.isPlayer and "you") or (m.hasAddon and ("addon " .. tostring(m.version))) or "no addon"
         ns.Print(("  %s (%s): %s"):format(m.name, who, (G.Describe(m))))
+    end
+    ns.Print(G.SoulLine())
+    for _, h in ipairs(G.SoulHolders()) do
+        ns.Print(("  %s: %s%s"):format(h.m.name, G.DescribeSoul(h.m) or "", h.dead and " (dead: can use it)" or ""))
+    end
+    for _, m in ipairs(G.SoulWarlocks()) do
+        ns.Print(("  %s's stone: %s"):format(m.name, (G.DescribeSoulStone(m))))
     end
 end
