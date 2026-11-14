@@ -1,5 +1,9 @@
 # Changelog
 
+## 1.2.1
+
+- Fixed: healthstone and soulstone states were not shared with the group on ordinary realms. The addon read a realm setting ("this realm blocks addon messages") that has nothing to do with messages inside a group, and sent nothing. It now sends, and `/hst status` shows the game's answer if a message is ever refused.
+
 ## 1.2.0
 
 Options window and minimap button.
