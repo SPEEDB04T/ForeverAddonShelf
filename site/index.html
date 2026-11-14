@@ -152,7 +152,6 @@ code { font-family: var(--font-mono); font-size: 13px; background: var(--surface
       </li>
       <li>Restart the game, or log out to character select, and tick the addon in the AddOns list.</li>
       <li>To update, download again and overwrite the old folder. Your settings are kept.</li>
-      <li>Using WowUp? Choose "Install from URL" and paste the addon's GitHub link, and it will update by itself.</li>
     </ol>
   </section>
 </div>
@@ -252,9 +251,9 @@ code { font-family: var(--font-mono); font-size: 13px; background: var(--surface
         end.appendChild(el("span"));
       }
       const dl = el("div", "dl");
-      if (a.repo) {
-        const src = el("a", "src", "GitHub");
-        src.href = "https://github.com/" + a.repo;
+      if (a.sourceUrl) {
+        const src = el("a", "src", "Source");
+        src.href = a.sourceUrl;
         src.target = "_blank"; src.rel = "noopener";
         dl.appendChild(src);
       }
