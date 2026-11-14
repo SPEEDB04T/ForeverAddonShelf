@@ -1,5 +1,16 @@
 # Changelog
 
+## 1.1.0
+
+- Options window: `/totems config`, a right-click on the minimap button, or Options > AddOns. Every bar, warning and plan setting is there, including when a timer turns yellow, which had no command before.
+- Minimap button on shamans: left-click opens the group plan, right-click opens the options, drag moves it. `/totems minimap` hides it.
+- The addon is in the addon list next to the minimap.
+- Temporary totems (Fire Nova, Magma, Stoneclaw, Earthbind, Mana Tide, Grounding, Sentry) are no longer treated like buffs to keep up:
+  - Dropping one over your planned totem shows no yellow border, and it does not pulse when it is about to run out. The red missing-totem warning returns once it is gone.
+  - Magma and Sentry are no longer adopted as your plan (the others already were not).
+  - A shaman without the addon who throws one in between still counts as dropping their usual totem, so a double with it stays marked.
+  - Sort it out never gives someone a temporary totem as the one to keep up.
+
 ## 1.0.2
 
 - Totem Council users now tell each other which totems they have down and for how long. The orange `x2` between them no longer depends on the game reporting the other shaman's casts, and it clears as soon as their totem is gone. Both shamans need 1.0.2 for this; with an older version it works as before.

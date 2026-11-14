@@ -2,7 +2,7 @@
 local ADDON, ns = ...
 
 ns.ADDON = ADDON
-ns.VERSION = "1.0.2"
+ns.VERSION = "1.1.0"
 
 -- WoW Forever hides some values from addons in combat ("secret values").
 -- Comparing or indexing one throws, so every API result is checked first.
@@ -25,6 +25,9 @@ ns.ELEMENTS = {
 -- until the real duration has been read from the game once.
 -- stack = true: two of these in one group are not a waste (damage, healing
 -- and utility totems), so they never count as a conflict.
+-- temp = true: dropped for a moment or a situation, not kept up like a buff.
+-- Never adopted as the plan, never counted as what a shaman usually drops,
+-- never handed out by "Sort it out", and no nagging while one is down.
 ns.TOTEMS = {
     -- Earth
     st = { slot = 2, english = "Strength of Earth Totem", short = "Strength of Earth",
@@ -33,16 +36,16 @@ ns.TOTEMS = {
            ids = { 8071, 8154, 8155, 10406, 10407, 10408 }, dur = 120, icon = "Spell_Nature_StoneSkinTotem" },
     tr = { slot = 2, english = "Tremor Totem", short = "Tremor",
            ids = { 8143 }, dur = 120, icon = "Spell_Nature_TremorTotem" },
-    eb = { slot = 2, english = "Earthbind Totem", short = "Earthbind", stack = true,
+    eb = { slot = 2, english = "Earthbind Totem", short = "Earthbind", stack = true, temp = true,
            ids = { 2484 }, dur = 45, icon = "Spell_Nature_StrengthOfEarthTotem02" },
-    sc = { slot = 2, english = "Stoneclaw Totem", short = "Stoneclaw", stack = true,
+    sc = { slot = 2, english = "Stoneclaw Totem", short = "Stoneclaw", stack = true, temp = true,
            ids = { 5730, 6390, 6391, 6392, 10427, 10428 }, dur = 15, icon = "Spell_Nature_StoneClawTotem" },
     -- Fire
     se = { slot = 1, english = "Searing Totem", short = "Searing", stack = true,
            ids = { 3599, 6363, 6364, 6365, 10437, 10438 }, durs = { 30, 35, 40, 45, 50, 55 }, icon = "Spell_Fire_SearingTotem" },
-    mg = { slot = 1, english = "Magma Totem", short = "Magma", stack = true,
+    mg = { slot = 1, english = "Magma Totem", short = "Magma", stack = true, temp = true,
            ids = { 8190, 10585, 10586, 10587 }, dur = 20, icon = "Spell_Fire_SelfDestruct" },
-    fn = { slot = 1, english = "Fire Nova Totem", short = "Fire Nova", stack = true,
+    fn = { slot = 1, english = "Fire Nova Totem", short = "Fire Nova", stack = true, temp = true,
            ids = { 1535, 8498, 8499, 11314, 11315 }, dur = 5, icon = "Spell_Fire_SealOfFire" },
     ft = { slot = 1, english = "Flametongue Totem", short = "Flametongue",
            ids = { 8227, 8249, 10526, 16387 }, dur = 120, icon = "Spell_Nature_GuardianWard" },
@@ -53,7 +56,7 @@ ns.TOTEMS = {
            ids = { 5675, 10495, 10496, 10497 }, dur = 60, icon = "Spell_Nature_ManaRegenTotem" },
     hs = { slot = 3, english = "Healing Stream Totem", short = "Healing Stream", stack = true,
            ids = { 5394, 6375, 6377, 10462, 10463 }, dur = 60, icon = "INV_Spear_04" },
-    mt = { slot = 3, english = "Mana Tide Totem", short = "Mana Tide", stack = true,
+    mt = { slot = 3, english = "Mana Tide Totem", short = "Mana Tide", stack = true, temp = true,
            ids = { 16190, 17354, 17359 }, dur = 12, icon = "Spell_Frost_SummonWaterElemental" },
     pc = { slot = 3, english = "Poison Cleansing Totem", short = "Poison Cleansing",
            ids = { 8166 }, dur = 120, icon = "Spell_Nature_PoisonCleansingTotem" },
@@ -72,9 +75,9 @@ ns.TOTEMS = {
            ids = { 10595, 10600, 10601 }, dur = 120, icon = "Spell_Nature_NatureResistanceTotem" },
     ww = { slot = 4, english = "Windwall Totem", short = "Windwall",
            ids = { 15107, 15111, 15112 }, dur = 120, icon = "Spell_Nature_EarthBind" },
-    gr = { slot = 4, english = "Grounding Totem", short = "Grounding", stack = true,
+    gr = { slot = 4, english = "Grounding Totem", short = "Grounding", stack = true, temp = true,
            ids = { 8177 }, dur = 45, icon = "Spell_Nature_GroundingTotem" },
-    sn = { slot = 4, english = "Sentry Totem", short = "Sentry", stack = true,
+    sn = { slot = 4, english = "Sentry Totem", short = "Sentry", stack = true, temp = true,
            ids = { 6495 }, dur = 300, icon = "Spell_Nature_RemoveCurse" },
 }
 
@@ -199,7 +202,8 @@ function ns.Info(key)
     if def then
         local name, icon = ns.SpellInfo(def.ids[1])
         local info = {
-            key = key, slot = def.slot, stack = def.stack and true or false, short = def.short,
+            key = key, slot = def.slot, stack = def.stack and true or false,
+            temp = def.temp and true or false, short = def.short,
             name = name or def.english,
             icon = icon or ("Interface\\Icons\\" .. def.icon),
         }
@@ -213,7 +217,7 @@ function ns.Info(key)
         name = (l and l.name) or name
         if not name then return nil end
         local info = {
-            key = key, slot = l and l.slot, stack = false, name = name,
+            key = key, slot = l and l.slot, stack = false, temp = false, name = name,
             short = (name:gsub("%s+[Tt]otem.*$", "")),
             icon = (l and l.icon) or icon or QUESTION_MARK,
         }

@@ -350,8 +350,9 @@ function HUD.Update()
             SetBorder(b, ORANGE, slowPulse)
             badge = ("|cffff9a3cx%d|r"):format(#st.overlap + 1)
             attention = true
-        elseif a and ns.inCombat and (a.duration or 0) > 15 and (st.remaining or 0) <= 5 then
-            -- short totems (Fire Nova, Mana Tide, Stoneclaw) would pulse their whole life
+        elseif a and ns.inCombat and not st.temp and (a.duration or 0) > 15 and (st.remaining or 0) <= 5 then
+            -- temporary totems are not there to be refreshed, and short ones
+            -- (Fire Nova, Mana Tide, Stoneclaw) would pulse their whole life
             SetBorder(b, YELLOW, pulse)
         elseif st.state == "offplan" then
             SetBorder(b, YELLOW, 0.55)

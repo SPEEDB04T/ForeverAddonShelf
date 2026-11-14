@@ -1,10 +1,11 @@
 ## Interface: 16001, 16002
 ## Title: Totem Council
 ## Notes: Quiet totem timers and missing-totem warnings, plus a shared group plan that spots overlapping totems and lets shamans settle them together.
-## Version: 1.0.2
+## Version: 1.1.0
 ## SavedVariables: TotemCouncilDB
 ## SavedVariablesPerCharacter: TotemCouncilCharDB
 ## IconTexture: Interface\Icons\Spell_Nature_Windfury
+## AddonCompartmentFunc: TotemCouncil_OnAddonCompartmentClick
 
 Data.lua
 Core.lua
@@ -12,3 +13,5 @@ Group.lua
 Menu.lua
 HUD.lua
 Board.lua
+Kit.lua
+Options.lua

@@ -294,7 +294,8 @@ function G.ObserveCast(unit, spellID)
     local s = m.seen[slot]
     if s and s.key == key and now - s.start < 0.5 then return end   -- same cast reported as raidN and partyN
     m.seen[slot] = { key = key, start = now, expires = now + ns.Duration(key, spellID) }
-    m.habit[slot] = key
+    -- a Grounding or Earthbind thrown in between does not change what they usually keep up
+    if not info.temp then m.habit[slot] = key end
     G.Touch()
 end
 
@@ -613,7 +614,9 @@ function G.Resolve()
             for _, m in ipairs(movers) do
                 local pick
                 for _, key in ipairs(G.KnownList(m, slot)) do
-                    if not taken[key] then
+                    local cand = ns.Info(key)
+                    -- never hand out a temporary totem as the one to keep up
+                    if not taken[key] and cand and not cand.temp then
                         pick = key
                         break
                     end

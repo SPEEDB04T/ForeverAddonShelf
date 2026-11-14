@@ -139,9 +139,6 @@ local function ForgetTotems(afterLoading)
     ns.ReadAllSlots()
 end
 
--- Short or situational totems: dropping one should not make it the plan.
-local NO_ADOPT = { fn = true, sc = true, mt = true, eb = true, gr = true }
-
 -- The player's own cast is always visible, so it keeps the timers going in
 -- places where the totem slots themselves are hidden.
 local function OnPlayerCast(spellID)
@@ -159,7 +156,8 @@ local function OnPlayerCast(spellID)
         name = name or info.name, icon = icon or info.icon,
         start = now, duration = ns.Duration(key, spellID), src = "cast", castAt = now,
     })
-    if ns.db.autoAdopt and not ns.cdb.plan[slot] and not NO_ADOPT[key] then ns.SetPlan(slot, key) end
+    -- a temporary totem (Grounding, Fire Nova, ...) never becomes the plan by being dropped
+    if ns.db.autoAdopt and not ns.cdb.plan[slot] and not info.temp then ns.SetPlan(slot, key) end
     C_Timer.After(0.3, function() ns.Safe(ns.ReadSlot, slot) end)
 end
 
@@ -209,7 +207,12 @@ function ns.SlotStatus(slot)
     local st = { active = a, plan = plan }
     if a then
         st.remaining = a.start + a.duration - GetTime()
-        st.state = (plan and a.key ~= plan) and "offplan" or "ok"
+        -- a temporary totem standing in for the planned one is the player's own
+        -- call: no "different totem" or "about to run out" border for it. The
+        -- missing warning comes back by itself once it is gone.
+        local info = a.key and ns.Info(a.key)
+        st.temp = info and info.temp or false
+        st.state = (plan and a.key ~= plan and not st.temp) and "offplan" or "ok"
     elseif plan then
         st.state = "missing"
     else
@@ -356,6 +359,10 @@ local function Init()
     ns.Safe(ns.Group.Init)
     ns.Safe(ns.HUD.Create)
     ns.Safe(ns.Board.Create)
+    -- Kit.lua and Options.lua are new in 1.1.0. After an update the game only
+    -- loads new files once it has been restarted, so a /reload runs without
+    -- them: everything else must still work.
+    if ns.Options then ns.Safe(ns.Options.Init) end
 
     for ev in pairs(events) do pcall(driver.RegisterEvent, driver, ev) end
     driver:SetScript("OnEvent", function(_, event, ...)
@@ -375,6 +382,36 @@ loader:RegisterEvent("PLAYER_LOGIN")
 loader:SetScript("OnEvent", function() ns.Safe(Init) end)
 
 ----------------------------------------------------------------------
+-- Actions shared by the slash commands, the options window and the minimap button
+----------------------------------------------------------------------
+function ns.ToggleDemo()
+    ns.Group.SetDemo(not ns.Group.demo)
+    ns.Print(ns.Group.demo and "demo on: two pretend shamans joined your group. /totems demo again to remove them." or "demo off.")
+    if ns.Group.demo then ns.Board.Show() end
+end
+
+function ns.ClearPlan()
+    for slot = 1, 4 do ns.cdb.plan[slot] = nil end
+    ns.dirty = true
+    ns.HUD.ApplySecure()
+    ns.Group.BroadcastState()
+    ns.Print("plan cleared.")
+end
+
+function ns.ResetSettings()
+    if InCombatLockdown() then ns.Print("can't reset in combat.") return end
+    local db = ns.db
+    local learned, durations = db.learned, db.durations
+    for k in pairs(db) do db[k] = nil end
+    for k, v in pairs(defaults) do db[k] = type(v) == "table" and {} or v end
+    db.learned, db.durations, db.welcomed = learned, durations, true
+    ns.HUD.RestorePosition()
+    ns.HUD.ApplySecure()
+    if ns.Kit then ns.Kit.RefreshMinimap() end
+    ns.Print("settings reset.")
+end
+
+----------------------------------------------------------------------
 -- Slash commands
 ----------------------------------------------------------------------
 local function OnOff(v) return v and "on" or "off" end
@@ -383,6 +420,8 @@ local function Help()
     ns.Print("commands:")
     ns.Print("  /totems  - show or hide the totem bar")
     ns.Print("  /totems plan  - open the group plan (who drops what, conflicts, sort it out)")
+    ns.Print("  /totems config  - open the options window")
+    ns.Print("  /totems minimap  - show or hide the minimap button")
     ns.Print("  /totems lock | unlock | scale <0.5-2> | fade <0.1-1>")
     ns.Print("  /totems click  - left-click drops the planned totem (" .. OnOff(ns.db.clickCast) .. ")")
     ns.Print("  /totems mouse  - bar reacts to the mouse (" .. OnOff(not ns.db.clickThrough) .. ")")
@@ -423,9 +462,9 @@ SlashCmdList.TOTEMCOUNCIL = function(msg)
     if cmd == "plan" or cmd == "group" or cmd == "council" then
         ns.Board.Toggle()
     elseif cmd == "demo" then
-        ns.Group.SetDemo(not ns.Group.demo)
-        ns.Print(ns.Group.demo and "demo on: two pretend shamans joined your group. /totems demo again to remove them." or "demo off.")
-        if ns.Group.demo then ns.Board.Show() end
+        ns.ToggleDemo()
+    elseif cmd == "config" or cmd == "options" or cmd == "opt" then
+        if ns.Kit then ns.Kit.Open() else ns.Print("the options window appears after you restart the game once (this update added new files).") end
     elseif cmd == "status" then
         Status()
     elseif cmd == "debug" then
@@ -442,6 +481,13 @@ SlashCmdList.TOTEMCOUNCIL = function(msg)
         Help()
     elseif not ns.isShaman then
         ns.Print("the totem bar is for Shamans. /totems plan opens the group plan.")
+    elseif cmd == "minimap" then
+        if ns.Kit then
+            ns.Kit.SetMinimapShown(not ns.Kit.MinimapShown())
+            ns.Print("minimap button " .. OnOff(ns.Kit.MinimapShown()) .. ".")
+        else
+            ns.Print("the minimap button appears after you restart the game once (this update added new files).")
+        end
     elseif cmd == "" then
         if InCombatLockdown() then ns.Print("can't show or hide the bar in combat.") return end
         db.shown = not db.shown
@@ -484,21 +530,11 @@ SlashCmdList.TOTEMCOUNCIL = function(msg)
         db.autoAdopt = not db.autoAdopt
         ns.Print("adopting dropped totems into empty plan slots " .. OnOff(db.autoAdopt))
     elseif cmd == "clear" then
-        for slot = 1, 4 do ns.cdb.plan[slot] = nil end
-        ns.dirty = true
-        ns.HUD.ApplySecure()
-        ns.Group.BroadcastState()
-        ns.Print("plan cleared.")
+        ns.ClearPlan()
     elseif cmd == "reset" then
-        if InCombatLockdown() then ns.Print("can't reset in combat.") return end
-        local learned, durations = db.learned, db.durations
-        for k in pairs(db) do db[k] = nil end
-        for k, v in pairs(defaults) do db[k] = type(v) == "table" and {} or v end
-        db.learned, db.durations, db.welcomed = learned, durations, true
-        ns.HUD.RestorePosition()
-        ns.HUD.ApplySecure()
-        ns.Print("settings reset.")
+        ns.ResetSettings()
     else
         Help()
     end
+    if ns.Kit then ns.Kit.Sync() end    -- an open options window follows what was typed
 end
