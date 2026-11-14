@@ -462,6 +462,14 @@ local function BuildOptions(content)
     end
     y = y - 30
 
+    if ns.Options and ns.Options.Ready() then       -- warlocks only: other classes have no button
+        heading("MINIMAP")
+        check("Show the minimap button",
+            function() return ns.Kit.MinimapShown() end,
+            function(v) ns.Kit.SetMinimapShown(v) end)
+        y = y - 8
+    end
+
     options.hint = UI.Text(content, "GameFontHighlightSmall", C.faint)
     options.hint:SetPoint("TOPLEFT", 0, y)
     options.hint:SetWidth(INNER)

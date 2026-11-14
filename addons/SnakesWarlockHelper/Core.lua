@@ -7,7 +7,7 @@ local ADDON, ns = ...
 
 ns.ADDON = ADDON
 ns.TITLE = "Snakes Warlock Helper"
-ns.VERSION = "1.0.0"
+ns.VERSION = "1.1.0"
 
 local defaults = {
     remind = { armor = true, soullink = true, demon = true, stone = true },
@@ -161,6 +161,10 @@ local function Init()
     ns.State.Enable()
     ns.Strip.Enable()
     driver:SetScript("OnUpdate", OnUpdate)
+    if ns.Kit and ns.Options then       -- minimap button, page under Options > AddOns
+        local ok, err = pcall(ns.Options.Init)  -- (both missing until the first full restart after the update)
+        if not ok then ns.Print("options error: " .. tostring(err)) end
+    end
 end
 
 ns.On("PLAYER_LOGIN", Init)
@@ -172,6 +176,7 @@ local function Help()
     ns.Print("commands:")
     ns.Print("  /swh  - open or close the window")
     ns.Print("  /swh options  - open the options tab")
+    ns.Print("  /swh minimap  - show or hide the minimap button")
     ns.Print("  /swh move  - unlock or lock the reminder icons so you can drag them")
     ns.Print("  /swh school shadow|fire  - which of your spells the demon bonuses count for")
     ns.Print("  /swh dps <number>|auto  - your own dps, or let the addon estimate it")
@@ -193,13 +198,15 @@ local function SetDemo(on)
     end
 end
 
-function SnakesWarlockHelper_Toggle()
+-- The addon's line in the list of addons next to the minimap: left-click the window,
+-- right-click the options tab.
+function SnakesWarlockHelper_Toggle(_, mouseButton)
     if not ns.db then return end
     if not ns.enabled and not ns.demo then
         ns.Print("this character isn't a warlock. /swh demo shows what it looks like.")
         return
     end
-    ns.Panel.Toggle()
+    if mouseButton == "RightButton" then ns.Panel.Open("options") else ns.Panel.Toggle() end
 end
 
 SLASH_SNAKESWARLOCKHELPER1 = "/swh"
@@ -222,6 +229,18 @@ SlashCmdList.SNAKESWARLOCKHELPER = function(msg)
         ns.Panel.Toggle()
     elseif cmd == "options" or cmd == "config" then
         ns.Panel.Open("options")
+    elseif cmd == "minimap" then
+        if not (ns.Kit and ns.Options) then
+            ns.Print("the minimap button appears after you restart the game once (this update added new files, "
+                .. "and /reload does not load those).")
+            return
+        elseif not ns.Options.Ready() then
+            ns.Print("the minimap button is only there on a warlock.")
+            return
+        end
+        ns.Kit.SetMinimapShown(not ns.Kit.MinimapShown())
+        ns.Print("minimap button " .. (ns.Kit.MinimapShown() and "on." or "off."))
+        ns.Panel.Refresh()
     elseif cmd == "move" or cmd == "unlock" or cmd == "lock" then
         if cmd == "move" then ns.db.locked = not ns.db.locked else ns.db.locked = (cmd == "lock") end
         ns.Strip.ApplyLock()

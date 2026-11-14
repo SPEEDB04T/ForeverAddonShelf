@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.1.0 (2026-11-14)
+
+- Minimap button on warlocks: left-click opens or closes the window, right-click opens the Options tab, drag moves it. A tick on the Options tab and `/swh minimap` hide it.
+- Options > AddOns has a Snakes Warlock Helper page that opens the Options tab.
+- In the addon list next to the minimap, a right-click opens the Options tab.
+
 ## 1.0.0 (2026-11-14)
 
 First version.

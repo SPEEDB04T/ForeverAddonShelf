@@ -34,7 +34,8 @@ Not counted: Demonic Brand, mana, and anything a demon does besides damage.
 | Command | What it does |
 | --- | --- |
 | `/swh` | open or close the window |
-| `/swh options` | open the options tab |
+| `/swh options` | open the options tab (also: right-click the minimap button) |
+| `/swh minimap` | show or hide the minimap button |
 | `/swh move` | unlock or lock the reminder icons so you can drag them |
 | `/swh school shadow` / `fire` | which of your spells the demon bonuses count for |
 | `/swh dps 450` / `auto` | your own dps, or let the addon estimate it |
