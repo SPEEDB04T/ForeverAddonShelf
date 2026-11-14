@@ -78,6 +78,12 @@ button:disabled { opacity: .55; cursor: default; }
 button:focus-visible, a.btn:focus-visible, summary:focus-visible, .src:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
 .dl { display: flex; gap: 14px; align-items: center; flex-wrap: wrap; }
 .src { font-size: 13px; color: var(--muted); }
+.quick { display: flex; flex-wrap: wrap; gap: 14px 24px; align-items: center; justify-content: space-between; border: 1px solid var(--line); border-radius: 10px; padding: 18px 20px; background: var(--surface); }
+.quick[hidden] { display: none; }
+.quick-text { display: grid; gap: 6px; max-width: 60ch; }
+.quick-text h2 { font-size: 20px; }
+.quick-text p { margin: 0; }
+.hint { font-size: 13px; color: var(--muted); }
 details { font-size: 14px; }
 summary { cursor: pointer; color: var(--muted); width: fit-content; }
 .changelog { margin: 8px 0 0; padding-left: 14px; border-left: 2px solid var(--line); display: grid; gap: 4px; }
@@ -103,6 +109,15 @@ code { font-family: var(--font-mono); font-size: 13px; background: var(--surface
     <p class="lede">Addons made for our group. This page marks what's new or updated since you last downloaded, so come back and grab updates when you see them.</p>
   </header>
 
+  <section class="quick" id="quick" hidden>
+    <div class="quick-text">
+      <h2>Quick install</h2>
+      <p>One file for Windows. Double-click it: it finds your WoW Forever folder, lets you tick the addons you want, and installs or updates them. Run it again any time to update.</p>
+      <p class="hint">Your browser or Windows may warn about a downloaded script. Choose Keep, then More info → Run anyway.</p>
+    </div>
+    <a class="btn" id="installer" target="_blank" rel="noopener">Download installer</a>
+  </section>
+
   <div class="toolbar">
     <div class="meta" id="built">Loading the shelf…</div>
     <button id="all" class="ghost" disabled>Download all</button>
@@ -116,7 +131,7 @@ code { font-family: var(--font-mono); font-size: 13px; background: var(--surface
   <div class="status" id="status" role="status" aria-live="polite"></div>
 
   <section class="install">
-    <h2>Installing</h2>
+    <h2>Installing by hand</h2>
     <ol>
       <li>Download an addon (or all of them). You get a <code>.zip</code>.</li>
       <li>Unzip it into your WoW Forever AddOns folder so each addon keeps its own folder:
@@ -321,6 +336,7 @@ code { font-family: var(--font-mono); font-size: 13px; background: var(--surface
     }
     $("built").textContent = manifest.addons.length + " addon" + (manifest.addons.length === 1 ? "" : "s") + " · updated " + manifest.built;
     if (manifest.addonsPath) $("addonsPath").textContent = manifest.addonsPath;
+    if (manifest.installerUrl) { $("installer").href = manifest.installerUrl; $("quick").hidden = false; }
     render();
 
     let dl = null;
