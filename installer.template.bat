@@ -719,7 +719,7 @@ $WindowXaml = @'
         <Border CornerRadius="5" Background="#A8000000"/>
         <Border CornerRadius="5" BorderThickness="1" BorderBrush="#000000"/>
         <Border Margin="1" CornerRadius="4.5" BorderThickness="1.5" BorderBrush="{StaticResource Pewter}" Opacity="0.8"/>
-        <ScrollViewer MaxHeight="372" VerticalScrollBarVisibility="Auto" Margin="6" Focusable="False">
+        <ScrollViewer x:Name="RowsScroll" MaxHeight="372" VerticalScrollBarVisibility="Auto" Margin="6" Focusable="False">
           <StackPanel x:Name="RowsPanel"/>
         </ScrollViewer>
       </Grid>
@@ -1237,11 +1237,14 @@ try {
     $S.OfferShortcut = -not (Test-Path -LiteralPath (Get-ShortcutPath)); $S.WantShortcut = $true; $S.ShortOn = $false
     $window = [Windows.Markup.XamlReader]::Parse($WindowXaml)
     Add-Timing 'window parsed'
-    foreach ($n in 'Rock', 'DragZone', 'Plaque', 'FolderText', 'FolderShadow', 'ChangeButton', 'CloseX', 'RowsPanel', 'ShortcutRow', 'ShortTick',
+    foreach ($n in 'Rock', 'DragZone', 'Plaque', 'FolderText', 'FolderShadow', 'ChangeButton', 'CloseX', 'RowsScroll', 'RowsPanel', 'ShortcutRow', 'ShortTick',
         'StatusRow', 'StatusText', 'StatusShadow', 'Cast', 'Bar', 'CastText', 'CastShadow', 'Go', 'CloseButton2') {
         Set-Variable -Name $n -Value $window.FindName($n)
     }
     try { $Rock.Background = New-RockBrush } catch { }
+    # The list grows to show every addon and only scrolls when the screen is too short for them.
+    # 290 = the rest of the window (224) plus some room above and below it.
+    try { $RowsScroll.MaxHeight = [Math]::Max(372, [System.Windows.SystemParameters]::WorkArea.Height - 290) } catch { }
     if ($S.Shared.Icon) { $window.Icon = $S.Shared.Icon; $S.IconSet = $true }
     if ($env:FOREVER_SNAPSHOT) {
         # Far off-screen, out of the taskbar, never focused: a test run must not show up on anyone's desktop.
