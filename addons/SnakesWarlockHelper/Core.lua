@@ -7,7 +7,21 @@ local ADDON, ns = ...
 
 ns.ADDON = ADDON
 ns.TITLE = "Snakes Warlock Helper"
-ns.VERSION = "1.3.0"
+ns.VERSION = "1.3.1"
+
+-- Frames this addon draws itself, for the LookShots helper on the author's machine (it takes one
+-- game screenshot of each the first time it shows). Harmless when LookShots isn't installed.
+-- The minimap button and the Options > AddOns page are the shared kit's; it lists those.
+LookShotsTargets = LookShotsTargets or {}
+LookShotsTargets[ADDON] = {
+    version = ns.VERSION,
+    frames = {
+        { label = "reminder icons", frame = function() return ns.Strip and ns.Strip.frame end },
+        { label = "reminder drag box", frame = function() return ns.Strip and ns.Strip.mover end },
+        { label = "window, demons tab", frame = function() return ns.Panel and ns.Panel.TabFrame("demons") end, pad = 80 },
+        { label = "window, options tab", frame = function() return ns.Panel and ns.Panel.TabFrame("options") end, pad = 80 },
+    },
+}
 
 local defaults = {
     remind = { armor = true, soullink = true, demon = true, stone = true },

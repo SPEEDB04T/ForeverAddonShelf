@@ -116,6 +116,11 @@ function Panel.RestorePosition()
     if Panel.frame then UI.RestorePoint(Panel.frame, "panelPoint", "CENTER", 320, 60) end
 end
 
+-- A tab's content frame once it has been built, else nil.
+function Panel.TabFrame(key)
+    return tabs[key] and tabs[key].content
+end
+
 function Panel.IsShown()
     return Panel.frame ~= nil and Panel.frame:IsShown()
 end

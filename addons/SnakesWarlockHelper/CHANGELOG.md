@@ -1,5 +1,9 @@
 # Changelog
 
+## 1.3.1 (2026-11-14)
+
+- Lists its frames for the author's screenshot helper (LookShots). No change in game for anyone else.
+
 ## 1.3.0 (2026-11-14)
 
 - Restyled closer to the game. Reminder icons are full-size action buttons scaled as one row, with the action bar's gap. They have no coloured border and no glow. A buff that is running out shows its time under the icon, as on the buff frame.
