@@ -1,3 +1,9 @@
+## 1.3.0
+- Looks like part of the game: the frame and the list of other imbues have the game's tooltip look, and the buttons are drawn like the game's own action buttons.
+- The edge round a button is the game's action-button border: green when the imbue is on, yellow when a different one is, red when the weapon has none.
+- An imbue you picked yourself glows like an active action button (it was a small blue corner). The advisor's pick in the list keeps its green edge.
+- Tooltips, chat and the missing-imbue warning use the game's own colours.
+
 ## 1.2.0
 - Other imbues: point at the frame and a list of every imbue you know opens under it, best first, one column per hand. Click one to put it on that hand. The hand keeps using it (its button shows it, with a small blue corner) until you click the green one in the list, which is the advisor's pick.
 - The off hand is worked out for what the main hand really uses, so it follows your own pick.

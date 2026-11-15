@@ -2,7 +2,7 @@
 local ADDON, ns = ...
 
 ns.ADDON = ADDON
-ns.VERSION = "1.2.0"
+ns.VERSION = "1.3.0"
 ns.current = {}   -- [16]/[17] = imbue key currently on that weapon (or nil)
 
 local defaults = {
@@ -58,8 +58,15 @@ ns.IMBUES = {
 ----------------------------------------------------------------------
 -- Helpers / API compatibility (classic-style and retail-style clients)
 ----------------------------------------------------------------------
+-- the name in the shaman class colour, as the game writes class names
+local function PrintPrefix()
+    local c = RAID_CLASS_COLORS and RAID_CLASS_COLORS.SHAMAN
+    local hex = c and c.colorStr or "ff0070dd"
+    return "|c" .. hex .. "Imbue Advisor|r: "
+end
+
 function ns.Print(msg)
-    DEFAULT_CHAT_FRAME:AddMessage("|cff0070ddImbue Advisor|r: " .. tostring(msg))
+    DEFAULT_CHAT_FRAME:AddMessage(PrintPrefix() .. tostring(msg))
 end
 
 function ns.SpellInfo(spell)
@@ -312,7 +319,10 @@ local function WarnMissing()
         local key = ns.UseKey(ns.result, slot)
         if key and not ench[slot].has then
             local name = ns.result.imbues[key].name
-            UIErrorsFrame:AddMessage(("No imbue on %s: use %s"):format(slot == 16 and "main hand" or "off hand", name), 1, 0.3, 0.3)
+            -- red like the game's own error messages
+            local r, g, b = 1.0, 0.125, 0.125
+            if RED_FONT_COLOR and RED_FONT_COLOR.GetRGB then r, g, b = RED_FONT_COLOR:GetRGB() end
+            UIErrorsFrame:AddMessage(("No imbue on %s: use %s"):format(slot == 16 and "main hand" or "off hand", name), r, g, b)
         end
     end
 end

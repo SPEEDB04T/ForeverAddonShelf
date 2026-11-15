@@ -11,14 +11,31 @@ local SLOT_LOWER = { [16] = "main hand", [17] = "off hand" }
 local SLOT_SHORT = { [16] = "MH", [17] = "OH" }
 local MODE_LABEL = { melee = "Melee", tank = "Tank", caster = "Caster", heal = "Healer", pvp = "PvP" }
 
-local COLOR_OK = { 0.2, 0.9, 0.2 }       -- the imbue the button casts is on (also: the advisor's pick in the list)
-local COLOR_WRONG = { 1.0, 0.8, 0.1 }    -- a different imbue is on
-local COLOR_MISSING = { 1.0, 0.15, 0.15 } -- nothing on the weapon
-local COLOR_PICK = { 0.35, 0.7, 1.0 }    -- an imbue you chose yourself
-local COLOR_PLAIN = { 0.22, 0.22, 0.24 } -- any other imbue in the list
+-- The game's own colours (the values after the name are the game's, for a client without one)
+local function GameColor(name, r, g, b)
+    local c = _G[name]
+    if type(c) == "table" and c.GetRGB then return { c:GetRGB() } end
+    return { r, g, b }
+end
+local function Hex(col)
+    return ("|cff%02x%02x%02x"):format(col[1] * 255 + 0.5, col[2] * 255 + 0.5, col[3] * 255 + 0.5)
+end
+local GOLD = GameColor("NORMAL_FONT_COLOR", 1.0, 0.82, 0.0)
+local WHITE = GameColor("HIGHLIGHT_FONT_COLOR", 1.0, 1.0, 1.0)
+local GRAY = GameColor("GRAY_FONT_COLOR", 0.5, 0.5, 0.5)
+local GREEN = GameColor("GREEN_FONT_COLOR", 0.1, 1.0, 0.1)
+local YELLOW = GameColor("YELLOW_FONT_COLOR", 1.0, 1.0, 0.0)
+local RED = GameColor("RED_FONT_COLOR", 1.0, 0.125, 0.125)
+local ORANGE = GameColor("ORANGE_FONT_COLOR", 1.0, 0.5, 0.25)
+local LIGHTBLUE = GameColor("LIGHTBLUE_FONT_COLOR", 0.53, 0.67, 1.0)
 
-local BTN, GAP, PAD = 36, 8, 8
-local ABTN, AGAP = 28, 5                 -- the buttons in the list
+local COLOR_OK = GREEN          -- the imbue the button casts is on (also: the advisor's pick in the list)
+local COLOR_WRONG = YELLOW      -- a different imbue is on
+local COLOR_MISSING = RED       -- nothing on the weapon
+local COLOR_PICK = LIGHTBLUE    -- an imbue you chose yourself (text only; the button glows)
+
+local BTN, GAP, PAD = 36, 10, 10
+local ABTN, AGAP = 28, 7                 -- the buttons in the list
 local MAX_ALTS = #ns.IMBUE_ORDER
 local CLOSE_AFTER = 0.3                  -- seconds off the frame before the list closes
 
@@ -63,30 +80,31 @@ local function OnEnter(self)
     if not res then return end
     local slot = self.slot
     local sr = res.slots[slot]
+    local W, G, P = WHITE, GREEN, COLOR_PICK
     GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
-    GameTooltip:AddLine("Imbue Advisor: " .. SLOT_NAME[slot])
+    GameTooltip:AddLine("Imbue Advisor: " .. SLOT_NAME[slot], GOLD[1], GOLD[2], GOLD[3])
     if self.use and self.picked then
-        GameTooltip:AddDoubleLine("Your pick", self.use.name, 1, 1, 1, COLOR_PICK[1], COLOR_PICK[2], COLOR_PICK[3])
-        if self.rec then GameTooltip:AddDoubleLine("Advisor's pick", self.rec.name, 1, 1, 1, 0.3, 1, 0.3) end
+        GameTooltip:AddDoubleLine("Your pick", self.use.name, W[1], W[2], W[3], P[1], P[2], P[3])
+        if self.rec then GameTooltip:AddDoubleLine("Advisor's pick", self.rec.name, W[1], W[2], W[3], G[1], G[2], G[3]) end
     elseif self.use then
-        GameTooltip:AddDoubleLine("Use", self.use.name, 1, 1, 1, 0.3, 1, 0.3)
+        GameTooltip:AddDoubleLine("Use", self.use.name, W[1], W[2], W[3], G[1], G[2], G[3])
     end
     local e = ns.WeaponEnchants()[slot]
     local cur = ImbueName(ns.current[slot]) or (e.has and "something else" or "none")
-    GameTooltip:AddDoubleLine("On weapon now", cur, 1, 1, 1, 1, 1, 1)
+    GameTooltip:AddDoubleLine("On weapon now", cur, W[1], W[2], W[3], W[1], W[2], W[3])
     GameTooltip:AddLine(" ")
     for _, row in ipairs(ns.Calc.SortedScores(res, sr)) do
-        local r, g, b = 0.8, 0.8, 0.8
+        local col = W
         if row.key == sr.best then
-            r, g, b = 0.3, 1, 0.3
+            col = G
         elseif self.picked and self.use and row.key == self.use.key then
-            r, g, b = COLOR_PICK[1], COLOR_PICK[2], COLOR_PICK[3]
+            col = P
         end
-        GameTooltip:AddDoubleLine(row.name, ScoreText(sr, row), r, g, b, r, g, b)
+        GameTooltip:AddDoubleLine(row.name, ScoreText(sr, row), col[1], col[2], col[3], col[1], col[2], col[3])
     end
     GameTooltip:AddLine(" ")
-    GameTooltip:AddLine(("Mode: %s (%s)"):format(MODE_LABEL[res.mode] or res.mode, res.modeReason), 0.7, 0.7, 0.7)
-    GameTooltip:AddLine("Left-click: apply   Right-click: report in chat", 0.5, 0.8, 1)
+    GameTooltip:AddLine(("Mode: %s (%s)"):format(MODE_LABEL[res.mode] or res.mode, res.modeReason), GRAY[1], GRAY[2], GRAY[3])
+    GameTooltip:AddLine("Left-click: apply   Right-click: report in chat", GRAY[1], GRAY[2], GRAY[3])
     GameTooltip:Show()
 end
 
@@ -102,11 +120,11 @@ local function AltOnEnter(self)
     local inUse = main.use and main.use.key == info.key
     local isBest = sr and sr.best == info.key
     GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
-    GameTooltip:AddLine(info.name)
+    GameTooltip:AddLine(info.name, GOLD[1], GOLD[2], GOLD[3])
     if sr and sr.scores[info.key] then
-        GameTooltip:AddLine(SLOT_NAME[slot] .. ": " .. ScoreText(sr, { key = info.key, value = sr.scores[info.key] }), 0.8, 0.8, 0.8)
+        GameTooltip:AddLine(SLOT_NAME[slot] .. ": " .. ScoreText(sr, { key = info.key, value = sr.scores[info.key] }), WHITE[1], WHITE[2], WHITE[3])
     end
-    if isBest then GameTooltip:AddLine("The advisor's pick", 0.3, 1, 0.3) end
+    if isBest then GameTooltip:AddLine("The advisor's pick", GREEN[1], GREEN[2], GREEN[3]) end
     if inUse and main.picked then GameTooltip:AddLine("Your pick", COLOR_PICK[1], COLOR_PICK[2], COLOR_PICK[3]) end
     local hint
     if inUse then
@@ -116,7 +134,7 @@ local function AltOnEnter(self)
     else
         hint = "Click: put it on your " .. SLOT_LOWER[slot] .. " and keep using it there"
     end
-    GameTooltip:AddLine(hint, 0.5, 0.8, 1, true)
+    GameTooltip:AddLine(hint, GRAY[1], GRAY[2], GRAY[3], true)
     GameTooltip:Show()
 end
 
@@ -160,36 +178,91 @@ local function StopMove()
     end
 end
 
-local function Backdrop(frame)
-    if not frame.SetBackdrop then return end
-    frame:SetBackdrop({
-        bgFile = "Interface\\Tooltips\\UI-Tooltip-Background",
-        edgeFile = "Interface\\Tooltips\\UI-Tooltip-Border",
-        tile = true, tileSize = 16, edgeSize = 12,
-        insets = { left = 3, right = 3, top = 3, bottom = 3 },
-    })
-    frame:SetBackdropColor(0, 0, 0, 0.6)
-    frame:SetBackdropBorderColor(0.25, 0.45, 0.9, 0.9)
+-- A panel with the game's tooltip look (TooltipBackdropTemplate, as GameTooltip draws it).
+-- Clients without that template get the older tooltip border and background files.
+local function NewPanel(name, parent)
+    if TooltipBackdropTemplateMixin then
+        return CreateFrame("Frame", name, parent, "TooltipBackdropTemplate")
+    end
+    local f = CreateFrame("Frame", name, parent, BackdropTemplateMixin and "BackdropTemplate" or nil)
+    if f.SetBackdrop then
+        f:SetBackdrop(BACKDROP_TOOLTIP_16_16_5555 or {
+            bgFile = "Interface\\Tooltips\\UI-Tooltip-Background",
+            edgeFile = "Interface\\Tooltips\\UI-Tooltip-Border",
+            tile = true, tileSize = 16, edgeSize = 16,
+            insets = { left = 5, right = 5, top = 5, bottom = 5 },
+        })
+        local bg = GameColor("TOOLTIP_DEFAULT_BACKGROUND_COLOR", 0.09, 0.09, 0.19)
+        local edge = GameColor("TOOLTIP_DEFAULT_COLOR", 1.0, 1.0, 1.0)
+        f:SetBackdropColor(bg[1], bg[2], bg[3], 1)
+        f:SetBackdropBorderColor(edge[1], edge[2], edge[3], 1)
+    end
+    return f
+end
+
+-- The button art the game gives a small action button that sits off the action bars
+-- (SmallActionButtonTemplate: slot, icon mask, frame, pushed, highlight, border). Its art is
+-- drawn for a 30 px button; k scales it. The template itself is not inherited: its scripts
+-- expect an action-bar slot, and this is a plain secure macro button.
+local function SetArt(t, atlas, w, h, layer, sub)
+    t:SetAtlas(atlas)
+    t:ClearAllPoints()
+    t:SetPoint("TOPLEFT")
+    t:SetSize(w, h)
+    if layer then t:SetDrawLayer(layer, sub or 0) end
 end
 
 local function NewCastButton(name, parent, size)
     local b = CreateFrame("Button", name, parent, "SecureActionButtonTemplate")
     b:SetSize(size, size)
     if UseKeyDown() then b:RegisterForClicks("AnyDown", "AnyUp") else b:RegisterForClicks("AnyUp") end
+    local k = size / 30
 
-    b.border = b:CreateTexture(nil, "BACKGROUND")
-    b.border:SetPoint("TOPLEFT", -2, 2)
-    b.border:SetPoint("BOTTOMRIGHT", 2, -2)
-    b.border:SetColorTexture(unpack(COLOR_MISSING))
+    b.slotBg = b:CreateTexture(nil, "BACKGROUND", nil, -1)
+    b.slotBg:SetAtlas("UI-HUD-ActionBar-IconFrame-Background")
+    b.slotBg:SetAllPoints()
 
-    b.icon = b:CreateTexture(nil, "ARTWORK")
+    b.icon = b:CreateTexture(nil, "BACKGROUND", nil, 1)
     b.icon:SetAllPoints()
-    b.icon:SetTexCoord(0.07, 0.93, 0.07, 0.93)
+    local mask = b.CreateMaskTexture and b:CreateMaskTexture()
+    if mask and b.icon.AddMaskTexture then
+        mask:SetAtlas("UI-HUD-ActionBar-IconFrame-Mask")
+        mask:SetSize(45 * k, 45 * k)
+        mask:SetPoint("CENTER", b.icon, "CENTER")
+        b.icon:AddMaskTexture(mask)
+    else
+        b.icon:SetTexCoord(0.07, 0.93, 0.07, 0.93)
+    end
 
-    b.hl = b:CreateTexture(nil, "HIGHLIGHT")
-    b.hl:SetAllPoints()
-    b.hl:SetColorTexture(1, 1, 1, 0.15)
+    b:SetNormalAtlas("UI-HUD-ActionBar-IconFrame-AddRow")
+    b:SetPushedAtlas("UI-HUD-ActionBar-IconFrame-AddRow-Down")
+    b:SetHighlightAtlas("UI-HUD-ActionBar-IconFrame-Mouseover", "ADD")
+    local normal, pushed, hl = b:GetNormalTexture(), b:GetPushedTexture(), b:GetHighlightTexture()
+    if normal then SetArt(normal, "UI-HUD-ActionBar-IconFrame-AddRow", 35 * k, 35 * k, "OVERLAY") end
+    if pushed then SetArt(pushed, "UI-HUD-ActionBar-IconFrame-AddRow-Down", 35 * k, 35 * k, "OVERLAY") end
+    if hl then SetArt(hl, "UI-HUD-ActionBar-IconFrame-Mouseover", 31.6 * k, 30.9 * k) end
+
+    -- the edge the game puts on an action button whose item is equipped; here its colour says
+    -- whether the imbue is on (green), a different one is on (yellow) or nothing is (red)
+    b.border = b:CreateTexture(nil, "OVERLAY")
+    SetArt(b.border, "UI-HUD-ActionBar-IconFrame-Border", 31.6 * k, 30.9 * k, "OVERLAY", 1)
+    b.border:Hide()
+
+    -- the game's "checked" look (an active stance or toggle): this is the imbue you picked yourself
+    b.pin = b:CreateTexture(nil, "OVERLAY")
+    SetArt(b.pin, "UI-HUD-ActionBar-IconFrame-Mouseover", 31.6 * k, 30.9 * k, "OVERLAY", 2)
+    b.pin:SetBlendMode("ADD")
+    b.pin:Hide()
     return b
+end
+
+local function SetEdge(b, col, alpha)
+    if col then
+        b.border:SetVertexColor(col[1], col[2], col[3], alpha or 1)
+        b.border:Show()
+    else
+        b.border:Hide()
+    end
 end
 
 -- Is the mouse on the frame or on the open list (with a little room around them)?
@@ -218,10 +291,9 @@ end
 
 function UI.Create()
     if UI.frame then return end
-    local template = BackdropTemplateMixin and "BackdropTemplate" or nil
-    local f = CreateFrame("Frame", "ImbueAdvisorFrame", UIParent, template)
+    local f = NewPanel("ImbueAdvisorFrame", UIParent)
     UI.frame = f
-    f:SetSize(PAD * 2 + BTN * 2 + GAP, BTN + 26)
+    f:SetSize(PAD * 2 + BTN * 2 + GAP, BTN + 34)
     f:SetFrameStrata("MEDIUM")
     f:SetClampedToScreen(true)
     f:SetMovable(true)
@@ -229,16 +301,14 @@ function UI.Create()
     f:RegisterForDrag("LeftButton")
     f:SetScript("OnDragStart", StartMove)
     f:SetScript("OnDragStop", StopMove)
-    Backdrop(f)
     f.title = f:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
-    f.title:SetPoint("TOP", f, "TOP", 0, -6)
+    f.title:SetPoint("TOP", f, "TOP", 0, -7)
 
     -- The list of every imbue, best first, one column under each hand's button
-    local list = CreateFrame("Frame", "ImbueAdvisorList", f, template)
+    local list = NewPanel("ImbueAdvisorList", f)
     f.list = list
     list:SetFrameStrata("MEDIUM")
     list:EnableMouse(true)
-    Backdrop(list)
     list:Hide()
     list.rows = 0
 
@@ -250,24 +320,13 @@ function UI.Create()
         b:SetScript("OnDragStart", StartMove)
         b:SetScript("OnDragStop", StopMove)
 
-        b.label = b:CreateFontString(nil, "OVERLAY", "NumberFontNormalSmall")
-        b.label:SetPoint("TOPLEFT", 2, -2)
+        -- where an action button has its key binding and its count
+        b.label = b:CreateFontString(nil, "OVERLAY", "NumberFontNormalSmallGray")
+        b.label:SetPoint("TOPRIGHT", -3, -4)
         b.label:SetText(SLOT_SHORT[slot])
 
         b.timer = b:CreateFontString(nil, "OVERLAY", "NumberFontNormal")
-        b.timer:SetPoint("BOTTOM", 0, 2)
-
-        -- a small blue corner: this hand uses an imbue you chose yourself
-        b.pinEdge = b:CreateTexture(nil, "OVERLAY")
-        b.pinEdge:SetSize(10, 10)
-        b.pinEdge:SetPoint("TOPRIGHT", 2, 2)
-        b.pinEdge:SetColorTexture(0, 0, 0, 1)
-        b.pin = b:CreateTexture(nil, "OVERLAY", nil, 1)
-        b.pin:SetSize(8, 8)
-        b.pin:SetPoint("TOPRIGHT", 1, 1)
-        b.pin:SetColorTexture(COLOR_PICK[1], COLOR_PICK[2], COLOR_PICK[3], 1)
-        b.pinEdge:Hide()
-        b.pin:Hide()
+        b.timer:SetPoint("BOTTOMRIGHT", -3, 2)
 
         b:SetScript("OnEnter", OnEnter)
         b:SetScript("OnLeave", OnLeave)
@@ -324,7 +383,7 @@ function UI.ApplySecure()
         b.use = key and res.imbues[key] or nil
         b.picked = b.use and picked or false
         b.icon:SetTexture(b.use and b.use.icon or nil)
-        if b.picked then b.pin:Show(); b.pinEdge:Show() else b.pin:Hide(); b.pinEdge:Hide() end
+        if b.picked then b.pin:Show() else b.pin:Hide() end
         if b.use then
             b:SetAttribute("type1", "macro")
             b:SetAttribute("macrotext1", CastMacro(b.use, slot))
@@ -363,13 +422,8 @@ function UI.ApplySecure()
                 local info = res.imbues[row.key]
                 a.info = info
                 a.icon:SetTexture(info.icon)
-                local col = COLOR_PLAIN
-                if row.key == sr.best then
-                    col = COLOR_OK
-                elseif row.key == b.use.key then
-                    col = COLOR_PICK
-                end
-                a.border:SetColorTexture(col[1], col[2], col[3], 1)
+                SetEdge(a, row.key == sr.best and COLOR_OK or nil)
+                if b.picked and row.key == b.use.key then a.pin:Show() else a.pin:Hide() end
                 a:SetAttribute("type1", "macro")
                 a:SetAttribute("macrotext1", CastMacro(info, slot))
                 a.index = i
@@ -459,19 +513,17 @@ function UI.UpdateStatus()
         local b = f.buttons[slot]
         if b:IsShown() and b.use then
             local e = ench[slot]
-            local col
             if not e.has then
-                col = COLOR_MISSING
+                SetEdge(b, COLOR_MISSING)
             elseif ns.current[slot] == b.use.key then
-                col = COLOR_OK
+                SetEdge(b, COLOR_OK, 0.8)
             else
-                col = COLOR_WRONG
+                SetEdge(b, COLOR_WRONG)
             end
-            b.border:SetColorTexture(col[1], col[2], col[3], 1)
             if e.has and e.exp then
                 b.timer:SetText(FormatTime(e.exp))
             else
-                b.timer:SetText(e.has and "" or "|cffff4040none|r")
+                b.timer:SetText(e.has and "" or (Hex(RED) .. "none|r"))
             end
         end
     end
@@ -496,12 +548,12 @@ function UI.PrintReport()
                     sr.unit == "dps" and ("%.1f"):format(row.value) or ("p%.0f"):format(row.value))
             end
             local weapon = h and ("%.2fs%s"):format(h.baseSpeed, (slot == 16 and st.twoHand) and " 2H" or "") or "-"
-            ns.Print(("%s (%s): |cff40ff40%s|r   [%s%s]"):format(SLOT_SHORT[slot], weapon,
+            ns.Print(("%s (%s): %s%s|r   [%s%s]"):format(SLOT_SHORT[slot], weapon, Hex(GREEN),
                 res.imbues[sr.best].name, table.concat(parts, ", "), sr.unit == "dps" and " dps" or ""))
             local key, picked = ns.UseKey(res, slot)
             if picked then
-                ns.Print(("   your pick for the %s: |cff59b3ff%s|r  (/imbue advisor goes back)"):format(
-                    SLOT_LOWER[slot], res.imbues[key].name))
+                ns.Print(("   your pick for the %s: %s%s|r  (/imbue advisor goes back)"):format(
+                    SLOT_LOWER[slot], Hex(COLOR_PICK), res.imbues[key].name))
             end
         end
     end
@@ -510,7 +562,7 @@ function UI.PrintReport()
         if not info.params.parsed then fallback[#fallback + 1] = info.name end
     end
     if #fallback > 0 then
-        ns.Print("|cffffaa00couldn't read the tooltip of " .. table.concat(fallback, ", ") ..
+        ns.Print(Hex(ORANGE) .. "couldn't read the tooltip of " .. table.concat(fallback, ", ") ..
             "; using estimated numbers. /imbue debug shows the text.|r")
     end
     if not st.mhWeapon then ns.Print("no main-hand weapon equipped.") end

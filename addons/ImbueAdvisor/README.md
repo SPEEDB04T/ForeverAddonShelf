@@ -12,7 +12,7 @@ Or use the installer on the Forever Addon Shelf (https://github.com/SPEEDB04T/Fo
 
 ## Using another imbue
 
-The buttons cast the imbue the advisor works out. When you want a different one, point at the frame: a list of every imbue you know opens under it, best first, one column per hand. Click one and it goes on that hand, and that hand's button keeps using it (a small blue corner marks it). The green one in the list is the advisor's pick; click it to go back.
+The buttons cast the imbue the advisor works out. When you want a different one, point at the frame: a list of every imbue you know opens under it, best first, one column per hand. Click one and it goes on that hand, and that hand's button keeps using it (it glows, like an active action button). The green one in the list is the advisor's pick; click it to go back.
 
 ## Commands
 

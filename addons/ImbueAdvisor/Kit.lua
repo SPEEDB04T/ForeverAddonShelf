@@ -7,27 +7,35 @@
 --     options, drag: move it), which picks a free spot the first time it appears;
 --   * an options window built from a list of rows (tick boxes, choices, sliders, buttons);
 --   * the same rows as a page under Options > AddOns, when the client has that.
--- Everything is drawn from plain colour textures, so it looks the same on any UI skin, and no
--- Blizzard frame is hooked or changed.
+-- It is drawn with the game's own pieces, laid out like the game's Options rows: the portrait
+-- window (ButtonFrameTemplate), the Settings check box, dropdown and stepper slider, panel
+-- buttons, the game's fonts and font colours. No Blizzard frame is hooked or changed.
+-- Every template piece is looked for before use, so a client (or a test) without one still
+-- gets working rows.
 local ADDON, ns = ...
 local Kit = {}
 ns.Kit = Kit
 
 local floor, max, min = math.floor, math.max, math.min
 
-local C = {
-    bg     = { 0.055, 0.055, 0.075 },
-    raised = { 0.125, 0.125, 0.165 },
-    text   = { 0.93, 0.93, 0.95 },
-    dim    = { 0.68, 0.68, 0.74 },
-    faint  = { 0.47, 0.47, 0.53 },
-    accent = { 0.45, 0.65, 1.00 },      -- replaced by the addon's own colour in Setup
-}
+local function FontColor(c, r, g, b)
+    if type(c) == "table" and type(c.r) == "number" then return { c.r, c.g, c.b } end
+    return { r, g, b }
+end
+local GOLD  = FontColor(NORMAL_FONT_COLOR, 1, 0.82, 0)
+local WHITE = FontColor(HIGHLIGHT_FONT_COLOR, 1, 1, 1)
+local GRAY  = FontColor(GRAY_FONT_COLOR, 0.5, 0.5, 0.5)
+local RED   = FontColor(RED_FONT_COLOR, 1, 0.125, 0.125)
+local accent = GOLD                     -- the addon's own colour, set in Setup; minimap tooltip title only
 
-local WIDTH, PAD = 460, 16
-local INNER = WIDTH - PAD * 2
-local CONTROL_X = 176                   -- where the control of a choice or slider row starts
-local ROW = 24
+local WIDTH = 540                       -- the window
+local INNER = 480                       -- the rows
+local CONTROL_X = 230                   -- where a row's control starts; its label sits left of it
+local LABEL_W = CONTROL_X - 16
+local SLIDER_W = 200
+local ROW = 30
+local MAX_VIEW = 520                    -- taller windows scroll
+local PAGE_VIEW = 470                   -- the same on the Options page, under its title
 
 local spec                              -- what the addon passed to Kit.Setup
 local pages = {}                        -- every built set of rows (the window, the Options page)
@@ -41,6 +49,10 @@ end
 
 local function Num(v)
     if Readable(v) and type(v) == "number" and v == v then return v end
+end
+
+local function Hex(c)
+    return ("|cff%02x%02x%02x"):format(floor(c[1] * 255 + 0.5), floor(c[2] * 255 + 0.5), floor(c[3] * 255 + 0.5))
 end
 
 local function Say(msg)
@@ -60,51 +72,38 @@ local function Run(fn, ...)
     local msg = Readable(a) and tostring(a) or "blocked by a hidden value"
     if not seen[msg] then
         seen[msg] = true
-        Say("|cffff6060options error:|r " .. msg)
+        Say(Hex(RED) .. "options error:|r " .. msg)
     end
     return false
 end
 
+local function Sound(id)
+    if id and PlaySound then pcall(PlaySound, id) end
+end
+
+-- A frame from a Blizzard template, or nil when the client doesn't have it.
+local function FromTemplate(kind, parent, template)
+    local ok, frame = pcall(CreateFrame, kind, nil, parent, template)
+    if ok then return frame end
+end
+
+local function Has(t, key) return type(t) == "table" and type(t[key]) == "table" end
+
 ----------------------------------------------------------------------
--- Flat widgets
+-- Text and tooltips
 ----------------------------------------------------------------------
-local function Fill(parent, layer, c, alpha)
-    local t = parent:CreateTexture(nil, layer or "BACKGROUND")
-    t:SetColorTexture(c[1], c[2], c[3], alpha or 1)
-    return t
-end
-
-local function Border(frame, c, alpha)
-    local sides = {}
-    for _, side in ipairs({ "TOP", "BOTTOM", "LEFT", "RIGHT" }) do
-        local t = Fill(frame, "BORDER", c, alpha)
-        if side == "TOP" or side == "BOTTOM" then
-            t:SetPoint(side .. "LEFT"); t:SetPoint(side .. "RIGHT"); t:SetHeight(1)
-        else
-            t:SetPoint("TOP" .. side); t:SetPoint("BOTTOM" .. side); t:SetWidth(1)
-        end
-        sides[#sides + 1] = t
-    end
-    return sides
-end
-
-local function SetBorder(sides, c, alpha)
-    for _, t in ipairs(sides) do t:SetColorTexture(c[1], c[2], c[3], alpha or 1) end
-end
-
-local function Text(parent, font, c, justify)
-    local fs = parent:CreateFontString(nil, "OVERLAY", font or "GameFontHighlightSmall")
-    c = c or C.text
-    fs:SetTextColor(c[1], c[2], c[3])
-    fs:SetJustifyH(justify or "LEFT")
+local function Text(parent, font)
+    local fs = parent:CreateFontString(nil, "ARTWORK", font)
+    fs:SetJustifyH("LEFT")
     return fs
 end
 
+-- The game's tooltip layout: gold title, white body.
 local function ShowTip(owner, title, body)
     if not (GameTooltip and body) then return end
     GameTooltip:SetOwner(owner, "ANCHOR_RIGHT")
-    GameTooltip:SetText(title or "", 1, 1, 1)
-    GameTooltip:AddLine(body, 0.82, 0.82, 0.86, true)
+    GameTooltip:SetText(title or "", GOLD[1], GOLD[2], GOLD[3])
+    GameTooltip:AddLine(body, WHITE[1], WHITE[2], WHITE[3], true)
     GameTooltip:Show()
 end
 
@@ -112,36 +111,27 @@ local function HideTip()
     if GameTooltip then GameTooltip:Hide() end
 end
 
--- Small filled button. `selected` draws it as the picked one of a group.
-local function Chip(parent, label, onClick)
-    local b = CreateFrame("Button", nil, parent)
-    b.bg = Fill(b, "BACKGROUND", C.raised)
-    b.bg:SetAllPoints()
-    b.border = Border(b, C.accent, 0.3)
-    b.text = Text(b, "GameFontHighlightSmall", C.dim, "CENTER")
-    b.text:SetPoint("CENTER")
-    function b:SetLabel(text)
-        self.text:SetText(text)
-        self:SetSize((Num(self.text:GetStringWidth()) or 40) + 18, 20)
+-- Tooltip on hover, added after any scripts the widget's template already has.
+local function OnHover(widget, title, body)
+    local function enter(self) ShowTip(self, title, body) end
+    if widget.HookScript and widget.GetScript and widget:GetScript("OnEnter") then
+        widget:HookScript("OnEnter", enter)
+        widget:HookScript("OnLeave", HideTip)
+    else
+        widget:SetScript("OnEnter", enter)
+        widget:SetScript("OnLeave", HideTip)
     end
-    function b:SetSelected(on)
-        self.selected = on and true or false
-        local c = on and C.text or C.dim
-        self.text:SetTextColor(c[1], c[2], c[3])
-        self.bg:SetColorTexture(C.raised[1], C.raised[2], C.raised[3], 1)
-        if on then self.bg:SetColorTexture(C.accent[1] * 0.45, C.accent[2] * 0.45, C.accent[3] * 0.45, 1) end
-        SetBorder(self.border, C.accent, on and 0.95 or 0.3)
+end
+
+-- The red panel button, sized to its text. Fit() resizes it for a new text.
+local function PanelButton(parent, label, onClick)
+    local b = CreateFrame("Button", nil, parent, "UIPanelButtonTemplate")
+    function b:Fit(text)
+        self:SetText(text)
+        local w = Num(self.GetTextWidth and self:GetTextWidth()) or #text * 6
+        return max(96, w + 28)
     end
-    b:SetLabel(label)
-    b:SetScript("OnEnter", function(self)
-        self.text:SetTextColor(C.text[1], C.text[2], C.text[3])
-        SetBorder(self.border, C.accent, 0.95)
-        ShowTip(self, self.tipTitle, self.tip)
-    end)
-    b:SetScript("OnLeave", function(self)
-        self:SetSelected(self.selected)
-        HideTip()
-    end)
+    b:SetSize(b:Fit(label), 22)
     b:SetScript("OnClick", function(self) if onClick then onClick(self) end end)
     return b
 end
@@ -149,6 +139,8 @@ end
 ----------------------------------------------------------------------
 -- Rows. Each builder returns the row's frame (with :Sync() when it shows
 -- a setting) and its height. Rows are pinned by their two top corners.
+-- Like the game's Options rows: a gold label on the left, the control to
+-- its right at CONTROL_X.
 ----------------------------------------------------------------------
 local build = {}
 
@@ -164,122 +156,170 @@ local function Changed()
     Kit.Sync()
 end
 
+-- The gold label of a row. Long labels wrap; returns the row height they need.
+local function Label(row, def)
+    row.label = Text(row, "GameFontNormal")
+    row.label:SetPoint("TOPLEFT", 0, -8)
+    row.label:SetWidth(LABEL_W)
+    row.label:SetJustifyV("TOP")
+    row.label:SetText(def.label or "")
+    row:EnableMouse(true)
+    OnHover(row, def.label, def.tip)
+    local height = Num(row.label:GetStringHeight())
+    if not height or height < 8 then height = 13 end
+    height = max(ROW, height + 16)
+    row:SetHeight(height)
+    return height
+end
+
 function build.header(parent, y, def)
-    local row = NewRow(parent, y, 26)
-    row.text = Text(row, "GameFontHighlightSmall", C.accent)
-    row.text:SetPoint("BOTTOMLEFT", 0, 5)
-    row.text:SetText((def.text or ""):upper())
-    row.rule = Fill(row, "ARTWORK", C.accent, 0.22)
-    row.rule:SetPoint("BOTTOMLEFT", 0, 1)
-    row.rule:SetPoint("BOTTOMRIGHT", 0, 1)
-    row.rule:SetHeight(1)
-    return row, 30
+    local top = y < 0 and 14 or 2       -- room above every header but the first
+    local row = NewRow(parent, y, top + 26)
+    row.text = Text(row, "GameFontHighlightLarge")
+    row.text:SetPoint("TOPLEFT", 0, -top)
+    row.text:SetText(def.text or "")
+    return row, top + 26
 end
 
 function build.note(parent, y, def)
     local row = NewRow(parent, y, ROW)
-    row.text = Text(row, "GameFontHighlightSmall", C.faint)
-    row.text:SetPoint("TOPLEFT", 0, -3)
+    row.text = Text(row, "GameFontHighlightSmall")
+    row.text:SetPoint("TOPLEFT", 0, -4)
     row.text:SetWidth(INNER)
     row.text:SetSpacing(2)
     row.text:SetJustifyV("TOP")
     row.text:SetText(def.text or "")
-    -- A wrapped line is about 62 characters at this width; used when the client can't say.
+    -- A wrapped line is about 80 characters at this width; used when the client can't say.
     local height = Num(row.text:GetStringHeight())
-    if not height or height < 8 then height = 13 * math.ceil(#(def.text or "") / 62) end
-    row:SetHeight(height + 8)
-    return row, height + 8
+    if not height or height < 8 then height = 13 * math.ceil(#(def.text or "") / 80) end
+    row:SetHeight(height + 10)
+    return row, height + 10
 end
 
 function build.check(parent, y, def)
     local row = NewRow(parent, y, ROW, "Button")
-    row.box = CreateFrame("Frame", nil, row)
-    row.box:SetSize(14, 14)
-    row.box:SetPoint("LEFT", 0, 0)
-    row.box.bg = Fill(row.box, "BACKGROUND", C.raised)
-    row.box.bg:SetAllPoints()
-    row.box.border = Border(row.box, C.accent, 0.55)
-    row.mark = Fill(row.box, "ARTWORK", C.accent)
-    row.mark:SetPoint("TOPLEFT", 3, -3)
-    row.mark:SetPoint("BOTTOMRIGHT", -3, 3)
-    row.text = Text(row, "GameFontHighlight", C.text)
-    row.text:SetPoint("LEFT", row.box, "RIGHT", 8, 0)
-    row.text:SetText(def.label)
+    local height = Label(row, def)
+    local box = FromTemplate("CheckButton", row, "MinimalCheckboxArtTemplate")
+        or CreateFrame("CheckButton", nil, row, "UICheckButtonTemplate")
+    row.box = box
+    box:SetSize(30, 29)
+    box:SetPoint("TOPLEFT", row, "TOPLEFT", CONTROL_X - 5, 0)
     function row:Sync()
         local ok, on = Run(def.get)
-        if ok and on then self.mark:Show() else self.mark:Hide() end
+        box:SetChecked(ok and on and true or false)
     end
-    row:SetScript("OnClick", function()
+    local function Toggle()
         local ok, on = Run(def.get)
-        if ok then Run(def.set, not on) end
-        Changed()
-    end)
-    row:SetScript("OnEnter", function(self)
-        SetBorder(self.box.border, C.accent, 1)
-        ShowTip(self, def.label, def.tip)
-    end)
-    row:SetScript("OnLeave", function(self)
-        SetBorder(self.box.border, C.accent, 0.55)
-        HideTip()
-    end)
-    return row, ROW
-end
-
-local function Label(row, def)
-    row.label = Text(row, "GameFontHighlight", C.text)
-    row.label:SetPoint("TOPLEFT", 0, -5)
-    row.label:SetText(def.label)
-    row:EnableMouse(true)
-    row:SetScript("OnEnter", function(self) ShowTip(self, def.label, def.tip) end)
-    row:SetScript("OnLeave", HideTip)
-end
-
--- Lays chips out left to right from `left`, wrapping at the row's right edge.
--- Returns the height used.
-local function Flow(row, chips, left, top)
-    local x, y = left, top
-    for _, chip in ipairs(chips) do
-        local w = Num(chip:GetWidth()) or 58
-        if x > left and x + w > INNER then
-            x, y = left, y - 24
+        if ok then
+            Run(def.set, not on)
+            Sound(SOUNDKIT and (on and SOUNDKIT.IG_MAINMENU_OPTION_CHECKBOX_OFF or SOUNDKIT.IG_MAINMENU_OPTION_CHECKBOX_ON))
         end
-        chip:ClearAllPoints()
-        chip:SetPoint("TOPLEFT", row, "TOPLEFT", x, y)
-        x = x + w + 5
+        Changed()
     end
-    return (top - y) + 24
+    box:SetScript("OnClick", Toggle)
+    row:SetScript("OnClick", Toggle)    -- the label toggles it too
+    OnHover(box, def.label, def.tip)
+    return row, height
 end
 
-local function ChipsWidth(chips)
+-- Lays items out left to right from `left`, wrapping at the row's right edge.
+-- Returns the height used.
+local function Width(item) return Num(rawget(item, "span")) or Num(item:GetWidth()) or 80 end
+
+local function Flow(row, items, left, top, line, gap)
+    local x, y = left, top
+    for _, item in ipairs(items) do
+        local w = Width(item)
+        if x > left and x + w > INNER then
+            x, y = left, y - line
+        end
+        item:ClearAllPoints()
+        item:SetPoint("TOPLEFT", row, "TOPLEFT", x, y)
+        x = x + w + gap
+    end
+    return (top - y) + line
+end
+
+local function ItemsWidth(items, gap)
     local total = 0
-    for _, chip in ipairs(chips) do total = total + (Num(chip:GetWidth()) or 58) + 5 end
-    return total - 5
+    for _, item in ipairs(items) do total = total + Width(item) + gap end
+    return total - gap
+end
+
+local function Option(def, option)
+    return option[1], option[2] or tostring(option[1]), option[3] or def.tip
+end
+
+-- A choice is the game's dropdown with one radio line per option.
+local function Dropdown(row, def)
+    local dd = FromTemplate("DropdownButton", row, "WowStyle1DropdownTemplate")
+    if not (dd and type(dd.SetupMenu) == "function") then
+        if dd then dd:Hide() end
+        return
+    end
+    row.dropdown = dd
+    dd:SetWidth(min(220, INNER - CONTROL_X))
+    dd:SetPoint("TOPLEFT", row, "TOPLEFT", CONTROL_X, -3)
+    dd:SetupMenu(function(_, root)
+        for _, option in ipairs(def.options) do
+            local value, text, tip = Option(def, option)
+            local radio = root:CreateRadio(text,
+                function() local ok, now = Run(def.get); return ok and now == value end,
+                function() Run(def.set, value); Changed() end,
+                value)
+            if tip and type(radio) == "table" and type(radio.SetTitleAndTextTooltip) == "function" then
+                pcall(radio.SetTitleAndTextTooltip, radio, text, tip)
+            end
+        end
+    end)
+    OnHover(dd, def.label, def.tip)
+    function row:Sync()
+        if dd.IsMenuOpen and dd:IsMenuOpen() then return end   -- it updates itself on a pick
+        if dd.GenerateMenu then dd:GenerateMenu() end
+    end
+    return true
+end
+
+-- Without the dropdown: the game's round radio buttons in a line.
+local function Radios(row, def, height)
+    row.chips = {}
+    for _, option in ipairs(def.options) do
+        local value, text, tip = Option(def, option)
+        local r = FromTemplate("CheckButton", row, "UIRadioButtonTemplate") or CreateFrame("CheckButton", nil, row)
+        r:SetSize(16, 16)
+        r.label = Text(r, "GameFontHighlightSmall")
+        r.label:SetPoint("LEFT", r, "RIGHT", 3, 0)
+        r.label:SetText(text)
+        r.value = value
+        r.span = 16 + 3 + (Num(r.label:GetStringWidth()) or #text * 6) + 12
+        function r:SetSelected(on)
+            self.selected = on and true or false
+            self:SetChecked(self.selected)
+        end
+        r:SetScript("OnClick", function()
+            Run(def.set, value)
+            Changed()
+        end)
+        OnHover(r, def.label, tip)
+        row.chips[#row.chips + 1] = r
+    end
+    if ItemsWidth(row.chips, 0) <= INNER - CONTROL_X then
+        height = max(height, Flow(row, row.chips, CONTROL_X, -7, 22, 0) + 8)
+    else
+        height = height - 4 + Flow(row, row.chips, 12, -(height - 4), 22, 0)   -- under the label
+    end
+    function row:Sync()
+        local ok, now = Run(def.get)
+        for _, r in ipairs(self.chips) do r:SetSelected(ok and r.value == now) end
+    end
+    return height
 end
 
 function build.choice(parent, y, def)
     local row = NewRow(parent, y, ROW)
-    Label(row, def)
-    row.chips = {}
-    for _, option in ipairs(def.options) do
-        local value, text = option[1], option[2] or tostring(option[1])
-        local chip = Chip(row, text, function()
-            Run(def.set, value)
-            Changed()
-        end)
-        chip.value, chip.tipTitle, chip.tip = value, def.label, option[3] or def.tip
-        row.chips[#row.chips + 1] = chip
-    end
-    local height
-    if ChipsWidth(row.chips) <= INNER - CONTROL_X then
-        height = Flow(row, row.chips, CONTROL_X, -2)
-    else
-        height = 22 + Flow(row, row.chips, 12, -24)     -- too many for one line: under the label
-    end
+    local height = Label(row, def)
+    if not Dropdown(row, def) then height = Radios(row, def, height) end
     row:SetHeight(height)
-    function row:Sync()
-        local ok, now = Run(def.get)
-        for _, chip in ipairs(self.chips) do chip:SetSelected(ok and chip.value == now) end
-    end
     return row, height
 end
 
@@ -290,41 +330,23 @@ end
 
 function build.slider(parent, y, def)
     local row = NewRow(parent, y, ROW)
-    Label(row, def)
+    local height = Label(row, def)
     local step = def.step or 1
-    local s = CreateFrame("Slider", nil, row)
-    row.slider = s
-    s:SetPoint("TOPLEFT", row, "TOPLEFT", CONTROL_X, -4)
-    s:SetSize(170, 16)
-    s:SetOrientation("HORIZONTAL")
-    s:EnableMouse(true)
-    s:SetMinMaxValues(def.min, def.max)
-    s:SetValueStep(step)
-    if s.SetObeyStepOnDrag then s:SetObeyStepOnDrag(true) end
-    s.track = Fill(s, "BACKGROUND", C.raised)
-    s.track:SetPoint("LEFT", 0, 0)
-    s.track:SetPoint("RIGHT", 0, 0)
-    s.track:SetHeight(4)
-    local thumb = Fill(s, "OVERLAY", C.accent)
-    thumb:SetSize(8, 16)
-    s:SetThumbTexture(thumb)
-    row.value = Text(row, "GameFontHighlightSmall", C.dim)
-    row.value:SetPoint("LEFT", s, "RIGHT", 10, 0)
-
+    local function Clamp(v) return max(def.min, min(def.max, v)) end
     local function Snap(v)
-        v = floor((v - def.min) / step + 0.5) * step + def.min
-        v = max(def.min, min(def.max, v))
+        v = Clamp(floor((v - def.min) / step + 0.5) * step + def.min)
         return floor(v * 1000 + 0.5) / 1000     -- no 0.30000000000000004 in the saved settings
     end
-    function row:Sync()
-        local ok, now = Run(def.get)
-        now = ok and Num(now) or def.min
-        self.syncing = true
-        s:SetValue(max(def.min, min(def.max, now)))
-        self.syncing = false
-        self.value:SetText(Format(def, now))
+    local function Shown(v)
+        local ok, text = pcall(Format, def, Snap(v))
+        return ok and tostring(text) or ""
     end
-    s:SetScript("OnValueChanged", function(_, value)
+    local function Saved()
+        local ok, now = Run(def.get)
+        return Clamp(ok and Num(now) or def.min)
+    end
+    row.syncing = false
+    local function OnValue(value)
         if row.syncing then return end
         value = Num(value)
         if not value then return end
@@ -333,27 +355,70 @@ function build.slider(parent, y, def)
         if ok and now == value then return end
         Run(def.set, value)
         Changed()
-    end)
-    s:SetScript("OnEnter", function(self) ShowTip(self, def.label, def.tip) end)
-    s:SetScript("OnLeave", HideTip)
-    return row, ROW
+    end
+
+    -- The game's Options slider: a bar with arrow steppers and the value on its right.
+    local mixin = MinimalSliderWithSteppersMixin
+    local w = FromTemplate("Frame", row, "MinimalSliderWithSteppersTemplate")
+    if w and type(w.Init) == "function" and Has(w, "Slider") and Has(w, "RightText")
+        and Has(mixin, "Event") and Has(mixin, "Label") then
+        row.control, row.slider, row.value = w, w.Slider, w.RightText
+        w:SetWidth(SLIDER_W)
+        w:SetPoint("LEFT", row, "TOPLEFT", CONTROL_X, -15)
+        local steps = max(1, floor((def.max - def.min) / step + 0.5))
+        row.syncing = true
+        w:Init(Saved(), def.min, def.max, steps, { [mixin.Label.Right] = Shown })
+        row.syncing = false
+        w:RegisterCallback(mixin.Event.OnValueChanged, function(_, value) OnValue(value) end, row)
+        OnHover(w.Slider, def.label, def.tip)
+        function row:Sync()
+            self.syncing = true
+            w:SetValue(Saved())
+            self.syncing = false
+        end
+        return row, height
+    end
+
+    -- Without it: the older game slider, with the value written next to it.
+    if w then w:Hide() end
+    local s = FromTemplate("Slider", row, "UISliderTemplate") or CreateFrame("Slider", nil, row)
+    row.slider = s
+    s:SetPoint("LEFT", row, "TOPLEFT", CONTROL_X, -15)
+    s:SetSize(SLIDER_W - 40, 17)
+    s:SetOrientation("HORIZONTAL")
+    s:EnableMouse(true)
+    s:SetMinMaxValues(def.min, def.max)
+    s:SetValueStep(step)
+    if s.SetObeyStepOnDrag then s:SetObeyStepOnDrag(true) end
+    row.value = Text(row, "GameFontHighlightSmall")
+    row.value:SetPoint("LEFT", s, "RIGHT", 10, 0)
+    function row:Sync()
+        local now = Saved()
+        self.syncing = true
+        s:SetValue(now)
+        self.syncing = false
+        self.value:SetText(Shown(now))
+    end
+    s:SetScript("OnValueChanged", function(_, value) OnValue(value) end)
+    OnHover(s, def.label, def.tip)
+    return row, height
 end
 
 function build.buttons(parent, y, def)
     local row = NewRow(parent, y, ROW)
-    row.chips = {}
+    row.buttons = {}
     for _, b in ipairs(def.buttons) do
-        local chip
-        chip = Chip(row, b.label, function(self)
+        local pb
+        pb = PanelButton(row, b.label, function(self)
             -- A button that throws something away asks for a second click.
             if b.confirm and not self.armed then
                 self.armed = true
-                self.text:SetText("Click again to confirm")
+                self:SetText("Click again to confirm")
                 if C_Timer and C_Timer.After then
                     C_Timer.After(4, function()
                         if self.armed then
                             self.armed = nil
-                            self.text:SetText(b.label)
+                            self:SetText(b.label)
                         end
                     end)
                 end
@@ -361,22 +426,22 @@ function build.buttons(parent, y, def)
             end
             if self.armed then
                 self.armed = nil
-                self.text:SetText(b.label)
+                self:SetText(b.label)
             end
+            Sound(SOUNDKIT and SOUNDKIT.IG_MAINMENU_OPTION)
             Run(b.click)
             Changed()
         end)
         if b.confirm then
             -- wide enough for the question, so the row doesn't jump when it is asked
-            chip.text:SetText("Click again to confirm")
-            local asked = (Num(chip.text:GetStringWidth()) or 120) + 18
-            chip.text:SetText(b.label)
-            if asked > (Num(chip:GetWidth()) or 0) then chip:SetWidth(asked) end
+            local asked = pb:Fit("Click again to confirm")
+            pb:Fit(b.label)
+            pb:SetWidth(max(asked, Num(pb:GetWidth()) or 0))
         end
-        chip.tipTitle, chip.tip = b.label, b.tip
-        row.chips[#row.chips + 1] = chip
+        OnHover(pb, b.label, b.tip)
+        row.buttons[#row.buttons + 1] = pb
     end
-    local height = Flow(row, row.chips, 0, -2) + 2
+    local height = Flow(row, row.buttons, 0, -4, 28, 8) + 2
     row:SetHeight(height)
     return row, height
 end
@@ -418,8 +483,32 @@ function Kit.Sync()
     end
 end
 
+-- Puts `content` (already holding its rows) at `left, top` inside `host`. When it is taller
+-- than `view`, it goes in the game's scroll frame instead. Returns the height shown.
+local function Place(host, content, left, top, height, view)
+    content:SetHeight(max(10, height))
+    if view and height > view then
+        local sf = FromTemplate("ScrollFrame", host, "ScrollFrameTemplate")
+        if sf and type(sf.SetScrollChild) == "function" then
+            sf:SetPoint("TOPLEFT", host, "TOPLEFT", left, top)
+            sf:SetSize(INNER, view)
+            content:SetParent(sf)
+            content:ClearAllPoints()
+            content:SetPoint("TOPLEFT", sf, "TOPLEFT", 0, 0)
+            sf:SetScrollChild(content)
+            if Has(sf, "ScrollBar") and sf.ScrollBar.SetHideIfUnscrollable then
+                sf.ScrollBar:SetHideIfUnscrollable(true)
+            end
+            return view, sf
+        end
+    end
+    content:SetPoint("TOPLEFT", host, "TOPLEFT", left, top)
+    return max(10, height)
+end
+
 ----------------------------------------------------------------------
--- The options window
+-- The options window: the game's portrait window, the addon's icon in
+-- the portrait, the rows in the inset.
 ----------------------------------------------------------------------
 local function Version()
     local version = spec.version
@@ -430,11 +519,35 @@ local function Version()
     return version
 end
 
+-- The game's portrait window; on a client without it, the plain framed window, then the
+-- dialog border.
+local DIALOG_BACKDROP = {
+    bgFile = "Interface\\DialogFrame\\UI-DialogBox-Background",
+    edgeFile = "Interface\\DialogFrame\\UI-DialogBox-Border",
+    tile = true, tileSize = 32, edgeSize = 32,
+    insets = { left = 11, right = 12, top = 12, bottom = 11 },
+}
+
+local function WindowFrame(name)
+    for _, template in ipairs({ "ButtonFrameTemplate", "BasicFrameTemplateWithInset" }) do
+        local ok, f = pcall(CreateFrame, "Frame", name, UIParent, template)
+        if ok and f then return f, template end
+    end
+    local ok, f = pcall(CreateFrame, "Frame", name, UIParent, "BackdropTemplate")
+    if ok and f then
+        if f.SetBackdrop then pcall(f.SetBackdrop, f, DIALOG_BACKDROP) end
+        return f, "BackdropTemplate"
+    end
+    return CreateFrame("Frame", name, UIParent)
+end
+
 local function CreateWindow()
     if window then return window end
     local name = ADDON .. "Options"
-    local f = CreateFrame("Frame", name, UIParent)
+    local f, template = WindowFrame(name)
     window = f
+    local portrait = template == "ButtonFrameTemplate"
+    if portrait and ButtonFrameTemplate_HideButtonBar then pcall(ButtonFrameTemplate_HideButtonBar, f) end
     f:SetFrameStrata("DIALOG")
     f:SetClampedToScreen(true)
     f:SetMovable(true)
@@ -444,40 +557,44 @@ local function CreateWindow()
     f:SetScript("OnDragStop", function(self) self:StopMovingOrSizing() end)
     f:SetPoint("CENTER", UIParent, "CENTER", 0, 40)
 
-    f.bg = Fill(f, "BACKGROUND", C.bg, 0.96)
-    f.bg:SetAllPoints()
-    Border(f, C.accent, 0.45)
-    f.top = Fill(f, "ARTWORK", C.accent, 0.9)
-    f.top:SetPoint("TOPLEFT")
-    f.top:SetPoint("TOPRIGHT")
-    f.top:SetHeight(2)
-
-    f.icon = f:CreateTexture(nil, "ARTWORK")
-    f.icon:SetSize(20, 20)
-    f.icon:SetPoint("TOPLEFT", PAD, -12)
-    f.icon:SetTexture(spec.icon)
-    f.icon:SetTexCoord(0.07, 0.93, 0.07, 0.93)
-    f.title = Text(f, "GameFontNormalLarge", C.text)
-    f.title:SetPoint("LEFT", f.icon, "RIGHT", 8, 0)
-    f.title:SetText(spec.title)
+    if portrait and type(f.SetTitle) == "function" then
+        f:SetTitle(spec.title)
+    elseif Has(f, "TitleText") then
+        f.TitleText:SetText(spec.title)
+    else
+        f.title = Text(f, "GameFontNormal")
+        f.title:SetPoint("TOP", 0, -8)
+        f.title:SetText(spec.title)
+    end
+    if portrait and type(f.SetPortraitToAsset) == "function" and spec.icon then
+        pcall(f.SetPortraitToAsset, f, spec.icon)
+    end
+    if not Has(f, "CloseButton") then
+        local close = FromTemplate("Button", f, "UIPanelCloseButton")
+        if close then
+            close:SetPoint("TOPRIGHT", 0, 0)
+            close:SetScript("OnClick", function() f:Hide() end)
+        end
+    end
     local version = Version()
     if version then
-        f.version = Text(f, "GameFontHighlightSmall", C.faint)
-        f.version:SetPoint("BOTTOMLEFT", f.title, "BOTTOMRIGHT", 7, 1)
-        f.version:SetText("v" .. version)
+        f.version = Text(f, "GameFontDisableSmall")
+        if portrait then f.version:SetPoint("TOPLEFT", 66, -36) else f.version:SetPoint("TOPLEFT", 18, -30) end
+        f.version:SetText("Version " .. version)
     end
+    f:SetScript("OnShow", function() Sound(SOUNDKIT and SOUNDKIT.IG_CHARACTER_INFO_OPEN) end)
+    f:SetScript("OnHide", function() Sound(SOUNDKIT and SOUNDKIT.IG_CHARACTER_INFO_CLOSE) end)
 
-    f.close = Chip(f, "x", function() f:Hide() end)
-    f.close:SetSize(22, 20)
-    f.close:SetPoint("TOPRIGHT", -8, -10)
-    f.close.tipTitle, f.close.tip = "Close", "Esc closes it too."
-
+    -- In the portrait window the rows go in its inset, which starts 60 below the top (under
+    -- the portrait) and ends 4 above the bottom. Otherwise under the title.
+    local host, left, top, below = f, 18, -50, 22
+    if portrait and Has(f, "Inset") then host, left, top, below = f.Inset, 16, -14, 20 end
     f.content = CreateFrame("Frame", nil, f)
-    f.content:SetPoint("TOPLEFT", PAD, -44)
     f.content:SetSize(INNER, 10)
     local page = BuildPage(f.content, Rows())
-    f.content:SetHeight(max(10, page.height))
-    f:SetSize(WIDTH, 44 + page.height + PAD)
+    local shown
+    shown, f.scroll = Place(host, f.content, left, top, page.height, MAX_VIEW)
+    f:SetSize(WIDTH, (host == f and 0 or 60) - top + shown + below)
 
     if type(UISpecialFrames) == "table" then table.insert(UISpecialFrames, name) end   -- Esc closes it
     f:Hide()
@@ -509,23 +626,27 @@ function Kit.Toggle()
     if Kit.IsOpen() then Kit.Close() else Kit.Open() end
 end
 
--- The same rows as a page under Options > AddOns. Skipped quietly on a client without it.
+-- The same rows as a page under Options > AddOns, laid out like the game's own pages: the big
+-- title, the divider under it, the rows below. Skipped quietly on a client without it.
 local function RegisterPage()
     if not (Settings and Settings.RegisterCanvasLayoutCategory and Settings.RegisterAddOnCategory) then return end
     local panel = CreateFrame("Frame")
     panel.name = spec.title
     panel:Hide()
-    panel.title = Text(panel, "GameFontNormalLarge", C.text)
-    panel.title:SetPoint("TOPLEFT", 14, -14)
+    panel.title = Text(panel, "GameFontHighlightHuge")
+    panel.title:SetPoint("TOPLEFT", 7, -22)
     panel.title:SetText(spec.title)
     local version = Version()
     if version then
-        panel.version = Text(panel, "GameFontHighlightSmall", C.faint)
-        panel.version:SetPoint("BOTTOMLEFT", panel.title, "BOTTOMRIGHT", 7, 1)
-        panel.version:SetText("v" .. version)
+        panel.version = Text(panel, "GameFontDisableSmall")
+        panel.version:SetPoint("BOTTOMLEFT", panel.title, "BOTTOMRIGHT", 10, 2)
+        panel.version:SetText("Version " .. version)
     end
+    panel.divider = panel:CreateTexture(nil, "ARTWORK")
+    if panel.divider.SetAtlas then panel.divider:SetAtlas("Options_HorizontalDivider", true) end
+    panel.divider:SetPoint("TOP", 0, -50)
+
     panel.content = CreateFrame("Frame", nil, panel)
-    panel.content:SetPoint("TOPLEFT", 14, -44)
     panel.content:SetSize(INNER, 10)
     local rows = Rows()
     if spec.openOptions then
@@ -535,7 +656,7 @@ local function RegisterPage()
         }
     end
     local page = BuildPage(panel.content, rows)
-    panel.content:SetHeight(max(10, page.height))
+    panel.scroll = select(2, Place(panel, panel.content, 24, -66, page.height, PAGE_VIEW))
     panel:SetScript("OnShow", function() Kit.Sync() end)
     local category = Settings.RegisterCanvasLayoutCategory(panel, spec.title)
     Settings.RegisterAddOnCategory(category)
@@ -543,7 +664,8 @@ local function RegisterPage()
 end
 
 ----------------------------------------------------------------------
--- Minimap button
+-- Minimap button: the game's tracking-button art (round background,
+-- the addon's icon, the gold ring, the round highlight).
 ----------------------------------------------------------------------
 local BUTTON, RIM = 31, 5               -- LibDBIcon's size; the centre sits 5 outside the rim
 local SPOTS = { 225, 195, 255, 165, 285, 135, 315, 105, 345, 75, 15, 45 }
@@ -563,7 +685,7 @@ local function Radius()
     return width / 2 + RIM
 end
 
-local function Place()
+local function PlaceButton()
     if not button then return end
     local angle = math.rad(button.angle or SPOTS[1])
     local radius = Radius()
@@ -621,23 +743,21 @@ local function CursorAngle()
     return math.deg(math.atan2(y / scale - cy, x / scale - cx)) % 360
 end
 
+-- Title in the addon's colour, status lines white, the click hints grey.
 local function ButtonTooltip(self)
     if not GameTooltip then return end
     GameTooltip:SetOwner(self, "ANCHOR_LEFT")
-    GameTooltip:SetText(spec.title, C.accent[1], C.accent[2], C.accent[3])
+    GameTooltip:SetText(spec.title, accent[1], accent[2], accent[3])
     if spec.status then
         local ok, lines = Run(spec.status)
         if ok and type(lines) == "table" then
-            for _, line in ipairs(lines) do GameTooltip:AddLine(line, 1, 1, 1, true) end
+            for _, line in ipairs(lines) do GameTooltip:AddLine(line, WHITE[1], WHITE[2], WHITE[3], true) end
         end
     end
-    if spec.clickHint then GameTooltip:AddLine("Left-click: " .. spec.clickHint, 0.6, 0.6, 0.65) end
-    if spec.altHint then
-        GameTooltip:AddLine("Right-click: " .. spec.altHint, 0.6, 0.6, 0.65)
-    else
-        GameTooltip:AddLine("Right-click: options", 0.6, 0.6, 0.65)
-    end
-    GameTooltip:AddLine("Drag: move this button", 0.6, 0.6, 0.65)
+    local g1, g2, g3 = GRAY[1], GRAY[2], GRAY[3]
+    if spec.clickHint then GameTooltip:AddLine("Left-click: " .. spec.clickHint, g1, g2, g3) end
+    GameTooltip:AddLine("Right-click: " .. (spec.altHint or "options"), g1, g2, g3)
+    GameTooltip:AddLine("Drag: move this button", g1, g2, g3)
     GameTooltip:Show()
 end
 
@@ -664,7 +784,6 @@ local function CreateButton()
     b:SetHighlightTexture("Interface\\Minimap\\UI-Minimap-ZoomButton-Highlight")
     b:RegisterForClicks("LeftButtonUp", "RightButtonUp")
     b:RegisterForDrag("LeftButton")
-    -- the usual three pieces: round background, the addon's icon, the gold ring over both
     local background = b:CreateTexture(nil, "BACKGROUND")
     background:SetSize(24, 24)
     background:SetPoint("CENTER")
@@ -679,6 +798,15 @@ local function CreateButton()
     ring:SetPoint("TOPLEFT")
     ring:SetTexture("Interface\\Minimap\\MiniMap-TrackingBorder")
 
+    -- pressed: the icon sinks a little, like the game's own minimap buttons
+    b:SetScript("OnMouseDown", function(self)
+        self.icon:ClearAllPoints()
+        self.icon:SetPoint("CENTER", 1, -1)
+    end)
+    b:SetScript("OnMouseUp", function(self)
+        self.icon:ClearAllPoints()
+        self.icon:SetPoint("CENTER")
+    end)
     b:SetScript("OnClick", function(_, mouseButton) Kit.Click(mouseButton) end)
     b:SetScript("OnEnter", function(self) if not self.dragging then Run(ButtonTooltip, self) end end)
     b:SetScript("OnLeave", HideTip)
@@ -689,16 +817,18 @@ local function CreateButton()
             local angle = CursorAngle()
             if angle then
                 me.angle = angle
-                Place()
+                PlaceButton()
             end
         end)
     end)
     b:SetScript("OnDragStop", function(self)
         self.dragging = nil
         self:SetScript("OnUpdate", nil)
+        self.icon:ClearAllPoints()
+        self.icon:SetPoint("CENTER")
         self.settled = true
         Store().angle = self.angle
-        Place()
+        PlaceButton()
     end)
 
     local store = Store()
@@ -713,11 +843,11 @@ local function CreateButton()
             button.settled = true
             button.angle = FreeAngle()
             Store().angle = button.angle
-            Place()
+            PlaceButton()
         end
         if C_Timer and C_Timer.After then C_Timer.After(3, Settle) else Settle() end
     end
-    Place()
+    PlaceButton()
 end
 
 function Kit.MinimapShown()
@@ -745,7 +875,7 @@ function Kit.RefreshMinimap()
         Store().angle = button.angle      -- the settings were reset: keep the spot
     end
     button:Show()
-    Place()
+    PlaceButton()
 end
 
 -- A ready-made row for the options list.
@@ -767,12 +897,13 @@ end
 --   alt = function() end        right-click (default: open the options), altHint = "..."
 --   status = function() return { "line", ... } end   extra tooltip lines
 --   openOptions = function() end                     the addon has its own options screen
+--   pageNote = "..."                                 the Options page text when it does
 --   minimap = false                                  no minimap button (wrong class, say)
 ----------------------------------------------------------------------
 function Kit.Setup(def)
     if spec then return end
     spec = def
-    if type(def.accent) == "table" then C.accent = def.accent end
+    if type(def.accent) == "table" then accent = def.accent end
     Kit.RefreshMinimap()
     Run(RegisterPage)
 end
