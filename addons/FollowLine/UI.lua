@@ -45,11 +45,11 @@ local function Paint(c, text) return "|c" .. Hex(c) .. text .. "|r" end
 
 local COLOR = {
     head = GOLD, on = GREEN, off = RED, pending = YELLOW,
-    noaddon = GRAY, offline = GRAY, out = GRAY, none = GRAY,
+    noaddon = GRAY, offline = GRAY, away = GRAY, out = GRAY, none = GRAY,
 }
 local SHORT = {
     head = "leads", on = "following", off = "off the line", pending = "not got it yet",
-    noaddon = "no addon", offline = "offline", out = "", none = "",
+    noaddon = "no addon", offline = "offline", away = "away", out = "", none = "",
 }
 
 local frame, title, count, note, benchHead, moreNote, ignoredNote
@@ -188,6 +188,180 @@ local function CreateButton()
     b:Hide()
 end
 
+----------------------------------------------------------------------
+-- The furbolg rod and the torch
+----------------------------------------------------------------------
+-- Two toys of this client that make a line look the part (SuccuDev, 2026-11-14:
+-- "add furbolg rod and torch to follow line"): the Replica Dartol's Rod of
+-- Transformation (item 276242 in the client's toy table) turns you into a furbolg,
+-- and the Night Watchman's Torch (a quest in Duskwood) puts a lit torch in your
+-- hand. The torch is not in the datamined tables, so it is used by name
+-- (UseToyByName) and found by name in the toy box. Both are secure buttons of
+-- the game's "toy" type: used from the player's own click or key, beside the
+-- Follow button, while the player is in a line (the leader too).
+local ITEM_SIZE = 30
+local ITEMS = {
+    { global = "FollowLineRodButton", label = "Furbolg rod", icon = 135463,
+      choices = { { id = 276242, name = "Replica Dartol's Rod of Transformation", toy = true },
+                  { id = 5462, name = "Dartol's Rod of Transformation" } },     -- the old quest item, in bags
+      what = "Turns you into a furbolg." },
+    { global = "FollowLineTorchButton", label = "Torch", icon = 135432,
+      choices = { { name = "Night Watchman's Torch", toy = true } },
+      what = "A lit torch in your hand. It goes out in water, in cities and when you fight." },
+}
+UI.ITEMS = ITEMS
+local itemButtons = {}
+UI.itemButtons = itemButtons
+local toyIDs                    -- [toy name] = item id, read from the toy box
+
+local function Call(f, ...)
+    if type(f) ~= "function" then return nil end
+    local res = { pcall(f, ...) }
+    if not res[1] then return nil end
+    for i = 2, #res do
+        if ns.issecret(res[i]) then return nil end
+    end
+    return unpack(res, 2)
+end
+
+-- The toy box's list, by name (it lists toys not collected yet too).
+local function ReadToyBox()
+    local tb = C_ToyBox
+    if not tb then return end
+    local n = Call(tb.GetNumFilteredToys)
+    if type(n) ~= "number" or n <= 0 then return end
+    local found = {}
+    for i = 1, math.min(n, 3000) do
+        local id = Call(tb.GetToyFromIndex, i)
+        if type(id) == "number" and id > 0 then
+            local _, name = Call(tb.GetToyInfo, id)
+            if type(name) == "string" then found[name] = id end
+        end
+    end
+    toyIDs = found
+end
+function UI.ToysChanged() toyIDs = nil end
+
+-- Does the player have it? true, false, or nil when the game can't tell yet.
+local function Owned(c)
+    if not toyIDs then ReadToyBox() end
+    local id = c.id or (toyIDs and toyIDs[c.name])
+    if not id then return nil end
+    if c.toy and Call(PlayerHasToy, id) == true then return true end
+    local n = Call((C_Item and C_Item.GetItemCount) or GetItemCount, id)
+    if type(n) == "number" and n > 0 then return true end
+    if c.toy and PlayerHasToy == nil then return nil end
+    return false
+end
+
+-- The first choice the player has, else one the game can't tell about, else the first.
+local function Choose(item)
+    local unknown
+    for _, c in ipairs(item.choices) do
+        local o = Owned(c)
+        if o then return c, true end
+        if o == nil and not unknown then unknown = c end
+    end
+    if unknown then return unknown, nil end
+    return item.choices[1], false
+end
+
+local function ItemName(c)
+    local name = c.id and Call(C_Item and C_Item.GetItemNameByID, c.id)
+    return type(name) == "string" and name ~= "" and name or c.name
+end
+
+local function ItemTooltip(self)
+    if not GameTooltip then return end
+    local item, c = self.item, self.choice or self.item.choices[1]
+    GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
+    local shown = c.id and c.toy and GameTooltip.SetToyByItemID and pcall(GameTooltip.SetToyByItemID, GameTooltip, c.id)
+    if not shown and c.id and GameTooltip.SetItemByID then shown = pcall(GameTooltip.SetItemByID, GameTooltip, c.id) end
+    if not shown then
+        GameTooltip:AddLine(ItemName(c), WHITE[1], WHITE[2], WHITE[3])
+        GameTooltip:AddLine(item.what, GOLD[1], GOLD[2], GOLD[3], true)
+    end
+    if self.owned == false then
+        GameTooltip:AddLine("You don't have it yet.", RED[1], RED[2], RED[3], true)
+    end
+    GameTooltip:AddLine("Follow Line: for the whole line to walk as furbolgs with torches. /line items hides these.", GRAY[1], GRAY[2], GRAY[3], true)
+    GameTooltip:Show()
+end
+
+-- The same action-button parts as the Follow button, at a smaller size.
+local function CreateItemButton(item)
+    local b = CreateFrame("Button", item.global, UIParent, "SecureActionButtonTemplate")
+    b.item = item
+    b:SetSize(ITEM_SIZE, ITEM_SIZE)
+    b:SetFrameStrata("MEDIUM")
+    b:RegisterForClicks("AnyDown", "AnyUp")
+    b.slot = b:CreateTexture(nil, "BACKGROUND")
+    b.slot:SetAllPoints(b)
+    b.slot:SetAtlas("UI-HUD-ActionBar-IconFrame-Background")
+    b.icon = b:CreateTexture(nil, "BACKGROUND", nil, 1)
+    b.icon:SetAllPoints(b)
+    b.icon:SetTexture(item.icon)
+    local mask = b.CreateMaskTexture and b:CreateMaskTexture()
+    if mask then
+        mask:SetAtlas("UI-HUD-ActionBar-IconFrame-Mask")
+        mask:SetAllPoints(b.icon)
+        b.icon:AddMaskTexture(mask)
+    end
+    b:SetNormalAtlas("UI-HUD-ActionBar-IconFrame")
+    b:SetPushedAtlas("UI-HUD-ActionBar-IconFrame-Down")
+    b:SetHighlightAtlas("UI-HUD-ActionBar-IconFrame-Mouseover")
+    for _, t in ipairs({ b:GetNormalTexture(), b:GetPushedTexture(), b:GetHighlightTexture() }) do
+        if type(t) == "table" then
+            t:ClearAllPoints()
+            t:SetPoint("TOPLEFT", b, "TOPLEFT", 0, 0)
+            t:SetSize(ITEM_SIZE + 1, ITEM_SIZE)
+        end
+    end
+    b.hotkey = b:CreateFontString(nil, "OVERLAY", "NumberFontNormalSmallGray")
+    b.hotkey:SetSize(ITEM_SIZE - 4, 10)
+    b.hotkey:SetPoint("TOPRIGHT", b, "TOPRIGHT", -2, -3)
+    b.hotkey:SetJustifyH("RIGHT")
+    b:SetScript("OnEnter", ItemTooltip)
+    b:SetScript("OnLeave", HideTooltip)
+    b:Hide()
+    itemButtons[#itemButtons + 1] = b
+    return b
+end
+
+-- Shown while the player is in a line. Secure: only changed outside a fight (ApplySecure).
+local function ApplyItems()
+    local show = ns.db.items and Line.place ~= nil and (Line.grouped or Line.demo)
+    for _, b in ipairs(itemButtons) do
+        if show then
+            local c, owned = Choose(b.item)
+            b.choice, b.owned = c, owned
+            if c.toy then
+                b:SetAttribute("type", "toy")
+                b:SetAttribute("toy", c.id or (toyIDs and toyIDs[c.name]) or ItemName(c))
+                b:SetAttribute("item", nil)
+            else
+                b:SetAttribute("type", "item")
+                b:SetAttribute("item", "item:" .. c.id)
+                b:SetAttribute("toy", nil)
+            end
+            b:Show()
+        else
+            b:Hide()
+        end
+    end
+end
+
+local function RefreshItems()
+    for _, b in ipairs(itemButtons) do
+        if b:IsShown() then
+            b.owned = select(2, Choose(b.item))
+            if b.icon.SetDesaturated then b.icon:SetDesaturated(b.owned == false) end
+            local key = GetBindingKey and Call(GetBindingKey, "CLICK " .. b.item.global .. ":LeftButton")
+            b.hotkey:SetText(type(key) == "string" and ShortKey(key) or "")
+        end
+    end
+end
+
 -- Points the button at the player ahead and shows or hides it. Not possible
 -- during a fight: then it is done when the fight ends.
 function UI.ApplySecure()
@@ -208,10 +382,12 @@ function UI.ApplySecure()
     end
     button.target = target
     if target then button:Show() else button:Hide() end
+    ApplyItems()
     ns.dirty = true
 end
 
 local function RefreshButton()
+    RefreshItems()
     local target = Line.target
     if not button or not target then return end
     local on = Line.OnLine()
@@ -441,6 +617,16 @@ function UI.ApplyLayout()
     else
         button:SetPoint("CENTER", UIParent, "CENTER", -80, -170)
     end
+    -- the rod and the torch sit under the Follow button (placed there even while it is hidden, as for the leader)
+    for i, b in ipairs(itemButtons) do
+        b:SetScale(db.scale or 1)
+        b:ClearAllPoints()
+        if i == 1 then
+            b:SetPoint("TOPLEFT", button, "BOTTOMLEFT", 0, -6)
+        else
+            b:SetPoint("LEFT", itemButtons[i - 1], "RIGHT", 6, 0)
+        end
+    end
 end
 
 local function HideWindow()
@@ -451,6 +637,7 @@ end
 
 function UI.Create()
     CreateButton()
+    for _, item in ipairs(ITEMS) do CreateItemButton(item) end
 
     frame = CreateFrame("Frame", "FollowLineFrame", UIParent, "BasicFrameTemplateWithInset")
     frame:SetSize(WIDTH, 120)

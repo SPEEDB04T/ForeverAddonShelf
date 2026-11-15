@@ -25,10 +25,19 @@ During a fight the game does not let an addon change the Follow button. If the l
 | `not got it yet` | has the addon, but has not received this line yet |
 | `no addon` | no Follow Line seen: the addon can't tell whether they follow |
 | `offline` | offline |
+| `away` | out of range or out of sight: the player behind them follows the next one ahead |
 
 The arrow buttons move a player one place, minus takes them out, and plus puts a player from "Not in the line" back at the end. A changed order is only sent when you press **Call line** again.
 
 If a player leaves the group, the line closes up by itself: whoever was behind them follows the player who was ahead of them.
+
+## Players who are away
+
+Not everyone in the group has to be there. When the player ahead of you is away (offline, out of sight, or out of the group's range, about 40 yards), your Follow button points at the nearest player ahead of them who is near, and chat tells you. When they come back, it points at them again. A change has to hold for two seconds, so someone at the edge of range doesn't flip your button back and forth. The window shows such a player as `away`, and they don't count among those who should be following. When the game won't say how far someone is, nobody is skipped.
+
+## The furbolg rod and the torch
+
+While you are in a line (leading too), two buttons sit under the Follow button: the **furbolg rod** (Replica Dartol's Rod of Transformation, or the old Dartol's Rod of Transformation from your bags) and the **torch** (the Night Watchman's Torch from Duskwood). Click them to walk the line as furbolgs with torches. A button is greyed out while you don't have that toy. They can have keys too (Key Bindings > AddOns), and `/line items` or the option "Furbolg rod and torch buttons" hides them.
 
 ## Commands
 
@@ -50,6 +59,7 @@ If a player leaves the group, the line closes up by itself: whoever was behind t
 | `/line who auto`, `leader`, `anyone` | whose line calls you take |
 | `/line auto` | follow without a click, where the game allows it |
 | `/line sound`, `/line alerts` | sounds, and chat lines when someone drops off |
+| `/line items` | show or hide the furbolg rod and torch buttons |
 | `/line config` | the options window |
 | `/line minimap` | show or hide the minimap button |
 | `/line lock`, `/line scale 1.2` | lock the window and button in place, set their size |

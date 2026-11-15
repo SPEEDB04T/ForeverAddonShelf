@@ -2,4 +2,7 @@
 	<!-- The key clicks the addon's own Follow button, so it works whether the button is on screen or not.
 	     Key Bindings > AddOns > Follow Line. -->
 	<Binding name="CLICK FollowLineJoinButton:LeftButton" header="BINDING_HEADER_FOLLOWLINE" category="ADDONS"/>
+	<!-- the furbolg rod and the torch beside the Follow button -->
+	<Binding name="CLICK FollowLineRodButton:LeftButton" category="ADDONS"/>
+	<Binding name="CLICK FollowLineTorchButton:LeftButton" category="ADDONS"/>
 </Bindings>

@@ -178,6 +178,43 @@ function L.InRange(m)
     return nil
 end
 
+-- Is this player near enough to be in the line from here? true, false (offline,
+-- out of sight or out of the game's group range, about 40 yards), or nil when the
+-- game won't say. Only a clear "no" takes a player out of the chain.
+function L.Near(m)
+    if not m then return false end
+    if m.demo then return m.demoState ~= "away" end
+    if m.isPlayer then return true end
+    if not m.unit then return nil end
+    if L.Offline(m) then return false end
+    if UnitIsVisible then
+        local ok, v = pcall(UnitIsVisible, m.unit)
+        if ok and not issecret(v) and v == false then return false end
+    end
+    if UnitInRange then
+        local ok, inRange, checked = pcall(UnitInRange, m.unit)
+        if ok and not issecret(inRange) and not issecret(checked) then
+            if inRange == true then return true end
+            if inRange == false and checked then return false end
+        end
+    end
+    if L.InRange(m) == true then return true end
+    return nil
+end
+
+-- Whom place i follows: the player right ahead, or, when they are away, the
+-- nearest one ahead of them who is near. When everyone ahead is away, still
+-- the one right ahead.
+local function Ahead(order, i)
+    for j = i - 1, 1, -1 do
+        if L.Near(L.members[order[j]]) ~= false then return order[j] end
+    end
+    return order[i - 1]
+end
+L.Ahead = Ahead
+
+-- On the line means following exactly the player you should: after a re-link
+-- the old follow is no longer it, and the player is told to click again.
 function L.OnLine()
     return L.target ~= nil and SameName(L.following, L.target)
 end
@@ -407,7 +444,7 @@ end
 -- Works out who is still in the line and who the player follows.
 function L.Recompute(quiet)
     local line = L.line
-    local was = L.target
+    local was, wasPlace = L.target, L.place
     if not line then
         L.target, L.place = nil, nil
     else
@@ -423,7 +460,8 @@ function L.Recompute(quiet)
         line.order, line.index = order, index
         local i = ns.playerName and index[ns.playerName]
         L.place = i
-        L.target = (i and i > 1) and order[i - 1] or nil
+        L.target = (i and i > 1) and Ahead(order, i) or nil
+        L.relinkTo = nil
     end
     if L.target ~= was then
         if not L.target then L.dropped = false end
@@ -432,6 +470,8 @@ function L.Recompute(quiet)
         if not quiet and L.target and was then
             ns.Print(("the line changed: you now follow %s."):format(L.target))
         end
+    elseif (L.place == nil) ~= (wasPlace == nil) then
+        ns.UI.ApplySecure()     -- in a line or out of it: the rod and torch buttons (the leader has no target)
     end
     ns.dirty = true
 end
@@ -683,9 +723,12 @@ local function Enqueue(msg)
     queue[#queue + 1] = msg
 end
 
--- "S;version;stamp of the line I have (0 = none);1 when I follow my place in it"
+-- "S;version;stamp of the line I have (0 = none);1 when I follow my place in it;whom I follow"
+-- (the last part since 1.2.0: who that is after skipping players who are away;
+-- older copies read only the first four)
 local function StateMessage()
-    return ("S;%s;%d;%d"):format(ns.VERSION, L.line and L.line.stamp or 0, L.OnLine() and 1 or 0)
+    return ("S;%s;%d;%d;%s"):format(ns.VERSION, L.line and L.line.stamp or 0, L.OnLine() and 1 or 0,
+        (L.target or ""):gsub("[;|]", ""))
 end
 
 -- "L;stamp;part;parts;Name-Realm,Name-Realm,...": a long line goes out in parts.
@@ -979,6 +1022,8 @@ function L.OnAddonMessage(prefix, text, channel, sender)
         m.version = (tostring(f[2] or ""):gsub("[^%w%._%-]", "")):sub(1, 12)
         m.stamp = stamp
         m.following = (fol == 1)
+        local ahead = f[5]
+        m.ahead = (type(ahead) == "string" and ahead ~= "" and #ahead <= 80) and (L.Lookup(ahead) or nil) or nil
         if wasOn and not m.following and m.stamp == line.stamp and (line.index[from] or 0) > 1 then
             local now = GetTime()
             if ns.db.alerts and now - (m.alertAt or -10) > 5 then
@@ -1064,6 +1109,8 @@ function L.Status(m)
     if i == 1 then return "head" end
     if m.isPlayer then return L.OnLine() and "on" or "off" end
     if m.demo then return m.demoState end
+    -- away from here, and their copy doesn't say they follow: the others skip them
+    if L.Near(m) == false and not (m.hasAddon and m.stamp == line.stamp and m.following) then return "away" end
     if not m.hasAddon then return "noaddon" end
     if m.stamp ~= line.stamp then return "pending" end
     return m.following and "on" or "off"
@@ -1089,6 +1136,7 @@ local TEXT = {
     none = "no line called",
     out = "not in the line",
     offline = "offline",
+    away = "away: the players behind them follow the next one ahead",
     head = "leads the line",
     on = "following",
     off = "off the line",
@@ -1102,7 +1150,14 @@ function L.Describe(m)
     local line = L.line
     local i = line and line.index[m.name]
     if i and i > 1 and (st == "on" or st == "off" or st == "noaddon" or st == "pending") then
-        text = text .. (st == "on" and " " or ", should follow ") .. line.order[i - 1]
+        -- whom they follow: what their copy says (players away are skipped), else the one ahead
+        local ahead = line.order[i - 1]
+        if m.isPlayer then
+            ahead = L.target or ahead
+        elseif m.ahead and line.index[m.ahead] and line.index[m.ahead] < i and m.stamp == line.stamp then
+            ahead = m.ahead
+        end
+        text = text .. (st == "on" and " " or ", should follow ") .. ahead
     end
     return text, st
 end
@@ -1175,7 +1230,48 @@ end
 ----------------------------------------------------------------------
 -- Once a second
 ----------------------------------------------------------------------
+-- Once a second: when the player ahead goes away (offline, out of sight, out of
+-- group range), follow the nearest one ahead of them instead; when they come
+-- back, follow them again. A change has to hold for two seconds, so someone at
+-- the edge of range doesn't flip the button back and forth.
+local RELINK_AFTER = 2
+function L.Relink(now)
+    local line = L.line
+    if not line or not L.place or L.place < 2 then
+        L.relinkTo = nil
+        return
+    end
+    local want = Ahead(line.order, L.place)
+    if want == L.target then
+        L.relinkTo = nil
+        return
+    end
+    if L.relinkTo ~= want then
+        L.relinkTo, L.relinkSince = want, now
+        return
+    end
+    if now - L.relinkSince < RELINK_AFTER then return end
+    L.relinkTo = nil
+    local was = L.target
+    L.target = want
+    ns.UI.ApplySecure()
+    L.MarkState(false)
+    ns.dirty = true
+    if want == line.order[L.place - 1] then
+        ns.Print(("%s is back nearby: you follow them again.%s"):format(want, CombatNote()))
+    else
+        ns.Print(("%s is away: you follow %s now, the nearest player ahead of you.%s"):format(
+            was or line.order[L.place - 1], want, CombatNote()))
+    end
+    if not L.OnLine() then
+        ns.Sound("call")
+        L.directUntil = now + 15
+        L.TryDirect()
+    end
+end
+
 function L.Tick(now)
+    L.Relink(now)
     if L.resendAt and now >= L.resendAt then
         L.resendAt = nil
         if L.line and L.line.by == ns.playerName then EnqueueLine() end

@@ -35,6 +35,9 @@ local function Rows()
         { kind = "check", label = "Say when others drop off",
           tip = "A line in chat when someone else drops off the line.",
           get = Get("alerts"), set = Set("alerts") },
+        { kind = "check", label = "Furbolg rod and torch buttons",
+          tip = "While you are in a line, two buttons beside the Follow button use the Replica Dartol's Rod of Transformation and light the Night Watchman's Torch, so the whole line can walk as furbolgs with torches. They grey out when you don't have the toy.",
+          get = Get("items"), set = Set("items", function() ns.UI.ApplySecure() end) },
         { kind = "note", text = "Your key for falling in: Key Bindings > AddOns > Follow Line. It does the same as clicking the Follow button." },
 
         { kind = "header", text = "Window" },

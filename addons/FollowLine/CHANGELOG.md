@@ -1,5 +1,10 @@
 # Changelog
 
+## 1.2.0
+
+- The line no longer breaks when some of the group are not there. When the player ahead of you is away (offline, out of sight, or out of the group's range), your Follow button points at the nearest player ahead of them who is near, and back at them when they return. The window shows them as "away".
+- Two new buttons under the Follow button while you are in a line, the leader too: the furbolg rod (Replica Dartol's Rod of Transformation, or the old quest rod) and the Night Watchman's Torch. Greyed out while you don't have the toy; keys under Key Bindings > AddOns; `/line items` or the new option hides them.
+
 ## 1.1.5
 
 - Fixed: players' copies still never heard each other, and even your own messages coming back were thrown away. This client gives a character's name as two parts, first name and surname, and the addon joined them as "First-Last", while every message arrives from "First Last". Players are now matched by "First Last" first and by their first name when nobody else in the group shares it.

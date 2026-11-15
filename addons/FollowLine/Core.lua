@@ -32,6 +32,8 @@ ns.ACCENT = { 0.35, 0.78, 0.95 }
 -- Key Bindings > AddOns
 BINDING_HEADER_FOLLOWLINE = "Follow Line"
 _G["BINDING_NAME_CLICK FollowLineJoinButton:LeftButton"] = "Follow the player ahead of me in the line"
+_G["BINDING_NAME_CLICK FollowLineRodButton:LeftButton"] = "Use the furbolg rod"
+_G["BINDING_NAME_CLICK FollowLineTorchButton:LeftButton"] = "Light the torch"
 
 local defaults = {
     open = false,           -- the line window
@@ -41,6 +43,7 @@ local defaults = {
     auto = false,           -- try to start following without a click (only where the game lets addons do that)
     sound = true,           -- a sound when a line is called for you and when you drop off
     alerts = true,          -- a chat line when someone else drops off
+    items = true,           -- the furbolg rod and torch buttons beside the Follow button while in a line
     point = nil,            -- { left, top } of the window
     buttonPoint = nil,      -- { x, y } of the Follow button's middle
 }
@@ -194,6 +197,14 @@ function events.PLAYER_REGEN_ENABLED()
     ns.dirty = true
 end
 
+-- a toy learned, or the toy box read for the first time: the rod and torch buttons look again
+local function ToysChanged()
+    ns.UI.ToysChanged()
+    ns.UI.ApplySecure()
+end
+events.TOYS_UPDATED = ToysChanged
+events.NEW_TOY_ADDED = ToysChanged
+
 function events.PLAYER_REGEN_DISABLED()
     ns.dirty = true
 end
@@ -281,6 +292,7 @@ local function Help()
     ns.Print("  /line who auto | leader | anyone  - whose line calls you take (now: " .. ns.db.who .. ")")
     ns.Print("  /line auto  - try to follow without a click, where the game allows it (" .. OnOff(ns.db.auto) .. ")")
     ns.Print("  /line sound | alerts  - sound (" .. OnOff(ns.db.sound) .. "), chat line when someone drops off (" .. OnOff(ns.db.alerts) .. ")")
+    ns.Print("  /line items  - furbolg rod and torch buttons beside the Follow button (" .. OnOff(ns.db.items) .. ")")
     ns.Print("  /line config | minimap | lock | unlock | scale <0.5-2> | status | demo | reset")
     ns.Print("  Key: Key Bindings > AddOns > Follow Line.")
 end
@@ -333,6 +345,11 @@ SlashCmdList.FOLLOWLINE = function(msg)
     elseif cmd == "alerts" then
         db.alerts = not db.alerts
         ns.Print("chat line when someone drops off: " .. OnOff(db.alerts) .. ".")
+    elseif cmd == "items" or cmd == "torch" or cmd == "rod" then
+        db.items = not db.items
+        ns.UI.ApplySecure()
+        ns.Print("furbolg rod and torch buttons: " .. OnOff(db.items) .. "."
+            .. (ns.InCombat() and " They change when the fight ends." or ""))
     elseif cmd == "config" or cmd == "options" or cmd == "opt" then
         if ns.Kit then ns.Kit.Open() end
     elseif cmd == "minimap" then

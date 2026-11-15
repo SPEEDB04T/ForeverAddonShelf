@@ -1,7 +1,7 @@
 ## Interface: 16001, 16002
 ## Title: Follow Line
 ## Notes: Puts your party or raid in a follow line: one player orders the line, everyone else gets a Follow button (or key) for the player ahead of them, and the window shows who is on the line and who dropped off.
-## Version: 1.1.5
+## Version: 1.2.0
 ## SavedVariables: FollowLineDB
 ## IconTexture: Interface\Icons\Ability_Hunter_Pathfinding
 ## AddonCompartmentFunc: FollowLine_OnAddonCompartmentClick
