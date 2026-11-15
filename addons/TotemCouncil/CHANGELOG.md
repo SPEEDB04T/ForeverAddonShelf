@@ -1,5 +1,9 @@
 # Changelog
 
+## 1.3.3
+
+- The totem icons fill their buttons again, as on the game's own totem bar. They were drawn smaller, so the slot art showed as a coloured smudge under each icon.
+
 ## 1.3.2
 
 - Fixed: Totem Council users still could not see each other. On Forever the game gives a character's name in two parts (first name and surname), while messages arrive with the full name, so every message, even your own, was matched to nobody and dropped. Names are now matched in both forms and shown as "First Last" everywhere (group plan, chat, Announce).

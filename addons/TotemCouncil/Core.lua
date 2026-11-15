@@ -146,15 +146,16 @@ local SLOT_OVERLAY = {
     [4] = { 36 / 128, 70 / 128, 137 / 256, 171 / 256 },
 }
 
--- rounds the icon's corners to fit inside the frame art, as
--- ActionButtonTemplate's IconMask does
-function ns.IconMask(b, icon, size)
+-- rounds the icon's corners, as ActionButtonTemplate's IconMask does: the
+-- atlas at its own size, centred. MultiCastActionButton leaves it at that size
+-- on its 30 px button, so it only trims the corners. (1.3.0 shrank it to 30 px,
+-- which cut the icon down and let the slot art show around it.)
+function ns.IconMask(b, icon)
     if not b.CreateMaskTexture or not icon.AddMaskTexture then return end
     local m = b:CreateMaskTexture()
     if not m then return end
-    m:SetAtlas("UI-HUD-ActionBar-IconFrame-Mask")
+    m:SetAtlas("UI-HUD-ActionBar-IconFrame-Mask", true)
     m:SetPoint("CENTER", icon, "CENTER")
-    m:SetSize(size, size)
     icon:AddMaskTexture(m)
 end
 
@@ -172,7 +173,7 @@ function ns.TotemButtonArt(b, slot)
     -- ActionButtonTemplate: icon (BACKGROUND) with its mask
     b.icon = b:CreateTexture(nil, "BACKGROUND")
     b.icon:SetAllPoints()
-    ns.IconMask(b, b.icon, S)
+    ns.IconMask(b, b.icon)
 
     -- NormalTexture, PushedTexture, HighlightTexture, each 30 x 30 at TOPLEFT
     local function frameArt(setter, getter, atlas)
