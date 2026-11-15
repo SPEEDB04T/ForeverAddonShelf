@@ -1,0 +1,8 @@
+<Bindings>
+	<Binding name="SLUTMOGSHOP_POST" header="SLUTMOGSHOP" category="ADDONS">
+		SlutmogShop_Post()
+	</Binding>
+	<Binding name="SLUTMOGSHOP_TOGGLE" category="ADDONS">
+		SlutmogShop_Toggle()
+	</Binding>
+</Bindings>
