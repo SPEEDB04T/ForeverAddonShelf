@@ -1,6 +1,6 @@
 # Group Graves
 
-When someone in your group dies and releases, the game moves their dot on the map to the graveyard and nobody can see where the body is any more. Group Graves keeps a tombstone on your world map where each group member died, in their class colour, until they are alive again.
+When someone in your group dies and releases, the game moves their dot on the map to the graveyard and nobody can see where the body is any more. Group Graves keeps the game's corpse tombstone on your world map where each group member died, with a dot in their class colour, until they are alive again.
 
 Everyone in the group who has the addon shares the positions, so it also works for a death you were not around for.
 

@@ -1,5 +1,10 @@
 # Changelog
 
+## 1.1.0
+
+- The markers look like the game's own map pins: the game's corpse tombstone at full size, with the class-coloured dot the map uses for group members at its corner, in place of the coloured ring and the dark disc. They brighten under the mouse.
+- The tooltip uses the game's text colours (white for what happened, grey for where the position came from and the click hint) and opens away from the middle of the map, like the game's corpse tooltip.
+
 ## 1.0.1
 
 - Fixed: positions were not shared with the group on ordinary realms. The addon read a realm setting ("this realm blocks addon messages") that has nothing to do with messages inside a group, and sent nothing. It now sends.

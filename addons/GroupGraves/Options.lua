@@ -17,7 +17,8 @@ local function Rows()
     return {
         { kind = "header", text = "Markers" },
         { kind = "check", label = "Mark where group members died",
-          tip = "A tombstone in the member's class colour on the world map. Same as /graves on and /graves off.",
+          tip = "The game's corpse tombstone on the world map, with a dot in the member's class colour. "
+              .. "Same as /graves on and /graves off.",
           get = Get("enabled"), set = Set("enabled") },
         { kind = "check", label = "Mark from the moment of death",
           tip = "Unticked, a marker appears when the member releases: until then their own dot on the map "

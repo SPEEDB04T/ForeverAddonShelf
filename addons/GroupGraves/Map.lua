@@ -13,12 +13,25 @@ local _, ns = ...
 local Map = {}
 ns.Map = Map
 
-local WHITE  = "Interface\\Buttons\\WHITE8X8"
-local CIRCLE = "Interface\\Masks\\CircleMaskScalable"
-local TOMB   = "Interface\\Minimap\\POIIcons"          -- the game's own corpse tombstone
+-- Drawn the way the game draws these things on its own map: the tombstone of the game's
+-- corpse pin (CorpsePinTemplate), and the class-coloured dot the map uses for group members
+-- (UnitPositionFrame, atlas WhiteCircle-RaidBlips) at its corner, so it reads as "this
+-- member's corpse".
+local TOMB   = "Interface\\Minimap\\POIIcons"
 local TOMB_COORDS = { 0.56640625, 0.6328125, 0.001953125, 0.03515625 }
+local DOT_ATLAS = "WhiteCircle-RaidBlips"
 local BASE = 22                                         -- marker size the art is laid out for
-local UNKNOWN_COLOR = { 0.80, 0.80, 0.80 }
+local DOT = 10                                          -- the class dot, at BASE
+
+-- The game's text colours, with their values as a fallback.
+local function FontColor(name, r, g, b)
+    local c = _G[name]
+    if type(c) == "table" and type(c.r) == "number" then return { c.r, c.g, c.b } end
+    return { r, g, b }
+end
+local WHITE_TEXT = FontColor("HIGHLIGHT_FONT_COLOR", 1, 1, 1)
+local GRAY_TEXT  = FontColor("GRAY_FONT_COLOR", 0.5, 0.5, 0.5)
+local UNKNOWN_COLOR = FontColor("NORMAL_FONT_COLOR", 1, 0.82, 0)
 
 local host, hostProblem
 local active, free = {}, {}
@@ -61,16 +74,29 @@ local function AddGrave(tip, g, first)
         tip:AddLine(" ")
         tip:AddLine(g.name .. "'s corpse", r, gr, b)
     end
-    tip:AddLine("Died " .. ns.Ago(g.at) .. " in " .. ns.Where(g) .. ".", 1, 1, 1)
+    local w, gy = WHITE_TEXT, GRAY_TEXT
+    tip:AddLine("Died " .. ns.Ago(g.at) .. " in " .. ns.Where(g) .. ".", w[1], w[2], w[3])
     if g.inst then
-        tip:AddLine("Died inside " .. g.inst .. ": the game puts the corpse at the way in.", 1, 1, 1, true)
+        tip:AddLine("Died inside " .. g.inst .. ": the game puts the corpse at the way in.", w[1], w[2], w[3], true)
     end
     if not g.released then
-        tip:AddLine("Has not released yet.", 0.75, 0.75, 0.75)
+        tip:AddLine("Has not released yet.", w[1], w[2], w[3])
     end
     local source = SOURCE_LINE[g.source]
     if g.source == "relay" then source = "Position passed on by " .. tostring(g.via or "someone") .. "." end
-    if source then tip:AddLine(source, 0.6, 0.6, 0.65) end
+    if source then tip:AddLine(source, gy[1], gy[2], gy[3], true) end
+end
+
+-- Like the game's corpse pin: the tooltip opens away from the middle of the map.
+local function Anchor(pin)
+    local ok, x, parentX = pcall(function()
+        local px = pin:GetCenter()
+        local hx = host and host:GetCenter()
+        return px, hx
+    end)
+    x, parentX = Known(x), Known(parentX)
+    if ok and type(x) == "number" and type(parentX) == "number" and x > parentX then return "ANCHOR_LEFT" end
+    return "ANCHOR_RIGHT"
 end
 
 -- Every marker under the cursor: a wipe puts several on one spot.
@@ -84,7 +110,7 @@ local function PinEnter(pin)
     hovered = pin
     local tip = GameTooltip
     if not (tip and pin.grave) then return end
-    tip:SetOwner(pin, "ANCHOR_RIGHT")
+    tip:SetOwner(pin, Anchor(pin))
     AddGrave(tip, pin.grave, true)
     local extra = 0
     for _, other in ipairs(active) do
@@ -93,11 +119,12 @@ local function PinEnter(pin)
             extra = extra + 1
         end
     end
-    if extra > 7 then tip:AddLine("... and " .. (extra - 7) .. " more here.", 0.75, 0.75, 0.75) end
+    local gy = GRAY_TEXT
+    if extra > 7 then tip:AddLine("... and " .. (extra - 7) .. " more here.", gy[1], gy[2], gy[3]) end
     if C_Map and C_Map.SetUserWaypoint then
         tip:AddLine(" ")
         local mine = waypoint and waypoint.key == pin.grave.key
-        tip:AddLine(mine and "Click: remove the waypoint" or "Click: waypoint to this corpse", 0.6, 0.6, 0.65)
+        tip:AddLine(mine and "Click: remove the waypoint" or "Click: waypoint to this corpse", gy[1], gy[2], gy[3])
     end
     tip:Show()
 end
@@ -110,13 +137,11 @@ end
 ---------------------------------------------------------------------------
 -- Markers
 ---------------------------------------------------------------------------
-local function Circle(owner, layer)
-    local tex = owner:CreateTexture(nil, layer)
-    tex:SetTexture(WHITE)
-    local mask = owner:CreateMaskTexture()
-    mask:SetTexture(CIRCLE, "CLAMPTOBLACKADDITIVE", "CLAMPTOBLACKADDITIVE")
-    mask:SetAllPoints(tex)
-    tex:AddMaskTexture(mask)
+local function Tombstone(pin, layer)
+    local tex = pin:CreateTexture(nil, layer)
+    tex:SetTexture(TOMB)
+    tex:SetTexCoord(TOMB_COORDS[1], TOMB_COORDS[2], TOMB_COORDS[3], TOMB_COORDS[4])
+    tex:SetAllPoints(pin)
     return tex
 end
 
@@ -132,17 +157,19 @@ local function CreatePin()
     local pin = FrameUnder(host)
     pin:SetSize(BASE, BASE)
 
-    pin.ring = Circle(pin, "BACKGROUND")           -- the member's class colour
-    pin.ring:SetAllPoints(pin)
-    pin.back = Circle(pin, "BORDER")               -- dark disc the tombstone stands on
-    pin.back:SetPoint("TOPLEFT", pin, "TOPLEFT", 2, -2)
-    pin.back:SetPoint("BOTTOMRIGHT", pin, "BOTTOMRIGHT", -2, 2)
-    pin.back:SetVertexColor(0.05, 0.05, 0.07, 0.92)
-    pin.tomb = pin:CreateTexture(nil, "ARTWORK")
-    pin.tomb:SetTexture(TOMB)
-    pin.tomb:SetTexCoord(TOMB_COORDS[1], TOMB_COORDS[2], TOMB_COORDS[3], TOMB_COORDS[4])
-    pin.tomb:SetPoint("TOPLEFT", pin, "TOPLEFT", 3, -3)
-    pin.tomb:SetPoint("BOTTOMRIGHT", pin, "BOTTOMRIGHT", -3, 3)
+    pin.tomb = Tombstone(pin, "ARTWORK")           -- the game's corpse tombstone, at full size
+    pin.glow = Tombstone(pin, "HIGHLIGHT")         -- brightens under the mouse, like the map's pins
+    pin.glow:SetBlendMode("ADD")
+    pin.glow:SetAlpha(0.5)
+
+    -- The member's class colour, as the map's own group-member dot. Without that atlas the
+    -- marker is the tombstone alone; the tooltip and the name still say whose it is.
+    pin.dot = pin:CreateTexture(nil, "OVERLAY")
+    pin.dot:SetSize(DOT, DOT)
+    pin.dot:SetPoint("CENTER", pin, "BOTTOMRIGHT", -3, 4)
+    local ok, set = pcall(pin.dot.SetAtlas, pin.dot, DOT_ATLAS)
+    pin.hasDot = ok and set ~= false
+    pin.dot:SetShown(pin.hasDot)
 
     pin.label = pin:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
     pin.label:SetPoint("TOP", pin, "BOTTOM", 0, -1)
@@ -203,7 +230,7 @@ local function Layout(map, canvas, mapID, width, height, canvasScale, pinScale)
                 pin:SetPoint("CENTER", canvas, "TOPLEFT", width * x / scale, -height * y / scale)
                 pin:SetFrameLevel(level)
                 local r, gr, b = ClassColor(g.class)
-                pin.ring:SetVertexColor(r, gr, b, 1)
+                pin.dot:SetVertexColor(r, gr, b, 1)
                 pin:SetAlpha(g.released and 1 or 0.7)       -- still lying there, not released
                 if ns.db.names then
                     pin.label:SetText(g.name)
