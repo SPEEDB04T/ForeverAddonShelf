@@ -25,27 +25,112 @@ for slot, el in pairs(ns.ELEMENTS) do slotByLetter[el.letter] = slot end
 ----------------------------------------------------------------------
 -- Small helpers
 ----------------------------------------------------------------------
-local function Norm(name)
-    if issecret(name) or type(name) ~= "string" or name == "" then return nil end
-    if Ambiguate then
-        local ok, short = pcall(Ambiguate, name, "none")
-        if ok and type(short) == "string" and not issecret(short) then name = short end
-    end
+-- Player names. On this realm a name is two words ("First Last"): never cut
+-- or reject one at a space. The realm is spelled two ways at once: the client
+-- calls it "RPPvP" (GetNormalizedRealmName) while senders from the server
+-- carry "CAMWOWUS1Realm9RPPvP", so a name is never matched by its realm
+-- suffix or by Ambiguate. Every name is found by looking it up in the group
+-- (see G.FindUnit); the realm only breaks a tie between two equal names.
+local function UsableName(name)
+    return not issecret(name) and type(name) == "string" and name ~= ""
+end
+
+-- the name as the roster gives it: UnitName, plus "-realm" only when the game
+-- gives one (players from another realm); this is the member table's key
+local function FullUnitName(unit)
+    local ok, name, realm = pcall(UnitName, unit)
+    if not ok or issecret(name) or issecret(realm) or not UsableName(name) then return nil end
+    if type(realm) == "string" and realm ~= "" then name = name .. "-" .. realm end
     return name
 end
 
-local function FullUnitName(unit)
-    local ok, name, realm = pcall(UnitName, unit)
-    if not ok or issecret(name) or issecret(realm) or type(name) ~= "string" or name == "" then return nil end
-    if type(realm) == "string" and realm ~= "" then name = name .. "-" .. realm end
-    return Norm(name)
+-- lower-case letters and digits only, to compare realm spellings
+local function Squeeze(s)
+    return (tostring(s or ""):lower():gsub("[^%w]", ""))
 end
 
--- Names go out with their realm so players from another realm read them right.
+local function OwnRealmSpellings()
+    local out = {}
+    for _, f in ipairs({ GetNormalizedRealmName, GetRealmName }) do
+        if f then
+            local ok, r = pcall(f)
+            if ok and not issecret(r) and type(r) == "string" and r ~= "" then out[#out + 1] = Squeeze(r) end
+        end
+    end
+    return out
+end
+
+local function Agree(a, b)
+    if a == "" or b == "" then return false end
+    return a == b or a:sub(-#b) == b or b:sub(-#a) == a or a:sub(1, #b) == b or b:sub(1, #a) == a
+end
+
+-- does the realm suffix of a sender fit this unit's realm (nil = the player's own realm)?
+local function RealmFits(suffix, unitRealm)
+    local s = Squeeze(suffix)
+    if unitRealm then return Agree(s, Squeeze(unitRealm)) end
+    for _, own in ipairs(OwnRealmSpellings()) do
+        if Agree(s, own) then return true end
+    end
+    return false
+end
+
+local function GroupUnits()
+    local units = { "player" }
+    if IsInRaid and IsInRaid() then
+        local ok, n = pcall(GetNumGroupMembers)
+        n = (ok and type(n) == "number" and not issecret(n)) and n or 0
+        for i = 1, math.min(n, 40) do units[#units + 1] = "raid" .. i end
+    elseif IsInGroup and IsInGroup() then
+        for i = 1, 4 do units[#units + 1] = "party" .. i end
+    end
+    return units
+end
+
+-- Which group unit a name from the server or from a message belongs to.
+-- Returns the unit, or nil and "hidden" (the game hides the name, or it is
+-- not text) or "nobody" (no one in the group has that name).
+function G.FindUnit(raw)
+    if not UsableName(raw) then return nil, "hidden" end
+    -- realms have no "-" in a name, names never do: the first "-" splits them
+    local who, suffix = raw:match("^([^%-]+)%-(.+)$")
+    who = who or raw
+    local found = {}
+    for _, unit in ipairs(GroupUnits()) do
+        local ok, name, realm = pcall(UnitName, unit)
+        if ok and not issecret(name) and not issecret(realm) and name == who then
+            found[#found + 1] = { unit = unit, realm = (type(realm) == "string" and realm ~= "") and realm or nil }
+        end
+    end
+    if #found == 0 then return nil, "nobody" end
+    if #found > 1 then
+        for _, c in ipairs(found) do
+            if suffix then
+                if RealmFits(suffix, c.realm) then return c.unit end
+            elseif not c.realm then
+                return c.unit
+            end
+        end
+    end
+    return found[1].unit
+end
+
+-- the member-table key for a unit: the roster's own name for it
+local function KeyFor(unit)
+    if unit == "player" then return ns.playerName end
+    return G.byUnit[unit] or FullUnitName(unit)
+end
+
+-- a name from a message or a sender, as the member-table key; nil if not in the group
+function G.NameKey(raw)
+    local unit, why = G.FindUnit(raw)
+    if not unit then return nil, why end
+    return KeyFor(unit), unit
+end
+
+-- Names go out as the roster gives them (with the realm only for players
+-- from another realm); the receiver looks them up in its own group.
 local function Qualified(name)
-    if name:find("-", 1, true) or not GetNormalizedRealmName then return name end
-    local ok, realm = pcall(GetNormalizedRealmName)
-    if ok and type(realm) == "string" and realm ~= "" and not issecret(realm) then return name .. "-" .. realm end
     return name
 end
 
@@ -185,8 +270,7 @@ function G.Rebuild()
     local hadOthers = G.OtherShamans()
 
     local function add(name, unit, subgroup, class)
-        name = Norm(name)
-        if not name then return end
+        if not UsableName(name) then return end
         byUnit[unit] = name
         names[name] = true
         if class ~= "SHAMAN" then return end
@@ -201,7 +285,9 @@ function G.Rebuild()
         for i = 1, GetNumGroupMembers() do
             local ok, name, _, subgroup, _, _, class = pcall(GetRaidRosterInfo, i)
             if ok and not issecret(name) and not issecret(subgroup) and not issecret(class) then
-                add(name, "raid" .. i, subgroup, class)
+                -- the unit's own name where the game gives it, so the key is
+                -- the same one G.FindUnit lands on
+                add(FullUnitName("raid" .. i) or name, "raid" .. i, subgroup, class)
             end
         end
         -- inside a raid, partyN units are the player's subgroup mates
@@ -476,6 +562,7 @@ local function Flush()
         return
     end
     local ok, result = pcall(C_ChatInfo.SendAddonMessage, PREFIX, msg, channel)
+    ns.CommLog({ dir = "out", channel = channel, code = ok and (result == nil and "nil" or result) or "error", msg = msg })
     if not ok then
         -- the game rejects this very message (too long, malformed): after a few
         -- tries give up on it, so everything behind it is not stuck for good
@@ -545,7 +632,8 @@ end
 local lastUnknown = {}   -- [sender] = when they last suggested a totem the player can't cast
 
 local function OnSuggestion(from, id, target, letter, key)
-    if not ns.isShaman or Norm(target) ~= ns.playerName then return end
+    -- "is it me": the target's lookup lands on the player's own unit
+    if not ns.isShaman or G.FindUnit(target) ~= "player" then return end
     local slot = slotByLetter[letter or ""]
     local info = slot and ns.ValidKey(key, slot) and ns.Info(key)
     if not info or not id then return end
@@ -778,7 +866,7 @@ local function OnProposal(from, fields)
     end
     for i = 3, #fields do
         local name, plan = fields[i]:match("^(.-)=(.*)$")
-        name = Norm(name)
+        name = name and G.NameKey(name)
         if name and G.members[name] then
             prop.lines[name] = DecodePlan(plan)
             if name == from then prop.votes[name] = "y" end
@@ -830,13 +918,43 @@ end
 ----------------------------------------------------------------------
 -- Receiving
 ----------------------------------------------------------------------
+-- Messages that could not be placed: counted per sender, shown in /totems status.
+G.ignored = {}          -- [sender as received] = { count, why }
+G.ignoredHidden = 0     -- messages whose sender the game hid
+
+local function Ignore(sender, why, channel, text)
+    if why == "hidden" then
+        G.ignoredHidden = G.ignoredHidden + 1
+    else
+        local e = G.ignored[sender]
+        if not e then
+            -- a few distinct strangers are enough to see the pattern
+            local n = 0
+            for _ in pairs(G.ignored) do n = n + 1 end
+            if n >= 20 then return end
+            e = { count = 0, why = why }
+            G.ignored[sender] = e
+        end
+        e.count = e.count + 1
+    end
+    ns.Debug(("message from %s ignored (%s): %s"):format(ns.Show(sender), why, text:sub(1, 40)))
+end
+
 function G.OnAddonMessage(prefix, text, channel, sender)
-    if issecret(prefix) or issecret(text) or issecret(sender) then return end
+    if issecret(prefix) or issecret(text) then return end
     if prefix ~= PREFIX or type(text) ~= "string" then return end
-    local from = Norm(sender)
-    if not from or from == ns.playerName then return end
-    if not G.names[from] then               -- only people in the group are listened to
-        ns.Debug(("message from %s ignored, not in your group: %s"):format(from, text:sub(1, 40)))
+    -- the sender is looked up among the group's units by name, never by
+    -- its realm suffix (see the note at FullUnitName)
+    local unit, why = G.FindUnit(sender)
+    ns.CommLog({ dir = "in", channel = channel, from = sender, unit = (unit == "player" and "me") or unit or why, msg = text })
+    if not unit then
+        Ignore(sender, why, channel, text)
+        return
+    end
+    if unit == "player" then return end     -- our own message coming back
+    local from = KeyFor(unit)
+    if not from then
+        Ignore(sender, "nobody", channel, text)
         return
     end
     ns.Debug(("message from %s: %s"):format(from, text:sub(1, 70)))
@@ -1007,6 +1125,13 @@ function G.PrintStatus()
     end
     if n == 0 then ns.Print("no other shamans in the group.") end
     ns.Print(("plan conflicts: %d. Addon messages: %s."):format(G.conflictCount, G.CommsProblem() or "ok"))
+    for sender, e in pairs(G.ignored) do
+        ns.Print(("%d message(s) from %s ignored: %s."):format(e.count, sender,
+            e.why == "nobody" and "not found in the group" or e.why))
+    end
+    if G.ignoredHidden > 0 then
+        ns.Print(("%d message(s) ignored: the game hid who sent them."):format(G.ignoredHidden))
+    end
 end
 
 -- /totems debug: everything the addon currently believes about the group.

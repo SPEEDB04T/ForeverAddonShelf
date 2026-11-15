@@ -43,23 +43,27 @@ local function Rows()
               tip = "How solid the bar is while nothing needs your attention. It is always solid in a fight, "
                   .. "under the mouse, and while a totem is missing or running out.",
               get = Get("idleAlpha"), set = Set("idleAlpha") })
-        add({ kind = "check", label = "Left-click an icon to drop the planned totem",
+        add({ kind = "check", label = "Left-click drops the totem",
+              tip = "A left-click on an icon drops the totem planned for it. Same as /totems click.",
               get = Get("clickCast"), set = SetBar("clickCast") })
         add({ kind = "check", label = "Bar ignores the mouse",
               tip = "Clicks go straight through the bar. Untick it here to get the bar's clicks and tooltips back.",
               get = Get("clickThrough"), set = SetBar("clickThrough") })
 
         add({ kind = "header", text = "Warnings" })
-        add({ kind = "check", label = "Ping when a planned totem goes missing or doubles up",
+        add({ kind = "check", label = "Sound for missing totems",
+              tip = "A ping when a planned totem goes missing or doubles up with another shaman's.",
               get = Get("sound"), set = Set("sound") })
-        add({ kind = "check", label = "Warn about missing totems out of combat too",
+        add({ kind = "check", label = "Warn out of combat too",
+              tip = "Show the missing-totem warning out of combat as well, not only in a fight.",
               get = Get("warnAlways"), set = Set("warnAlways") })
-        add({ kind = "slider", label = "Timer turns yellow below", min = 3, max = 30, step = 1, format = "%d s",
-              tip = "A totem with less time left than this is shown as running out.",
+        add({ kind = "slider", label = "Icon fades out below", min = 3, max = 30, step = 1, format = "%d s",
+              tip = "In combat, a totem with less time left than this fades in and out, like a buff running out.",
               get = Get("soonSeconds"), set = Set("soonSeconds") })
 
         add({ kind = "header", text = "Plan" })
-        add({ kind = "check", label = "Empty plan slots adopt the totem you drop",
+        add({ kind = "check", label = "Adopt totems you drop",
+              tip = "An empty plan slot takes the first totem you drop in it (never a temporary one).",
               get = Get("autoAdopt"), set = Set("autoAdopt") })
     else
         add({ kind = "note", text = "The totem bar is for Shamans. On this character the addon only shows the "

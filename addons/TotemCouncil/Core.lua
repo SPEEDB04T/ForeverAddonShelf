@@ -11,7 +11,7 @@ local defaults = {
     clickThrough = false,   -- bar ignores the mouse completely
     sound = false,          -- soft ping when a planned totem goes missing in combat
     warnAlways = false,     -- warn about missing totems out of combat too
-    soonSeconds = 10,       -- timer turns yellow below this
+    soonSeconds = 10,       -- in combat a kept-up totem fades like a running-out buff below this
     autoAdopt = true,       -- an empty plan slot adopts the first totem dropped in it
     point = nil,
     boardPoint = nil,
@@ -19,6 +19,7 @@ local defaults = {
     durations = {},         -- spellID / key -> seconds, as read from the game
     debug = false,          -- /totems debug: record what the game reports about the group
     debugLog = {},
+    commLog = {},           -- the last 40 addon messages in and out (always on; read from SavedVariables)
 }
 local charDefaults = {
     plan = {},              -- [slot] = totem key
@@ -47,6 +48,31 @@ function ns.Debug(line)
     log[#log + 1] = stamp .. line
     while #log > 500 do table.remove(log, 1) end
     ns.Print("|cff999999" .. line .. "|r")
+end
+
+-- Every addon message in and out, the last 40, always kept (not only with
+-- /totems debug) and never printed: written to SavedVariables at /reload or
+-- logout, so what really happened in a group can be read afterwards.
+-- e = { dir = "in"/"out", channel, from (raw sender), unit (who it resolved
+-- to, "me", "nobody" or "hidden"), code (the send result), msg }
+function ns.CommLog(e)
+    if not ns.db then return end
+    local log = ns.db.commLog
+    if type(log) ~= "table" then
+        log = {}
+        ns.db.commLog = log
+    end
+    local function safe(v, n)
+        if v == nil then return nil end
+        local s = issecret(v) and "<hidden>" or tostring(v)
+        return n and s:sub(1, n) or s
+    end
+    log[#log + 1] = {
+        t = (date and date("%H:%M:%S")) or ("%.1f"):format(GetTime()),
+        dir = e.dir, channel = safe(e.channel), from = safe(e.from, 60),
+        unit = safe(e.unit), code = safe(e.code), msg = safe(e.msg, 40),
+    }
+    while #log > 40 do table.remove(log, 1) end
 end
 
 -- Run something without letting an error repeat every frame in the error log.
@@ -96,32 +122,32 @@ function ns.Paint(key, text)
     return ("|cff%02x%02x%02x%s|r"):format(hex(c[1]), hex(c[2]), hex(c[3]), tostring(text))
 end
 
--- The action button frame, as the game's action bars draw it on this client
--- (Blizzard_ActionBar/Mainline/ActionButtonTemplate.xml): slot background,
--- metal frame, pressed and mouse-over art, and the border that the game
--- tints for equipped items (here: tinted for warnings). size = button size.
-function ns.ButtonArt(b, size)
-    local w = size * 46 / 45            -- the frame art is a pixel wider than a 45 button
-    b.slotBg = b:CreateTexture(nil, "BACKGROUND", nil, -1)
-    b.slotBg:SetAtlas("UI-HUD-ActionBar-IconFrame-Background")
-    b.slotBg:SetAllPoints()
-    local function frameArt(setter, getter, atlas)
-        if not b[setter] then return end
-        b[setter](b, atlas)
-        local t = b[getter] and b[getter](b)
-        if t then
-            t:ClearAllPoints()
-            t:SetPoint("TOPLEFT")
-            t:SetSize(w, size)
-        end
-    end
-    frameArt("SetNormalAtlas", "GetNormalTexture", "UI-HUD-ActionBar-IconFrame")
-    frameArt("SetPushedAtlas", "GetPushedTexture", "UI-HUD-ActionBar-IconFrame-Down")
-    frameArt("SetHighlightAtlas", "GetHighlightTexture", "UI-HUD-ActionBar-IconFrame-Mouseover")
-    return w
-end
+-- One button of the game's own totem bar (MultiCastActionButton and the
+-- MultiCastSlotButton under it, Blizzard_ActionBar/Shared/
+-- MultiCastActionBarFrame.xml and .lua), at the game's size: 30 x 30, the
+-- action-button frame resized to 30 x 30 as MultiCastActionButton_OnLoad
+-- does, the element's empty-slot picture behind the icon and the element's
+-- coloured ring (overlayTex, 34 x 34) on top. Bigger or smaller comes from
+-- the parent's scale, never from resizing the art.
+ns.TOTEM_BUTTON = 30
+ns.TOTEM_GAP = 8            -- the game's totem bar: x = 8 between buttons
+local TOTEMBAR = "Interface\\Buttons\\UI-TotemBar"
+-- SLOT_EMPTY_TCOORDS and SLOT_OVERLAY_TCOORDS (locals in the game's file)
+local SLOT_EMPTY = {
+    [1] = { 67 / 128, 97 / 128, 100 / 256, 130 / 256 },  -- fire
+    [2] = { 66 / 128, 96 / 128, 3 / 256, 33 / 256 },     -- earth
+    [3] = { 39 / 128, 69 / 128, 209 / 256, 239 / 256 },  -- water
+    [4] = { 66 / 128, 96 / 128, 36 / 256, 66 / 256 },    -- air
+}
+local SLOT_OVERLAY = {
+    [1] = { 36 / 128, 70 / 128, 172 / 256, 206 / 256 },
+    [2] = { 1 / 128, 35 / 128, 172 / 256, 206 / 256 },
+    [3] = { 1 / 128, 35 / 128, 207 / 256, 240 / 256 },
+    [4] = { 36 / 128, 70 / 128, 137 / 256, 171 / 256 },
+}
 
--- rounds the icon's corners to fit inside the frame art, as the action bars do
+-- rounds the icon's corners to fit inside the frame art, as
+-- ActionButtonTemplate's IconMask does
 function ns.IconMask(b, icon, size)
     if not b.CreateMaskTexture or not icon.AddMaskTexture then return end
     local m = b:CreateMaskTexture()
@@ -132,25 +158,123 @@ function ns.IconMask(b, icon, size)
     icon:AddMaskTexture(m)
 end
 
--- the tintable border on top of a button (parent: a frame above the cooldown)
-function ns.ButtonBorder(parent, anchor, size)
-    local t = parent:CreateTexture(nil, "OVERLAY", nil, -1)
-    t:SetAtlas("UI-HUD-ActionBar-IconFrame-Border")
-    t:SetPoint("TOPLEFT", anchor, "TOPLEFT")
-    t:SetSize(size * 46 / 45, size)
-    t:SetAlpha(0)
-    return t
+function ns.TotemButtonArt(b, slot)
+    local S = ns.TOTEM_BUTTON
+    b:SetSize(S, S)
+
+    -- MultiCastSlotButtonTemplate: the element's empty slot (BACKGROUND)
+    b.slotBg = b:CreateTexture(nil, "BACKGROUND", nil, -1)
+    b.slotBg:SetTexture(TOTEMBAR)
+    b.slotBg:SetAllPoints()
+    local e = SLOT_EMPTY[slot]
+    if e then b.slotBg:SetTexCoord(e[1], e[2], e[3], e[4]) end
+
+    -- ActionButtonTemplate: icon (BACKGROUND) with its mask
+    b.icon = b:CreateTexture(nil, "BACKGROUND")
+    b.icon:SetAllPoints()
+    ns.IconMask(b, b.icon, S)
+
+    -- NormalTexture, PushedTexture, HighlightTexture, each 30 x 30 at TOPLEFT
+    local function frameArt(setter, getter, atlas)
+        if not b[setter] then return end
+        b[setter](b, atlas)
+        local t = b[getter] and b[getter](b)
+        if t then
+            t:ClearAllPoints()
+            t:SetPoint("TOPLEFT")
+            t:SetSize(S, S)
+        end
+    end
+    frameArt("SetNormalAtlas", "GetNormalTexture", "UI-HUD-ActionBar-IconFrame")
+    frameArt("SetPushedAtlas", "GetPushedTexture", "UI-HUD-ActionBar-IconFrame-Down")
+    frameArt("SetHighlightAtlas", "GetHighlightTexture", "UI-HUD-ActionBar-IconFrame-Mouseover")
+
+    -- the template's CheckedTexture (Mouseover atlas, ADD); shown by hand
+    -- because these are plain buttons, not check buttons
+    b.checked = b:CreateTexture(nil, "ARTWORK", nil, 1)
+    b.checked:SetAtlas("UI-HUD-ActionBar-IconFrame-Mouseover")
+    if b.checked.SetBlendMode then b.checked:SetBlendMode("ADD") end
+    b.checked:SetPoint("TOPLEFT")
+    b.checked:SetSize(S, S)
+    b.checked:Hide()
+
+    -- MultiCastActionButtonTemplate: the element ring, 34 x 34 CENTER, OVERLAY
+    b.overlayTex = b:CreateTexture(nil, "OVERLAY")
+    b.overlayTex:SetTexture(TOTEMBAR)
+    b.overlayTex:SetSize(34, 34)
+    b.overlayTex:SetPoint("CENTER")
+    local o = SLOT_OVERLAY[slot]
+    if o then b.overlayTex:SetTexCoord(o[1], o[2], o[3], o[4]) end
+
+    -- cooldown: inset 3 from the icon, swipe black at 0.64, no edge, no bling
+    b.cd = CreateFrame("Cooldown", nil, b, "CooldownFrameTemplate")
+    b.cd:SetPoint("TOPLEFT", 3, -3)
+    b.cd:SetPoint("BOTTOMRIGHT", -3, 3)
+    b.cd.noCooldownCount = true     -- keep cooldown-text addons off it; the time is under the button
+    if b.cd.SetHideCountdownNumbers then b.cd:SetHideCountdownNumbers(true) end
+    if b.cd.SetDrawEdge then b.cd:SetDrawEdge(false) end
+    if b.cd.SetDrawBling then b.cd:SetDrawBling(false) end
+    if b.cd.SetSwipeColor then b.cd:SetSwipeColor(0, 0, 0, 0.64) end
+
+    -- TextOverlayContainer: above the cooldown. Holds the one marker the bar
+    -- uses, in the hotkey's place: the game's range dot (RANGE_INDICATOR),
+    -- in red, as action buttons show it when the target is out of range.
+    b.textOverlay = CreateFrame("Frame", nil, b)
+    b.textOverlay:SetAllPoints()
+    b.textOverlay:SetFrameLevel(b.cd:GetFrameLevel() + 2)
+    b.marker = b.textOverlay:CreateFontString(nil, "OVERLAY", "NumberFontNormalSmallGray")
+    b.marker:SetSize(32, 10)
+    if b.marker.SetJustifyH then b.marker:SetJustifyH("RIGHT") end
+    b.marker:SetPoint("TOPRIGHT", -4, -5)
+    local red = ns.COLOR.red
+    b.marker:SetTextColor(red[1], red[2], red[3])
+    b.marker:SetText(type(RANGE_INDICATOR) == "string" and RANGE_INDICATOR or "\226\151\143")
+    b.marker:Hide()
+
+    -- AuraButtonArtTemplate's Duration: GameFontNormalSmall, TOP to the
+    -- icon's BOTTOM; gold, white under a minute (BUFF_DURATION_WARNING_TIME)
+    b.duration = b:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+    b.duration:SetPoint("TOP", b, "BOTTOM", 0, 0)
+    b.duration:Hide()
+    return b
 end
 
--- light up (or clear) a button's border; state is a word tests can read back
-function ns.SetBorder(b, state, color, alpha)
-    b.borderState = state
-    if color then
-        b.border:SetVertexColor(color[1], color[2], color[3])
-        b.border:SetAlpha(alpha or 1)
-    else
-        b.border:SetAlpha(0)
+-- the duration text the game's buff icons use (SecondsToTimeAbbrev: "2 m",
+-- then whole seconds below 90), gold, white below a minute
+local DURATION_WARNING = 60
+function ns.SetDuration(b, left)
+    if not left then
+        b.duration:Hide()
+        return
     end
+    b.duration:SetText(ns.FormatTime(left))
+    local c = left < DURATION_WARNING and ns.COLOR.white or ns.COLOR.gold
+    b.duration:SetTextColor(c[1], c[2], c[3])
+    b.duration:Show()
+end
+
+function ns.FormatTime(sec)
+    if sec < 0 then sec = 0 end
+    if SecondsToTimeAbbrev then
+        local ok, fmt, v = pcall(SecondsToTimeAbbrev, sec)
+        if ok and type(fmt) == "string" and type(v) == "number" then
+            local ok2, text = pcall(string.format, fmt, v)
+            if ok2 then return text end
+        end
+    end
+    -- the same rule as the game's SecondsToTimeAbbrev (threshold 1.5)
+    if sec >= 86400 * 1.5 then return ("%d d"):format(math.ceil(sec / 86400)) end
+    if sec >= 3600 * 1.5 then return ("%d h"):format(math.ceil(sec / 3600)) end
+    if sec >= 60 * 1.5 then return ("%d m"):format(math.ceil(sec / 60)) end
+    return ("%d s"):format(math.floor(sec))
+end
+
+-- The fade the game's buff icons use while they run out
+-- (AuraContainerTemplate: period 1.5 s, alpha 0.3 to 1.0, BOUNCE).
+function ns.WarningAlpha(now)
+    local p = (now % 1.5) / 0.75
+    if p > 1 then p = 2 - p end
+    return 0.3 + 0.7 * p
 end
 
 -- the game's dark dialog box (StaticPopup look), for frames without a template
@@ -304,7 +428,7 @@ function ns.SlotStatus(slot)
     if a then
         st.remaining = a.start + a.duration - GetTime()
         -- a temporary totem standing in for the planned one is the player's own
-        -- call: no "different totem" or "about to run out" border for it. The
+        -- call: no "different totem" note or running-out fade for it. The
         -- missing warning comes back by itself once it is gone.
         local info = a.key and ns.Info(a.key)
         st.temp = info and info.temp or false

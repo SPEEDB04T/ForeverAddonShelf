@@ -197,7 +197,8 @@ function Menu.OpenTotems(anchor, member, slot)
         if info then
             items[#items + 1] = {
                 text = info.name, icon = info.icon, checked = (key == current),
-                note = (takenBy[key] and not info.stack) and ns.Paint("orange", takenBy[key]) or nil,
+                -- who already has it: grey, like a menu row's secondary text
+                note = (takenBy[key] and not info.stack) and takenBy[key] or nil,
                 func = function()
                     if own then ns.SetPlan(slot, key) else G.Suggest(member.name, slot, key) end
                 end,

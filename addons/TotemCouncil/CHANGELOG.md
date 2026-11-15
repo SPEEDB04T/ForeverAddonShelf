@@ -1,5 +1,14 @@
 # Changelog
 
+## 1.3.0
+
+- The bar now copies the game's own totem bar: 30-pixel totem buttons 8 apart with the totem-bar slot art, the time left under each icon the way buffs show it (white under a minute), and no coloured borders. A missing totem shows as a grey icon, a totem about to run out fades in and out like a buff running out, and a clash is one small red dot in the corner, with the details in the tooltip.
+- The small group button beside the bar is gone. The group plan opens from `/totems plan`, the minimap button, or "Group plan..." in an icon's menu.
+- The group plan window uses the same totem buttons; proposed changes are highlighted and clashes get the red dot.
+- The Accept / Decline box is laid out like the game's own pop-ups and appears where they do.
+- The options window and the minimap button are redrawn by the shared addon kit: they now copy the game's own Options rows and its round minimap button. Option names are shorter so each fits on one line; the rest is in the tooltip.
+- Fixed: messages between shamans could be dropped on Forever, where names have a space ("First Last") and the server spells the realm differently from the game. The sender is now found by name among your group, so plans, suggestions and proposals arrive. `/totems status` counts messages it could not match to anyone, and the last 40 messages in and out are kept for checking afterwards.
+
 ## 1.2.0
 
 - New look that matches the game's own UI. The totem bar uses the action bar's button frames, and warnings light the game's button border (red: missing, orange: doubled up or planned twice, yellow: about to run out or not your plan). The plan clash that used to be a small orange dot is now that steady orange border. The group marker beside the bar is a small button with the addon's icon. The group plan is a standard portrait window with the totems as small action slots, the accept/decline box is the game's dialog box, and the totem menu uses the game's dropdown look with a tick on the current choice.

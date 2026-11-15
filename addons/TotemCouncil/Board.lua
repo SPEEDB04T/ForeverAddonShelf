@@ -1,13 +1,17 @@
 -- Totem Council: the group plan window (every shaman in the group, what each
--- drops per element, conflicts in red) and the small accept/decline pop-up.
+-- drops per element, a red dot where two plan the same totem) and the
+-- accept/decline pop-up.
 local ADDON, ns = ...
 
 local Board = {}
 ns.Board = Board
 
-local ROW_H, CELL, NAME_W, PAD, MAX_ROWS = 40, 30, 150, 12, 12
-local COL_W = CELL + 22
-local WIDTH = PAD * 2 + NAME_W + 4 * COL_W
+-- each row is one copy of the totem bar: 30 x 30 totem buttons, 8 apart,
+-- the time left under each (10 px of GameFontNormalSmall), 4 px between rows
+local CELL, GAP = ns.TOTEM_BUTTON, ns.TOTEM_GAP
+local ROW_H, NAME_W, PAD, MAX_ROWS = CELL + 10 + 4, 150, 12, 12
+local COL_W = CELL + GAP
+local WIDTH = PAD * 2 + NAME_W + 4 * CELL + 3 * GAP
 -- layout inside the game's ButtonFrameTemplate: title bar, header strip
 -- beside the portrait, the inset with the rows, and the button bar
 local ROWS_TOP, BAR_H, STATUS_H = 64, 26, 40
@@ -28,6 +32,12 @@ end
 ----------------------------------------------------------------------
 local toast, toastQueue = nil, {}
 
+-- StaticPopup's layout (Blizzard_StaticPopup_Game/GameDialog.xml and .lua):
+-- 320 wide, text 290 wide under a 16 px top spacer, buttons 9 below the
+-- text, 120 x 21 and 10 apart, 16 px under the buttons
+local POPUP_W, POPUP_TEXT_W, POPUP_TOP, POPUP_GAP, POPUP_BOTTOM = 320, 290, 16, 9, 16
+local POPUP_BUTTON_W, POPUP_BUTTON_H, POPUP_BUTTON_GAP = 120, 21, 10
+
 local function NextToast()
     if not toast or toast:IsShown() then return end
     local req = table.remove(toastQueue, 1)
@@ -37,13 +47,16 @@ local function NextToast()
     if not req then return end
     toast.req = req
     toast.text:SetText(req.text or "")
-    if req.icon then
-        toast.icon:SetTexture(req.icon)
-        toast.icon:Show()
+    toast:SetHeight(POPUP_TOP + (toast.text:GetStringHeight() or 12) + POPUP_GAP + POPUP_BUTTON_H + POPUP_BOTTOM)
+    -- where StaticPopup1 sits, or under it while a game dialog is up, the way
+    -- the game stacks its own dialogs
+    toast:ClearAllPoints()
+    local above = StaticPopup1
+    if type(above) == "table" and above.IsShown and above:IsShown() then
+        toast:SetPoint("TOP", above, "BOTTOM", 0, 0)
     else
-        toast.icon:Hide()
+        toast:SetPoint("TOP", UIParent, "TOP", 0, -135)
     end
-    toast:SetHeight(math.max(90, (toast.text:GetStringHeight() or 30) + 70))
     toast.left = 45
     toast.shownAt = GetTime()
     toast:Show()
@@ -60,33 +73,65 @@ local function CloseToast(answer)
     NextToast()
 end
 
+-- StaticPopupButtonTemplate's art and fonts
+local function PopupButton(parent, text)
+    local b = CreateFrame("Button", nil, parent)
+    b:SetSize(POPUP_BUTTON_W, POPUP_BUTTON_H)
+    local function art(setter, file, blend)
+        if not b[setter] then return end
+        b[setter](b, file)
+        local getter = setter:gsub("^Set", "Get")
+        local t = b[getter] and b[getter](b)
+        if t then
+            t:SetTexCoord(0, 1, 0, 0.71875)
+            if blend and t.SetBlendMode then t:SetBlendMode(blend) end
+        end
+    end
+    art("SetNormalTexture", "Interface\\Buttons\\UI-DialogBox-Button-Up")
+    art("SetPushedTexture", "Interface\\Buttons\\UI-DialogBox-Button-Down")
+    art("SetDisabledTexture", "Interface\\Buttons\\UI-DialogBox-Button-Disabled")
+    art("SetHighlightTexture", "Interface\\Buttons\\UI-DialogBox-Button-Highlight", "ADD")
+    if b.SetNormalFontObject then
+        b:SetNormalFontObject("GameFontNormal")
+        b:SetHighlightFontObject("GameFontHighlight")
+        b:SetDisabledFontObject("GameFontDisable")
+    end
+    b:SetText(text)
+    local fs = b.GetFontString and b:GetFontString()
+    if fs then
+        fs:ClearAllPoints()
+        fs:SetPoint("CENTER", 0, 1)
+    end
+    return b
+end
+
 local function CreateToast()
-    -- the game's own pop-up dialog look (StaticPopup): dark dialog box,
-    -- white text, two panel buttons
-    toast = CreateFrame("Frame", "TotemCouncilToast", UIParent, BackdropTemplateMixin and "BackdropTemplate" or nil)
-    toast:SetSize(320, 80)
-    toast:SetPoint("TOP", UIParent, "TOP", 0, -170)
+    -- the game's pop-up dialog (StaticPopup): the same dialog panel
+    -- (DefaultDialogPanelTemplate), white centred text, two dialog buttons;
+    -- the dark dialog box if the template is missing on this client
+    local ok, f = pcall(CreateFrame, "Frame", "TotemCouncilToast", UIParent, "DefaultDialogPanelTemplate")
+    if not ok or not f then
+        f = CreateFrame("Frame", "TotemCouncilToast", UIParent, BackdropTemplateMixin and "BackdropTemplate" or nil)
+        ns.DialogBackdrop(f)
+    end
+    toast = f
+    toast:SetSize(POPUP_W, 72)
     toast:SetFrameStrata("DIALOG")
+    toast:SetToplevel(true)
     toast:EnableMouse(true)
-    ns.DialogBackdrop(toast)
-    toast.icon = toast:CreateTexture(nil, "ARTWORK")
-    toast.icon:SetSize(32, 32)
-    toast.icon:SetPoint("TOPLEFT", 18, -18)
-    toast.icon:SetTexCoord(0.07, 0.93, 0.07, 0.93)
-    toast.text = toast:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
-    toast.text:SetPoint("TOPLEFT", 58, -18)
-    toast.text:SetPoint("RIGHT", -18, 0)
-    toast.text:SetJustifyH("LEFT")
-    toast.accept = MakeButton(toast, ACCEPT or "Accept", 110)
-    toast.accept:SetPoint("BOTTOMRIGHT", toast, "BOTTOM", -4, 16)
+    toast.text = toast:CreateFontString(nil, "ARTWORK", "GameFontHighlight")
+    toast.text:SetPoint("TOP", 0, -POPUP_TOP)
+    toast.text:SetWidth(POPUP_TEXT_W)
+    toast.accept = PopupButton(toast, ACCEPT or "Accept")
+    toast.accept:SetPoint("TOPRIGHT", toast.text, "BOTTOM", -POPUP_BUTTON_GAP / 2, -POPUP_GAP)
     toast.accept:SetScript("OnClick", function()
         -- a request that only just appeared can't be accepted yet, so a
         -- double-click on the one before it does not accept this one unread
         if GetTime() - (toast.shownAt or 0) < 0.6 then return end
         CloseToast("y")
     end)
-    toast.decline = MakeButton(toast, DECLINE or "Decline", 110)
-    toast.decline:SetPoint("BOTTOMLEFT", toast, "BOTTOM", 4, 16)
+    toast.decline = PopupButton(toast, DECLINE or "Decline")
+    toast.decline:SetPoint("TOPLEFT", toast.text, "BOTTOM", POPUP_BUTTON_GAP / 2, -POPUP_GAP)
     toast.decline:SetScript("OnClick", function() CloseToast("n") end)
     -- an unanswered request counts as declined after 45 seconds
     toast:SetScript("OnUpdate", function(self, elapsed)
@@ -176,18 +221,10 @@ local function CreateRow(i)
     for index, slot in ipairs(ns.SLOT_ORDER) do
         local c = CreateFrame("Button", nil, row)
         c.slot = slot
-        c:SetSize(CELL, CELL)
-        c:SetPoint("LEFT", row, "LEFT", NAME_W + (index - 1) * COL_W + (COL_W - CELL) / 2, 0)
-        -- each cell is a small action slot (same art as the totem bar);
-        -- red border = planned twice, light blue = proposed change
-        ns.ButtonArt(c, CELL)
-        c.icon = c:CreateTexture(nil, "BACKGROUND")
-        c.icon:SetAllPoints()
-        c.icon:SetTexCoord(0.07, 0.93, 0.07, 0.93)
-        ns.IconMask(c, c.icon, CELL)
-        c.border = ns.ButtonBorder(c, c, CELL)
-        c.live = c:CreateFontString(nil, "OVERLAY", "NumberFontNormalSmall")
-        c.live:SetPoint("BOTTOMRIGHT", -2, 3)
+        -- the same totem button as the bar; red dot = planned twice,
+        -- the checked highlight = a proposed change
+        ns.TotemButtonArt(c, slot)
+        c:SetPoint("TOPLEFT", row, "TOPLEFT", NAME_W + (index - 1) * COL_W, 0)
         c:SetScript("OnEnter", CellEnter)
         c:SetScript("OnLeave", function() GameTooltip:Hide() end)
         c:SetScript("OnClick", CellClick)
@@ -257,7 +294,7 @@ function Board.Create()
     for index, slot in ipairs(ns.SLOT_ORDER) do
         local el = ns.ELEMENTS[slot]
         local h = frame:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
-        h:SetPoint("BOTTOM", frame, "TOPLEFT", PAD + NAME_W + (index - 1) * COL_W + COL_W / 2, -(ROWS_TOP - 6))
+        h:SetPoint("BOTTOM", frame, "TOPLEFT", PAD + NAME_W + (index - 1) * COL_W + CELL / 2, -(ROWS_TOP - 6))
         h:SetText(el.name)
     end
 
@@ -265,7 +302,7 @@ function Board.Create()
     frame.empty:SetPoint("TOPLEFT", PAD, -(ROWS_TOP + 6))
     frame.empty:SetWidth(WIDTH - PAD * 2)
     frame.empty:SetJustifyH("LEFT")
-    frame.empty:SetText("No shamans in your group yet.\n\nWhen another shaman joins, their totems show up here: their plan if they have Totem Council, otherwise whatever they are seen dropping. Totems planned twice in one group turn red.\n\n/totems demo adds two pretend shamans so you can try it.")
+    frame.empty:SetText("No shamans in your group yet.\n\nWhen another shaman joins, their totems show up here: their plan if they have Totem Council, otherwise whatever they are seen dropping. A totem planned twice in one group gets a red dot.\n\n/totems demo adds two pretend shamans so you can try it.")
 
     frame.status = frame:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
     frame.status:SetPoint("BOTTOMLEFT", PAD, BAR_H + 8)
@@ -300,10 +337,6 @@ function Board.Create()
         -- the plain dialog box has a thick border: keep the buttons off it
         frame.resolve:SetPoint("BOTTOMLEFT", 16, 14)
     end
-
-    frame.hint = frame:CreateFontString(nil, "OVERLAY", "GameFontDisableSmall")
-    frame.hint:SetPoint("TOPRIGHT", -PAD, -30)
-    frame.hint:SetText("click a totem to change it")
 
     frame:SetScript("OnShow", function() ns.Safe(Board.Refresh) end)
     if type(UISpecialFrames) == "table" then table.insert(UISpecialFrames, "TotemCouncilBoard") end
@@ -354,11 +387,11 @@ function Board.Refresh()
         local sub = SubLabel(m, inRaid)
         local vote = prop and prop.lines[m.name] and prop.votes[m.name]
         if vote == "y" then
-            sub = sub .. " - " .. ns.Paint("green", "accepted")
+            sub = sub .. " - accepted"
         elseif vote == "n" then
-            sub = sub .. " - " .. ns.Paint("red", "declined")
+            sub = sub .. " - declined"
         elseif prop and prop.lines[m.name] and not prop.doneAt then
-            sub = sub .. " - " .. ns.Paint("blue", "asked")
+            sub = sub .. " - asked"
         end
         row.sub:SetText(sub)
         local line = prop and not prop.doneAt and prop.lines[m.name]
@@ -376,22 +409,17 @@ function Board.Refresh()
             else
                 c.icon:Hide()
             end
-            c.icon:SetDesaturated(G.Fixed(m))
             local conflict = G.conflictMap[m.name] and G.conflictMap[m.name][slot]
-            if proposed then
-                ns.SetBorder(c, "proposed", BLUE, 1)
-            elseif conflict then
-                ns.SetBorder(c, "conflict", RED, 1)
-            else
-                ns.SetBorder(c, nil)
-            end
+            -- c.state for tests: "proposed" or "conflict"
+            c.state = (proposed and "proposed") or (conflict and "conflict") or nil
+            c.checked:SetShown(proposed and true or false)
+            c.marker:SetShown(conflict and true or false)
+            -- as on the bar: grey while that totem is not down, the time
+            -- left under it while it is
             local live = m.isPlayer and ns.active[slot] or m.seen[slot]
-            if live then
-                local left = m.isPlayer and (live.start + live.duration - now) or (live.expires - now)
-                c.live:SetText(ns.HUD.FormatTime(left))
-            else
-                c.live:SetText("")
-            end
+            local left = live and (m.isPlayer and (live.start + live.duration - now) or (live.expires - now)) or nil
+            c.icon:SetDesaturated(not live)
+            ns.SetDuration(c, left)
         end
         row:Show()
     end
@@ -407,15 +435,13 @@ function Board.Refresh()
     local status
     if prop and not prop.doneAt then
         local yes, total = G.ProposalProgress()
-        status = ns.Paint("blue", ("Proposal from %s: %d of %d accepted."):format(prop.from, yes, total))
-            .. " Blue borders show the proposed changes."
+        status = ("Proposal from %s: %d of %d accepted. Highlighted totems are the proposed changes."):format(prop.from, yes, total)
     elseif others == 0 then
         status = ""
     elseif G.conflictCount > 0 then
-        status = ns.Paint("red", ("%d totem(s) planned twice in one group."):format(G.conflictCount))
-            .. " Red borders mark them."
+        status = ("%d totem(s) planned twice in one group; a red dot marks them. Click a totem to change it."):format(G.conflictCount)
     else
-        status = ns.Paint("green", "No conflicts.") .. " Every group gets each totem once."
+        status = "No conflicts: every group gets each totem once."
     end
     if #list > MAX_ROWS then status = status .. (" (+%d more shamans not shown)"):format(#list - MAX_ROWS) end
     local blocked = others > 0 and G.CommsProblem()

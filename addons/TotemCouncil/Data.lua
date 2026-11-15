@@ -2,7 +2,7 @@
 local ADDON, ns = ...
 
 ns.ADDON = ADDON
-ns.VERSION = "1.2.0"
+ns.VERSION = "1.3.0"
 
 -- WoW Forever hides some values from addons in combat ("secret values").
 -- Comparing or indexing one throws, so every API result is checked first.

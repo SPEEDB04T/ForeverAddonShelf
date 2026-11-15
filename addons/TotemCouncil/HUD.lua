@@ -1,15 +1,18 @@
--- Totem Council: the totem bar. Four small icons (earth, fire, water, air)
--- with the time left on each; it only gets loud when something is wrong.
+-- Totem Council: the totem bar. A copy of the game's own totem bar
+-- (MultiCastActionBarFrame): four 30 x 30 buttons, earth, fire, water, air,
+-- 8 apart, each with its element ring. The time left sits under each button
+-- like a buff's. State is shown the way the default UI shows it: a totem that
+-- is not down is a grey icon, one about to run out fades like a buff running
+-- out, a clash with another shaman is one red dot plus the tooltip.
 local ADDON, ns = ...
 
 local HUD = {}
 ns.HUD = HUD
 
-local SIZE, GAP, PIP = 34, 4, 22
-local PIP_ICON = "Interface\\Icons\\Spell_Nature_Windfury"
+local SIZE, GAP = ns.TOTEM_BUTTON, ns.TOTEM_GAP
 
 local C = ns.COLOR
-local RED, ORANGE, YELLOW, BLUE = C.red, C.orange, C.yellow, C.blue
+local RED, ORANGE, YELLOW = C.red, C.orange, C.yellow
 local GRAY = C.gray
 
 local function UseKeyDown()
@@ -22,13 +25,7 @@ local function UseKeyDown()
     return ok and v
 end
 
-function HUD.FormatTime(sec)
-    if sec < 0 then sec = 0 end
-    if sec >= 60 then
-        return ("%d:%02d"):format(math.floor(sec / 60), math.floor(sec % 60))
-    end
-    return ("%d"):format(math.floor(sec + 0.5))
-end
+HUD.FormatTime = ns.FormatTime
 
 local function JoinNames(list)
     return table.concat(list, ", ")
@@ -47,7 +44,7 @@ local function OnEnter(self)
     GameTooltip:SetOwner(self, "ANCHOR_TOP")
     GameTooltip:AddLine(el.name .. " totem")      -- gold, like every game tooltip title
     if a then
-        GameTooltip:AddDoubleLine(a.name or "Unknown totem", HUD.FormatTime(st.remaining or 0), 1, 1, 1, 1, 1, 1)
+        GameTooltip:AddDoubleLine(a.name or "Unknown totem", ns.FormatTime(st.remaining or 0), 1, 1, 1, 1, 1, 1)
     else
         GameTooltip:AddLine("No totem down", GRAY[1], GRAY[2], GRAY[3])
     end
@@ -66,7 +63,7 @@ local function OnEnter(self)
     end
     if st.conflict then
         GameTooltip:AddLine(" ")
-        GameTooltip:AddLine("Same plan as " .. JoinNames(st.conflict) .. ". Open the group plan to sort it out.", ORANGE[1], ORANGE[2], ORANGE[3], true)
+        GameTooltip:AddLine("Same plan as " .. JoinNames(st.conflict) .. ". Open the group plan (/totems plan) to sort it out.", ORANGE[1], ORANGE[2], ORANGE[3], true)
     end
     GameTooltip:AddLine(" ")
     -- say what the click really does: in combat the button keeps the totem it
@@ -126,54 +123,15 @@ local function StopMove()
 end
 
 local function CreateButton(f, slot, index)
-    local el = ns.ELEMENTS[slot]
     local b = CreateFrame("Button", "TotemCouncilButton" .. slot, f, "SecureActionButtonTemplate")
     b.slot = slot
-    b:SetSize(SIZE, SIZE)
+    ns.TotemButtonArt(b, slot)
     b:SetPoint("LEFT", f, "LEFT", (index - 1) * (SIZE + GAP), 0)
     if UseKeyDown() then b:RegisterForClicks("AnyDown", "AnyUp") else b:RegisterForClicks("AnyUp") end
     b:RegisterForDrag("LeftButton")
     b:SetScript("OnDragStart", StartMove)
     b:SetScript("OnDragStop", StopMove)
-
-    -- the game's action button: empty-slot background, icon, metal frame,
-    -- pressed and mouse-over art (ns.ButtonArt)
-    ns.ButtonArt(b, SIZE)
-    b.icon = b:CreateTexture(nil, "BACKGROUND")
-    b.icon:SetAllPoints()
-    b.icon:SetTexCoord(0.07, 0.93, 0.07, 0.93)
-    ns.IconMask(b, b.icon, SIZE)
-
-    b.cd = CreateFrame("Cooldown", nil, b, "CooldownFrameTemplate")
-    b.cd:SetPoint("TOPLEFT", 2, -2)
-    b.cd:SetPoint("BOTTOMRIGHT", -2, 2)
-    b.cd.noCooldownCount = true     -- keep cooldown-text addons off it, the bar draws its own
-    if b.cd.SetHideCountdownNumbers then b.cd:SetHideCountdownNumbers(true) end
-    if b.cd.SetDrawEdge then b.cd:SetDrawEdge(false) end
-    if b.cd.SetReverse then b.cd:SetReverse(true) end
-
-    -- text sits on its own frame so it stays above the cooldown sweep
-    b.over = CreateFrame("Frame", nil, b)
-    b.over:SetAllPoints()
-    b.over:SetFrameLevel(b.cd:GetFrameLevel() + 2)
-
-    -- warning border: the game's own action-button border, tinted (it uses
-    -- the same piece in green for equipped items)
-    b.border = ns.ButtonBorder(b.over, b, SIZE)
-
-    b.timer = b.over:CreateFontString(nil, "OVERLAY", "NumberFontNormal")
-    b.timer:SetPoint("CENTER", 0, 0)
-    local font, _, flags = b.timer:GetFont()
-    if font then b.timer:SetFont(font, 15, flags or "OUTLINE") end
-
-    -- empty slot: the element's letter, quiet, like an unbound key label
-    b.letter = b.over:CreateFontString(nil, "OVERLAY", "GameFontDisable")
-    b.letter:SetPoint("CENTER", 0, 0)
-    b.letter:SetText(el.letter)
-
-    -- corner mark, where the action bar puts its hotkey text
-    b.badge = b.over:CreateFontString(nil, "OVERLAY", "NumberFontNormalSmallGray")
-    b.badge:SetPoint("TOPRIGHT", -2, -3)
+    if b.cd.SetReverse then b.cd:SetReverse(true) end   -- fills up as the totem runs down, like the TotemFrame
 
     b:SetScript("OnEnter", OnEnter)
     b:SetScript("OnLeave", OnLeave)
@@ -203,41 +161,6 @@ function HUD.Create()
     for index, slot in ipairs(ns.SLOT_ORDER) do
         f.buttons[slot] = CreateButton(f, slot, index)
     end
-
-    -- small marker that appears when another shaman is in the group; opens the group plan
-    -- (a small action-style button with the addon's own icon; its border
-    -- lights up for an open proposal or a clash)
-    local pip = CreateFrame("Button", nil, f)
-    f.pip = pip
-    pip:SetSize(PIP, PIP)
-    pip:SetPoint("BOTTOMLEFT", f, "BOTTOMRIGHT", GAP + 1, 0)
-    ns.ButtonArt(pip, PIP)
-    pip.icon = pip:CreateTexture(nil, "BACKGROUND")
-    pip.icon:SetAllPoints()
-    pip.icon:SetTexture(PIP_ICON)
-    pip.icon:SetTexCoord(0.07, 0.93, 0.07, 0.93)
-    ns.IconMask(pip, pip.icon, PIP)
-    pip.border = ns.ButtonBorder(pip, pip, PIP)
-    pip:SetScript("OnClick", function() ns.Board.Toggle() end)
-    pip:SetScript("OnEnter", function(self)
-        f.hover = true
-        local G = ns.Group
-        GameTooltip:SetOwner(self, "ANCHOR_TOP")
-        GameTooltip:AddLine("Group totem plan")
-        GameTooltip:AddLine(("%d other shaman(s) in the group"):format(G.OtherShamans()), 1, 1, 1)
-        if G.proposal and not G.proposal.doneAt then
-            GameTooltip:AddLine("A new plan is waiting for answers", BLUE[1], BLUE[2], BLUE[3])
-        end
-        if G.conflictCount > 0 then
-            GameTooltip:AddLine(("%d totem(s) planned twice"):format(G.conflictCount), ORANGE[1], ORANGE[2], ORANGE[3])
-        else
-            GameTooltip:AddLine("No conflicts", C.green[1], C.green[2], C.green[3])
-        end
-        GameTooltip:AddLine("Click to open", GRAY[1], GRAY[2], GRAY[3])
-        GameTooltip:Show()
-    end)
-    pip:SetScript("OnLeave", OnLeave)
-    pip:Hide()
 
     HUD.RestorePosition()
     HUD.ApplySecure()   -- decides shown or hidden (after combat, if the UI was reloaded mid-fight)
@@ -272,16 +195,17 @@ end
 ----------------------------------------------------------------------
 -- Drawing (runs ten times a second; nothing here is blocked in combat)
 ----------------------------------------------------------------------
-local SetBorder = ns.SetBorder
-local WARN_BADGE = ns.Paint("red", "!")
-
+-- b.state is the one state the button shows, most urgent first; tests read it:
+--   "warn"     planned totem not down while it matters (grey icon, sound)
+--   "overlap"  another shaman has the same totem down (red dot)
+--   "expiring" a kept-up totem in its last seconds in combat (buff fade)
+--   "conflict" another shaman plans the same totem (red dot)
+--   "offplan"  a different totem than planned is down (tooltip only)
 function HUD.Update()
     local f = HUD.frame
     if not f or not f:IsShown() then return end
     if HUD.pending and not InCombatLockdown() then HUD.ApplySecure() end
     local now = GetTime()
-    local pulse = 0.35 + 0.65 * math.abs(math.sin(now * 5))
-    local slowPulse = 0.5 + 0.5 * math.abs(math.sin(now * 2.5))
     local attention = false
     local soon = ns.db.soonSeconds or 10
 
@@ -291,16 +215,15 @@ function HUD.Update()
         local a = st.active
         local planInfo = st.plan and ns.Info(st.plan)
 
-        -- icon
+        -- icon: the totem that is down, else the planned one in grey, else
+        -- the element's empty slot
         local icon = (a and a.icon) or (planInfo and planInfo.icon) or nil
         if b.shownIcon ~= icon then
             b.icon:SetTexture(icon)
             b.shownIcon = icon
         end
         if icon then b.icon:Show() else b.icon:Hide() end
-        b.letter:SetShown(icon == nil)
         b.icon:SetDesaturated(a == nil)
-        b.icon:SetAlpha(a and 1 or (st.warn and 0.9 or 0.4))
 
         -- sweep
         if b.cdEntry ~= a then
@@ -313,55 +236,38 @@ function HUD.Update()
             end
         end
 
-        -- time left
-        if a then
-            local left = st.remaining or 0
-            b.timer:SetText(HUD.FormatTime(left))
-            local c = (left <= 5 and RED) or (left <= soon and YELLOW) or C.white
-            b.timer:SetTextColor(c[1], c[2], c[3])
-        else
-            b.timer:SetText("")
-        end
+        -- time left, under the button like a buff's
+        ns.SetDuration(b, a and (st.remaining or 0) or nil)
 
-        -- border and badge, most urgent first
-        local badge = ""
+        local state
         if st.warn then
-            SetBorder(b, "warn", RED, pulse)
-            badge = WARN_BADGE
-            attention = true
+            state = "warn"
         elseif st.overlap then
-            SetBorder(b, "overlap", ORANGE, slowPulse)
-            badge = ns.Paint("orange", "x" .. (#st.overlap + 1))
-            attention = true
-        elseif a and ns.inCombat and not st.temp and (a.duration or 0) > 15 and (st.remaining or 0) <= 5 then
+            state = "overlap"
+        elseif a and ns.inCombat and not st.temp and (a.duration or 0) > 15 and (st.remaining or 0) <= soon then
             -- temporary totems are not there to be refreshed, and short ones
-            -- (Fire Nova, Mana Tide, Stoneclaw) would pulse their whole life
-            SetBorder(b, "expiring", YELLOW, pulse)
+            -- (Fire Nova, Mana Tide, Stoneclaw) would fade their whole life
+            state = "expiring"
         elseif st.conflict then
-            -- another shaman plans the same totem: steady orange until sorted
-            SetBorder(b, "conflict", ORANGE, 0.8)
+            state = "conflict"
         elseif st.state == "offplan" then
-            SetBorder(b, "offplan", YELLOW, 0.55)
-        else
-            SetBorder(b, nil)
+            state = "offplan"
         end
-        if b.shownBadge ~= badge then
-            b.badge:SetText(badge)
-            b.shownBadge = badge
-        end
-    end
+        b.state = state
+        if state == "warn" or state == "overlap" then attention = true end
 
-    -- group marker
-    local G = ns.Group
-    local others = G.OtherShamans() > 0
-    f.pip:SetShown(others)
-    if others then
-        if G.proposal and not G.proposal.doneAt then
-            SetBorder(f.pip, "proposal", BLUE, slowPulse)
-        elseif G.conflictCount > 0 then
-            SetBorder(f.pip, "conflict", ORANGE, 0.9)
-        else
-            SetBorder(f.pip, nil)
+        -- the one marker: a clash with another shaman, now or in the plans
+        local clash = (st.overlap or st.conflict) and true or false
+        if b.clash ~= clash then
+            b.marker:SetShown(clash)
+            b.clash = clash
+        end
+
+        -- running out: the buff fade, on the whole button as the buff bar does
+        local alpha = (state == "expiring") and ns.WarningAlpha(now) or 1
+        if b.shownAlpha ~= alpha then
+            b:SetAlpha(alpha)
+            b.shownAlpha = alpha
         end
     end
 
