@@ -2,7 +2,7 @@
 local ADDON, ns = ...
 local issecret = ns.issecret
 
-ns.VERSION = "1.3.0"
+ns.VERSION = "1.3.1"
 do
     local get = C_AddOns and C_AddOns.GetAddOnMetadata
     if get then

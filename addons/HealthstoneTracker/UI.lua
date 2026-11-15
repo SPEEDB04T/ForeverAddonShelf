@@ -6,17 +6,23 @@ local issecret = ns.issecret
 local UI = {}
 ns.UI = UI
 
--- The window looks like one of the game's tooltips: tooltip border and
--- background, gold title, white values, the quest log's row highlight.
-local BACKDROP = {
+-- The window is built like the game's tooltip (SharedTooltipTemplates.xml on
+-- Blizzard's forever branch): the TooltipBorderedFrameTemplate panel, a
+-- GameTooltipHeaderText first line, GameTooltipText lines with a 2 px gap,
+-- 12 px line icons, 10 px from every edge. Nothing a tooltip lacks: no title
+-- icon, no divider, no row highlight.
+local BACKDROP = {      -- only if the client lacks TooltipBorderedFrameTemplate
     bgFile = "Interface\\Tooltips\\UI-Tooltip-Background",
     edgeFile = "Interface\\Tooltips\\UI-Tooltip-Border",
     tile = true, tileSize = 16, edgeSize = 16,
     insets = { left = 4, right = 4, top = 4, bottom = 4 },
 }
-local ROW_HIGHLIGHT = "Interface\\QuestFrame\\UI-QuestTitleHighlight"
-local DIVIDER = "Interface\\Common\\UI-TooltipDivider-Transparent"
-local WIDTH, PAD, TITLE_H, ROW_H, MAX_ROWS = 190, 10, 18, 16, 25
+local PAD = 10          -- tooltip text inset
+local LINE_GAP = 2      -- tooltip line spacing
+local ICON = 12         -- TooltipTextureTemplate
+local TITLE_H = 14 + LINE_GAP   -- GameTooltipHeaderText is 14 px
+local ROW_H = 12 + LINE_GAP     -- GameTooltipText is 12 px
+local MIN_W, MAX_W, MAX_ROWS = 150, 320, 25
 
 -- The game's own font colours; the numbers are only for a client without them.
 local function GameColor(name, r, g, b)
@@ -24,30 +30,27 @@ local function GameColor(name, r, g, b)
     if type(c) == "table" and type(c.r) == "number" then return { c.r, c.g, c.b } end
     return { r, g, b }
 end
+-- The tooltip's own colour words (GameTooltip_SetTitle / AddHighlightLine,
+-- AddNormalLine, AddErrorLine, AddDisabledLine, AddInstructionLine):
+-- white is the value, grey is "not now / not known", red is "missing".
 local COLOR = {
-    has     = GameColor("GREEN_FONT_COLOR", 0.1, 1.0, 0.1),
-    given   = GameColor("DIM_GREEN_FONT_COLOR", 0.251, 0.753, 0.251),
-    none    = GameColor("RED_FONT_COLOR", 1.0, 0.1, 0.1),
-    used    = GameColor("ORANGE_FONT_COLOR", 1.0, 0.5, 0.25),
-    unknown = GameColor("GRAY_FONT_COLOR", 0.5, 0.5, 0.5),
-    cooling = GameColor("YELLOW_FONT_COLOR", 1.0, 1.0, 0.0),
-    gold    = GameColor("NORMAL_FONT_COLOR", 1.0, 0.82, 0.0),
-    white   = GameColor("HIGHLIGHT_FONT_COLOR", 1.0, 1.0, 1.0),
-    canRes  = GameColor("LIGHTBLUE_FONT_COLOR", 0.53, 0.67, 1.0),
+    white = GameColor("HIGHLIGHT_FONT_COLOR", 1.0, 1.0, 1.0),
+    gold  = GameColor("NORMAL_FONT_COLOR", 1.0, 0.82, 0.0),
+    red   = GameColor("RED_FONT_COLOR", 1.0, 0.125, 0.125),
+    grey  = GameColor("DISABLED_FONT_COLOR", 0.5, 0.5, 0.5),
+    green = GameColor("GREEN_FONT_COLOR", 0.1, 1.0, 0.1),
 }
-local HINT = COLOR.unknown      -- grey explanation lines in tooltips
-local ACTION = COLOR.has        -- green "Click: ..." lines, as the game's tooltips do
+-- what each healthstone state says, in those words
+local STATE_COLOR = { has = COLOR.white, given = COLOR.white, none = COLOR.red, used = COLOR.grey, unknown = COLOR.grey }
+local HINT = COLOR.grey         -- grey explanation lines in tooltips
+local ACTION = COLOR.green      -- "Click: ..." lines, GameTooltip_AddInstructionLine
 -- the soulstone item, next to the buff icon in ns.SOUL_ICON
 local SOUL_ITEM_ICON = "Interface\\Icons\\INV_Misc_Orb_04"
-local SOUL_GAP = 8      -- space above the soulstone part, with the divider in it
+local SOUL_GAP = ROW_H  -- one blank tooltip line above the soulstones
 
-local frame, title, count, note, divider
+local frame, title, count, note
 local rows = {}
 local soulRows = {}
-
-local function Hex(c)
-    return ("|cff%02x%02x%02x"):format(c[1] * 255, c[2] * 255, c[3] * 255)
-end
 
 local function ClassColor(class)
     local c = class and ((CUSTOM_CLASS_COLORS and CUSTOM_CLASS_COLORS[class]) or (RAID_CLASS_COLORS and RAID_CLASS_COLORS[class]))
@@ -87,16 +90,17 @@ end
 local function StateText(m, st, cd)
     if st == "has" then
         local label = ns.StoneLabel(ns.Group.ItemOf(m))
-        if cd then return label .. " " .. ns.Clock(cd), COLOR.cooling end
-        return label, COLOR.has
+        -- carried but can't be used yet: grey, like a disabled line
+        if cd then return label .. " " .. ns.Clock(cd), COLOR.grey end
+        return label, COLOR.white
     elseif st == "given" then
-        return "given", COLOR.given
+        return "given", COLOR.white
     elseif st == "none" then
-        return cd and ("none " .. ns.Clock(cd)) or "none", COLOR.none
+        return cd and ("none " .. ns.Clock(cd)) or "none", COLOR.red
     elseif st == "used" then
-        return cd and ("used " .. ns.Clock(cd)) or "used", COLOR.used
+        return cd and ("used " .. ns.Clock(cd)) or "used", COLOR.grey
     end
-    return "?", COLOR.unknown
+    return "?", COLOR.grey
 end
 
 ----------------------------------------------------------------------
@@ -109,7 +113,7 @@ local function RowTooltip(row)
     local r, g, b = ClassColor(m.class)
     GameTooltip:AddLine(m.name, r, g, b)
     local text, st = ns.Group.Describe(m)
-    local c = COLOR[st] or COLOR.unknown
+    local c = STATE_COLOR[st] or COLOR.grey
     GameTooltip:AddLine(text:sub(1, 1):upper() .. text:sub(2), c[1], c[2], c[3], true)
     if m.isPlayer then
         -- nothing to add
@@ -130,7 +134,7 @@ local function TitleTooltip(self)
     if not GameTooltip then return end
     local have, need, unknown, total = ns.Group.Summary()
     GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
-    AddLine("Healthstone Tracker", COLOR.gold)
+    AddLine("Healthstone Tracker", COLOR.white)     -- GameTooltip_SetTitle's colour
     AddLine(("%d of %d have one, %d need one, %d not known."):format(have, total, need, unknown), COLOR.white, true)
     AddLine("Players with the addon report their own bags. The others are worked out from trades and uses seen.", HINT, true)
     AddLine("Drag to move. Right-click: list everyone / only the missing. /hst help for more.", ACTION, true)
@@ -142,7 +146,7 @@ local function SoulTooltip(row)
     local m, kind = row.member, row.kind
     GameTooltip:SetOwner(row, "ANCHOR_RIGHT")
     if kind == "head" then
-        AddLine("Soulstones", COLOR.gold)
+        AddLine("Soulstones", COLOR.white)
         AddLine("Who carries a soulstone and for how long, then each warlock's own stone: ready, on cooldown, or none in the bags.", COLOR.white, true)
         AddLine("Read from everyone's buffs, so it works for players without the addon. /hst soul hides this part.", HINT, true)
     elseif m then
@@ -151,7 +155,7 @@ local function SoulTooltip(row)
         if kind == "holder" then
             local text = ns.Group.DescribeSoul(m)
             if text then AddLine("Has a " .. text .. ".", COLOR.white, true) end
-            if row.dead then AddLine("Dead: can use it to come back to life.", COLOR.canRes, true) end
+            if row.dead then AddLine("Dead: can use it to come back to life.", COLOR.white, true) end
         else
             local text = ns.Group.DescribeSoulStone(m)
             AddLine(text:sub(1, 1):upper() .. text:sub(2) .. ".", COLOR.white, true)
@@ -184,31 +188,24 @@ local function StopMove()
     UI.ApplyLayout()
 end
 
--- A line of the window: icon, name on the left, state on the right.
+-- A line of the window, laid out like a tooltip double line with a line
+-- texture: 12 px icon, name on the left (TextLeft), state on the right
+-- (TextRight), both GameTooltipText on the ARTWORK layer.
 local function NewRow()
     local row = CreateFrame("Button", nil, frame)
     row:SetHeight(ROW_H)
 
-    -- the quest log's highlight under the line the mouse is on
-    local hl = row:CreateTexture(nil, "HIGHLIGHT")
-    hl:SetPoint("TOPLEFT", row, "TOPLEFT", -2, 0)
-    hl:SetPoint("BOTTOMRIGHT", row, "BOTTOMRIGHT", 2, 0)
-    hl:SetTexture(ROW_HIGHLIGHT)
-    hl:SetBlendMode("ADD")
-    hl:SetAlpha(0.6)
-
     local icon = row:CreateTexture(nil, "ARTWORK")
-    icon:SetSize(ROW_H - 3, ROW_H - 3)
+    icon:SetSize(ICON, ICON)
     icon:SetPoint("LEFT", row, "LEFT", 0, 0)
-    icon:SetTexCoord(0.08, 0.92, 0.08, 0.92)
     row.icon = icon
 
-    local state = row:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+    local state = row:CreateFontString(nil, "ARTWORK", "GameTooltipText")
     state:SetPoint("RIGHT", row, "RIGHT", 0, 0)
     state:SetJustifyH("RIGHT")
     row.state = state
 
-    local name = row:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+    local name = row:CreateFontString(nil, "ARTWORK", "GameTooltipText")
     name:SetPoint("LEFT", icon, "RIGHT", 4, 0)
     name:SetPoint("RIGHT", state, "LEFT", -4, 0)
     name:SetJustifyH("LEFT")
@@ -244,6 +241,13 @@ end
 local function MakeSoulRow(i)
     local row = NewRow()
     row:SetScript("OnEnter", SoulTooltip)
+    if i == 1 then
+        -- the heading: a plain gold line, the way a tooltip names a section
+        row.icon:Hide()
+        row.name:ClearAllPoints()
+        row.name:SetPoint("LEFT", row, "LEFT", 0, 0)
+        row.name:SetPoint("RIGHT", row, "RIGHT", 0, 0)
+    end
     soulRows[i] = row
     return row
 end
@@ -251,10 +255,10 @@ end
 -- What the right-hand column says for a warlock's own soulstone.
 local function SoulStoneText(m)
     local st, left = ns.Group.SoulStatus(m)
-    if st == "ready" then return "ready", COLOR.has, true end
-    if st == "cooldown" then return "cd " .. ns.Clock(left), COLOR.cooling, false end
-    if st == "nostone" then return "no stone", COLOR.used, false end
-    return "?", COLOR.unknown, false
+    if st == "ready" then return "ready", COLOR.white, true end
+    if st == "cooldown" then return "cd " .. ns.Clock(left), COLOR.grey, false end
+    if st == "nostone" then return "no stone", COLOR.red, false end
+    return "?", COLOR.grey, false
 end
 
 -- The soulstone part under the list: a heading, who carries one, then the
@@ -276,33 +280,29 @@ local function DrawSouls(top)
                 row.name:SetTextColor(r, g, b)
             end
             row.icon:SetDesaturated(false)
-            row.icon:SetAlpha(1)
             row:Show()
             return row
         end
 
+        -- heading: the section's name only; the lines under it say the rest
         local head = line("head")
-        head.icon:SetTexture(ns.SOUL_ICON)
         head.name:SetText("Soulstones")
         head.name:SetTextColor(COLOR.gold[1], COLOR.gold[2], COLOR.gold[3])
-        local c = (#holders > 0) and COLOR.has or COLOR.none
-        head.state:SetText((#holders > 0) and (#holders .. " up") or "none up")
-        head.state:SetTextColor(c[1], c[2], c[3])
+        head.state:SetText("")
 
         for _, h in ipairs(holders) do
             local row = line("holder", h.m)
             row.dead = h.dead and true or false
             row.icon:SetTexture(ns.SOUL_ICON)
-            local color = (h.dead and COLOR.canRes) or (h.left < 300 and COLOR.cooling) or COLOR.has
             row.state:SetText(h.dead and "can res" or ns.Clock(h.left))
-            row.state:SetTextColor(color[1], color[2], color[3])
+            row.state:SetTextColor(COLOR.white[1], COLOR.white[2], COLOR.white[3])
         end
         for _, m in ipairs(locks) do
             local row = line("warlock", m)
             local text, color, ready = SoulStoneText(m)
             row.icon:SetTexture(SOUL_ITEM_ICON)
+            -- not ready: the game's "unavailable" look, desaturated
             row.icon:SetDesaturated(not ready)
-            row.icon:SetAlpha(ready and 1 or 0.4)
             row.state:SetText(text)
             row.state:SetTextColor(color[1], color[2], color[3])
         end
@@ -311,16 +311,31 @@ local function DrawSouls(top)
         soulRows[i].member, soulRows[i].kind = nil, nil
         soulRows[i]:Hide()
     end
-    -- the tooltip's divider line between the healthstones and the soulstones
-    if used > 0 then
-        divider:ClearAllPoints()
-        divider:SetPoint("TOPLEFT", frame, "TOPLEFT", PAD - 2, -(top + 1))
-        divider:SetPoint("TOPRIGHT", frame, "TOPRIGHT", -(PAD - 2), -(top + 1))
-        divider:Show()
-    else
-        divider:Hide()
-    end
     return used > 0 and (SOUL_GAP + used * ROW_H) or 0
+end
+
+-- Width of a font string's whole text, or 0 where the client can't say.
+local function TextWidth(fs)
+    if not fs or not fs:IsShown() then return 0 end
+    local f = fs.GetUnboundedStringWidth or fs.GetStringWidth
+    local ok, w = pcall(f, fs)
+    return (ok and type(w) == "number") and w or 0
+end
+
+-- Like a tooltip, the window is as wide as its widest line.
+local function FitWidth()
+    local widest = TextWidth(title) + 12 + TextWidth(count)
+    local function rowWidth(row)
+        if not row:IsShown() then return end
+        local w = TextWidth(row.name) + 12 + TextWidth(row.state)
+        if row.icon:IsShown() then w = w + ICON + 4 end
+        if w > widest then widest = w end
+    end
+    for _, row in ipairs(rows) do rowWidth(row) end
+    for _, row in ipairs(soulRows) do rowWidth(row) end
+    if TextWidth(note) > widest then widest = TextWidth(note) end
+    local w = math.ceil(widest) + PAD * 2
+    frame:SetWidth(math.max(MIN_W, math.min(MAX_W, w)))
 end
 
 function UI.ApplyLayout()
@@ -335,9 +350,25 @@ function UI.ApplyLayout()
     end
 end
 
+-- The game's frame-that-looks-like-a-tooltip: TooltipBorderedFrameTemplate
+-- (tooltip nine-slice, background at 0.8). A client without it gets the old
+-- tooltip border and background files instead.
+local function NewWindow()
+    local ok, f = pcall(CreateFrame, "Frame", "HealthstoneTrackerFrame", UIParent, "TooltipBorderedFrameTemplate")
+    if ok and f and f.NineSlice then return f end
+    f = CreateFrame("Frame", "HealthstoneTrackerFrame", UIParent, BackdropTemplateMixin and "BackdropTemplate" or nil)
+    if f.SetBackdrop then
+        f:SetBackdrop(BACKDROP)
+        local bg, edge = TOOLTIP_DEFAULT_BACKGROUND_COLOR, TOOLTIP_DEFAULT_COLOR
+        if type(bg) == "table" and bg.r then f:SetBackdropColor(bg.r, bg.g, bg.b, 0.8) else f:SetBackdropColor(0.09, 0.09, 0.19, 0.8) end
+        if type(edge) == "table" and edge.r then f:SetBackdropBorderColor(edge.r, edge.g, edge.b, 1) end
+    end
+    return f
+end
+
 function UI.Create()
-    frame = CreateFrame("Frame", "HealthstoneTrackerFrame", UIParent, BackdropTemplateMixin and "BackdropTemplate" or nil)
-    frame:SetSize(WIDTH, TITLE_H + PAD * 2)
+    frame = NewWindow()
+    frame:SetSize(MIN_W, TITLE_H + PAD * 2)
     frame:SetFrameStrata("MEDIUM")
     frame:SetClampedToScreen(true)
     frame:SetMovable(true)
@@ -353,44 +384,22 @@ function UI.Create()
             ns.dirty = true
         end
     end)
-    if frame.SetBackdrop then
-        frame:SetBackdrop(BACKDROP)
-        -- the colours the game gives its own tooltips
-        local bg, edge = TOOLTIP_DEFAULT_BACKGROUND_COLOR, TOOLTIP_DEFAULT_COLOR
-        if type(bg) == "table" and bg.r then
-            frame:SetBackdropColor(bg.r, bg.g, bg.b, 0.9)
-        else
-            frame:SetBackdropColor(0.09, 0.09, 0.19, 0.9)
-        end
-        if type(edge) == "table" and edge.r then
-            frame:SetBackdropBorderColor(edge.r, edge.g, edge.b, 1)
-        else
-            frame:SetBackdropBorderColor(1, 1, 1, 1)
-        end
-    end
-
-    local icon = frame:CreateTexture(nil, "ARTWORK")
-    icon:SetSize(14, 14)
-    icon:SetPoint("TOPLEFT", frame, "TOPLEFT", PAD, -PAD)
-    icon:SetTexture(ns.DEFAULT_ICON)
-    icon:SetTexCoord(0.08, 0.92, 0.08, 0.92)
-
-    title = frame:CreateFontString(nil, "OVERLAY", "GameFontNormal")
-    title:SetPoint("LEFT", icon, "RIGHT", 4, 0)
+    -- first line: TextLeft1 / TextRight1, GameTooltipHeaderText, white
+    title = frame:CreateFontString(nil, "ARTWORK", "GameTooltipHeaderText")
+    title:SetPoint("TOPLEFT", frame, "TOPLEFT", PAD, -PAD)
+    title:SetJustifyH("LEFT")
+    title:SetTextColor(COLOR.white[1], COLOR.white[2], COLOR.white[3])
     title:SetText("Healthstones")
 
-    count = frame:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
-    count:SetPoint("TOPRIGHT", frame, "TOPRIGHT", -PAD, -PAD - 2)
+    count = frame:CreateFontString(nil, "ARTWORK", "GameTooltipHeaderText")
+    count:SetPoint("TOPRIGHT", frame, "TOPRIGHT", -PAD, -PAD)
     count:SetJustifyH("RIGHT")
+    count:SetTextColor(COLOR.white[1], COLOR.white[2], COLOR.white[3])
 
-    divider = frame:CreateTexture(nil, "ARTWORK")
-    divider:SetHeight(8)
-    divider:SetTexture(DIVIDER)
-    divider:Hide()
-
-    -- one line under the list: "+3 more", or "everyone has one"
-    note = frame:CreateFontString(nil, "OVERLAY", "GameFontDisableSmall")
+    -- one line under the list: "+3 more", or "everyone has one" (a disabled line)
+    note = frame:CreateFontString(nil, "ARTWORK", "GameTooltipText")
     note:SetJustifyH("LEFT")
+    note:SetTextColor(COLOR.grey[1], COLOR.grey[2], COLOR.grey[3])
     note:Hide()
 
     UI.ApplyLayout()
@@ -408,8 +417,7 @@ function UI.Refresh()
     end
     local G = ns.Group
     local have, need, unknown, total = G.Summary()
-    local c = (need > 0 and COLOR.none) or (unknown > 0 and COLOR.cooling) or COLOR.has
-    count:SetText(("%s%d|r / %d"):format(Hex(c), have, total))
+    count:SetText(("%d / %d"):format(have, total))
 
     local missingOnly = MissingOnly()
     local shown, hidden = 0, 0
@@ -422,7 +430,7 @@ function UI.Refresh()
             row.member = m
             local r, g, b = ClassColor(m.class)
             local off = Offline(m)
-            if off then r, g, b = COLOR.unknown[1], COLOR.unknown[2], COLOR.unknown[3] end
+            if off then r, g, b = COLOR.grey[1], COLOR.grey[2], COLOR.grey[3] end
             row.name:SetText(m.name .. (off and " (offline)" or ""))
             row.name:SetTextColor(r, g, b)
             local text, color = StateText(m, st, cd)
@@ -430,8 +438,8 @@ function UI.Refresh()
             row.state:SetTextColor(color[1], color[2], color[3])
             local carries = (st == "has" or st == "given")
             row.icon:SetTexture(ns.StoneIcon(carries and G.ItemOf(m) or nil))
+            -- no stone: the game's "unavailable" look, desaturated
             row.icon:SetDesaturated(not carries)
-            row.icon:SetAlpha(carries and 1 or 0.3)
             row:Show()
         elseif listed then
             hidden = hidden + 1
@@ -453,7 +461,7 @@ function UI.Refresh()
     end
     if text then
         note:ClearAllPoints()
-        note:SetPoint("TOPLEFT", frame, "TOPLEFT", PAD, -(PAD + TITLE_H + lines * ROW_H + 2))
+        note:SetPoint("TOPLEFT", frame, "TOPLEFT", PAD, -(PAD + TITLE_H + lines * ROW_H + 1))
         note:SetText(text)
         note:Show()
         lines = lines + 1
@@ -462,6 +470,8 @@ function UI.Refresh()
     end
 
     local soulHeight = DrawSouls(PAD + TITLE_H + lines * ROW_H)
-    frame:SetHeight(PAD * 2 + TITLE_H + lines * ROW_H + soulHeight)
+    -- the last line has no gap under it, as in a tooltip
+    frame:SetHeight(PAD * 2 + TITLE_H + lines * ROW_H + soulHeight - LINE_GAP)
+    FitWidth()
     if not frame:IsShown() then frame:Show() end
 end

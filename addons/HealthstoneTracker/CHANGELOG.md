@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.3.1
+
+- The window is now built like the game's own tooltip, part for part: the game's tooltip-style panel, a white title in the tooltip's heading font, tooltip-sized text and 12 px icons, the same spacing, and as wide as its longest line instead of cutting names off.
+- Taken out because a tooltip has none of them: the icon before the title, the line between healthstones and soulstones (now a blank line), the highlight under the mouse, and the "1 up" / "none up" count beside "Soulstones".
+- Fewer colours. Values are white, anything not usable right now or not known is grey, and only a missing stone ("none", "no stone") is red. Icons of stones a player lacks are greyed, no longer also faded.
+
 ## 1.3.0
 
 - The window now looks like one of the game's tooltips: tooltip border and background instead of the flat dark box, a gold title, the quest log's highlight under the line the mouse is on, and the tooltip divider above the soulstones.
