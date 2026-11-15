@@ -1,5 +1,32 @@
 # Changelog
 
+## 1.5.0
+
+What to buy: each listed piece gets a buy score that weighs supply, how easy it is to farm and other items
+with the same look. Being underpriced is now one reason among several.
+
+- **Worth buying.** A piece is worth buying when reselling it earns at least 1 gold after the 5% cut and the
+  deposit, also once its risks are counted, and its price leaves 30% of the resale for risk. Filter > Worth
+  buying (it replaces "Underpriced only") lists these pieces, best first, with what to pay at most, how many
+  are listed under that price, and a risk of low, medium or high.
+- **Resale.** The resale price is the fair value, or less when a piece with the same look and armor type is
+  listed for less. The tooltip names that piece ("Same look, cheaper").
+- **Never worth buying:** a piece without a fair value, or one whose look a crafted item or a white or grey
+  item also has, since anyone can have that made or buy it from a vendor.
+- **What lowers the score:**
+  - supply: more copies listed, a wall of other listings under 60% of the fair value, more listed than in
+    your earlier scans, other pieces with the same look listed, or the piece listed in nearly every scan;
+  - easy farming: low-level mobs, many farm spots, few other drops at that level, or drops you have
+    measured yourself;
+  - other items with the same look: other BoE items, and bind-on-pickup items players get themselves;
+  - a fair value that rests on little data.
+  None of these can raise the score. The tooltip lists every reason for and against in full.
+- Pieces that are easy to farm say "cheaper to farm: level X-Y mobs" in the Market list.
+- The chat line after a scan names the top three buys. The extra searches after a scan now look at any
+  listed piece that might be worth buying, not only rare ones.
+- The item list now knows, for each look, how many other items in the game have it and how they are had
+  (crafted, white or grey, bind on pickup, BoE), and how many other drops share its level.
+
 ## 1.4.1
 
 Leg detection fixed: bare thighs count again.

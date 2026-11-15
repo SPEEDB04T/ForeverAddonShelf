@@ -610,6 +610,276 @@ function ns.NetValue(id)
 end
 
 -------------------------------------------------------------------------------
+-- What to buy. One score per listed piece: what reselling it earns after the
+-- cut and the deposit, times factors that are each at most 1. More supply,
+-- easier farming or more items with the same look only ever lower a factor.
+-- Every factor is kept as a plain reason for or against.
+-------------------------------------------------------------------------------
+local BUY_MIN_GAIN = 10000   -- a buy earns at least 1 gold, also after its risks
+local BUY_MARGIN = 1.3       -- buy up to the resale money / 1.3: 30% kept for risk
+local DEPOSIT_SHARE = 0.3    -- assumed: a 24-hour listing costs about 30% of the vendor price
+local WALL_SHARE = 0.6       -- other listings under 60% of the fair value make a cheap wall
+local SURE_MULT = { high = 1, medium = 0.8, low = 0.55 }
+ns.BUY_MIN_GAIN, ns.BUY_MARGIN = BUY_MIN_GAIN, BUY_MARGIN
+
+local function Clamp(v, lo, hi)
+  return math.max(lo, math.min(hi, v))
+end
+
+local function Deposit(id)
+  local ok, sell = pcall(function() return (select(11, C_Item.GetItemInfo(id))) end)
+  sell = ok and Num(sell) or nil
+  return sell and sell > 0 and math.floor(sell * DEPOSIT_SHARE) or 0
+end
+
+-- The cheapest listed piece with the same look and armor type, and how many
+-- copies with that look are listed besides this piece.
+local function SameLookListed(id, it)
+  local best, bestLow, count = nil, nil, 0
+  for _, pid in ipairs(it.display and byDisplay[it.display] or {}) do
+    local o = items[pid]
+    if pid ~= id and o and o.armor == it.armor then
+      local pinfo = ns.Price(pid)
+      if pinfo.low then
+        count = count + math.max(1, pinfo.qty or 1)
+        if not bestLow or pinfo.low < bestLow then
+          best, bestLow = pid, pinfo.low
+        end
+      end
+    end
+  end
+  return best, bestLow, count
+end
+
+local function LadderPrices(p)
+  local l = type(p) == "table" and p.ladder
+  if type(l) ~= "table" or type(l.prices) ~= "table" or (p.qty or 0) == 0 or l.scan ~= p.lastSeen then
+    return nil
+  end
+  return l.prices
+end
+
+-- Average count listed in up to three earlier scans that listed it.
+local function EarlierQty(p)
+  local hist = type(p) == "table" and p.hist
+  if type(hist) ~= "table" then
+    return nil
+  end
+  local last = #hist
+  if last > 0 and type(hist[last]) == "table" and hist[last][1] == p.lastSeen then
+    last = last - 1
+  end
+  local sum, n = 0, 0
+  for i = last, math.max(1, last - 2), -1 do
+    local q = type(hist[i]) == "table" and Num(hist[i][3]) or nil
+    if q then
+      sum, n = sum + q, n + 1
+    end
+  end
+  return n > 0 and sum / n or nil
+end
+
+-- How slowly the piece comes back onto the market, 0 (anyone farms it in
+-- minutes) to 1. Higher mob level, blue or better, dungeon-only and a big pool
+-- of other drops at its level make it slower; more farm spots and drops you
+-- have seen yourself make it faster.
+local function FarmHardness(id, it)
+  if it.src == "fishing" then
+    return 0.6, 0, 0
+  end
+  local lvl = Clamp(((it.req or 1) - 5) / 50, 0, 1)
+  local h = 0.35 * lvl + ((it.q or 2) >= 3 and 0.2 or 0) + 0.25 * Clamp((it.pool or 200) / 400, 0, 1)
+    + (it.inst and 0.2 or 0)
+  local spots = #ns.SpotsForItem(id)
+  h = h - 0.04 * math.max(0, math.min(spots, 6) - 2)
+  local seen = db and db.dropLvl and db.dropLvl[id]
+  local drops = type(seen) == "table" and Num(seen.n) or 0
+  if drops >= 3 then
+    h = h * 0.8
+  elseif drops >= 1 then
+    h = h * 0.9
+  end
+  return Clamp(h, 0, 1), spots, drops
+end
+
+-- Returns nil for pieces not listed now. Otherwise a table:
+--   buy       true when it is worth buying; stop says why not (the first hard stop)
+--   score     gain times all factors (copper); mult the factors alone
+--   upTo      the most to pay for one; count, cost: copies listed at or under it
+--   resale    the expected sale price; gain what one earns after the cut and deposit
+--   risk      "low", "medium" or "high"; pros, cons: reasons for and against
+--   cheaper   { id, low } when a same-look piece is listed under the fair value
+--   easyFarm  { lo, hi, spot } when farming it yourself is quick
+function ns.Buy(id, info)
+  local it = items[id]
+  info = info or ns.Price(id)
+  if not (it and info.low) then
+    return nil
+  end
+  local p = db.prices[id]
+  local b = { id = id, low = info.low, fair = info.fair, sure = info.sure, basis = info.fairBasis,
+    pros = {}, cons = {}, score = 0, mult = 0, buy = false, risk = "high" }
+  local function pro(text) b.pros[#b.pros + 1] = text end
+  local function con(text) b.cons[#b.cons + 1] = text end
+  local function stop(text) b.stop = b.stop or text end
+  local alt = type(it.alt) == "table" and it.alt or {}
+  if (Num(alt.made) or 0) > 0 then
+    stop(("a crafted item has the same look (%s), so anyone can have it made"):format(it.altName or "made by a profession"))
+  elseif (Num(alt.plain) or 0) > 0 then
+    stop(("a white or grey item has the same look (%s), often sold by a vendor"):format(it.altName or "a plain item"))
+  end
+  if not info.fair then
+    stop("no fair value yet: scan a few more times")
+    return b
+  end
+
+  -- resale: the fair value, capped by the cheapest listed piece with the same look
+  local cheap, cheapLow, sameN = SameLookListed(id, it)
+  local resale = info.fair
+  if cheapLow and cheapLow < resale then
+    resale = cheapLow
+    b.cheaper = { id = cheap, low = cheapLow }
+  end
+  b.resale, b.deposit = resale, Deposit(id)
+  local net = resale * (1 - AH_CUT) - b.deposit
+  b.gain = net - info.low
+  b.upTo = math.floor(net / BUY_MARGIN)
+  if b.gain < BUY_MIN_GAIN then
+    local o = b.cheaper and items[b.cheaper.id]
+    stop(o and ("%s has the same look and is listed for %s, so this would not sell for more"):format(o.name, ns.Money(b.cheaper.low))
+      or "reselling it would earn under 1 gold after the cut and the deposit")
+  elseif info.low > b.upTo then
+    stop("its price leaves less than 30% of the resale for risk")
+  end
+  local under = 1 - info.low / info.fair
+  if under >= 0.25 then
+    pro(("listed %d%% under its fair value"):format(math.floor(under * 100 + 0.5)))
+  end
+  b.deal = ns.Deal(id, info) ~= nil
+
+  -- confidence of the fair value
+  local c = SURE_MULT[info.sure] or SURE_MULT.low
+  if info.sure == "high" then
+    pro(("its fair value rests on %d of your scans"):format(info.fairN or 3))
+  else
+    con(("its fair value is a %s guess, from %s"):format(info.sure == "medium" and "fair" or "rough", info.fairBasis or "little data"))
+  end
+
+  -- supply: this piece and its look
+  local qty = math.max(1, info.qty or 1)
+  local s = qty == 1 and 1 or qty == 2 and 0.9 or qty <= 4 and 0.75 or 0.6
+  if qty == 1 then
+    pro("it is the only one listed")
+  elseif qty >= 3 then
+    con(("%d are listed: you compete with the others"):format(qty))
+  end
+  local prices = LadderPrices(p)
+  if prices then
+    local wall = 0
+    for i = 2, #prices do
+      local v = Num(prices[i])
+      if v and v <= info.fair * WALL_SHARE then
+        wall = wall + 1
+      end
+    end
+    if wall > 0 then
+      s = s * math.max(0.5, 0.85 ^ wall)
+      con(("%d more %s listed under %d%% of its fair value: the price may be falling"):format(wall,
+        wall == 1 and "is" or "are", WALL_SHARE * 100))
+    end
+  end
+  local before = EarlierQty(p)
+  if before and qty >= before * 1.5 and qty >= before + 2 then
+    s = s * 0.85
+    con(("more are listed than in your earlier scans (%d, about %d before)"):format(qty, math.floor(before + 0.5)))
+  elseif before and qty < before then
+    pro(("fewer are listed than in your earlier scans (%d, about %d before): some may have sold"):format(qty, math.floor(before + 0.5)))
+  end
+  if sameN > 0 then
+    s = s * math.max(0.5, 1 / (1 + 0.25 * sameN))
+    con(("%d more with the same look %s listed"):format(sameN, sameN == 1 and "is" or "are"))
+  end
+  if info.seenPct and (info.scans or 0) >= 5 and info.seenPct >= 0.8 then
+    s = s * 0.85
+    con(("listed in %d%% of your scans: a steady supply"):format(math.floor(info.seenPct * 100 + 0.5)))
+  elseif info.seenPct and (info.scans or 0) >= 3 and info.seenPct <= RARE_SEEN then
+    pro(("listed in only %d%% of your scans"):format(math.floor(info.seenPct * 100 + 0.5)))
+  end
+
+  -- how quickly farmers bring more
+  local h, spots, drops = FarmHardness(id, it)
+  local f = 0.55 + 0.45 * h
+  local lo, hi = ns.MobRange(it)
+  if it.src == "fishing" then
+    pro("it is fished up, not dropped by mobs")
+  elseif h >= 0.65 then
+    pro(it.inst and ("slow to farm: it drops only in %s"):format(it.inst)
+      or ("slow to farm: level %d-%d mobs, one of about %d drops at that level"):format(lo, hi, it.pool or 200))
+  elseif h < 0.35 then
+    local spot = ns.SpotsForItem(id, 1)[1]
+    b.easyFarm = { lo = lo, hi = hi, spot = spot and ns.SpotLabel(spot.spot) }
+    con(("easy to farm: level %d-%d mobs%s"):format(lo, hi, b.easyFarm.spot and (", e.g. " .. b.easyFarm.spot) or ""))
+  end
+  if drops > 0 then
+    con(("it has dropped %d %s for you"):format(drops, drops == 1 and "time" or "times"))
+  end
+
+  -- other items with the same look
+  local bop, boe = Num(alt.bop) or 0, Num(alt.boe) or 0
+  local o = math.max(0.6, 0.9 ^ boe) * math.max(0.7, 0.9 ^ bop)
+  if it.shared == 1 then
+    pro("no other item in the game has its look")
+  end
+  if boe > 0 then
+    con(("%d other BoE %s the same look"):format(boe, boe == 1 and "item has" or "items have"))
+  end
+  if bop > 0 then
+    con(("%d bind-on-pickup %s the same look, so some players get it themselves"):format(bop, bop == 1 and "item has" or "items have"))
+  end
+
+  b.factors = { sure = c, supply = s, farm = f, look = o }
+  b.mult = c * s * f * o
+  b.score = math.max(0, b.gain) * b.mult
+  b.risk = b.mult >= 0.5 and "low" or b.mult >= 0.3 and "medium" or "high"
+  if not b.stop and b.score < BUY_MIN_GAIN then
+    stop(("the gain is too small for its risks (about %s once they are counted)"):format(ns.Money(math.floor(b.score))))
+  end
+  b.count, b.cost = 1, info.low
+  if prices then
+    local n, cost = 0, 0
+    for _, v in ipairs(prices) do
+      v = Num(v)
+      if v and v <= b.upTo then
+        n, cost = n + 1, cost + v
+      end
+    end
+    if n > 0 then
+      b.count, b.cost = n, cost
+    end
+  end
+  b.buy = not b.stop
+  return b
+end
+
+-- Pieces worth buying now, best score first.
+function ns.BuyList()
+  local out = {}
+  for id in pairs(items) do
+    local b = ns.Buy(id)
+    if b and b.buy then
+      out[#out + 1] = b
+    end
+  end
+  table.sort(out, function(a, b)
+    if a.score ~= b.score then
+      return a.score > b.score
+    end
+    return a.id < b.id
+  end)
+  return out
+end
+
+-------------------------------------------------------------------------------
 -- Auction house scan (browse query limited to the armor types/slots on the list)
 -------------------------------------------------------------------------------
 local scan = { active = false, rows = 0, pages = 0 }
@@ -947,17 +1217,17 @@ local function LadderApiPresent()
 end
 ns.LadderApiPresent = LadderApiPresent
 
--- First cut: listed now with another copy beside it, rare, and no fair value
--- from its own earlier prices that is sure enough already.
+-- First cut: listed now with another copy beside it, no fair value from its
+-- own earlier prices that is sure enough already, and no crafted or plain item
+-- with the same look (those are never worth buying, whatever the price).
 local function LadderCandidates()
   local list = {}
-  for id in pairs(items) do
+  for id, it in pairs(items) do
     local info = ns.Price(id)
-    if info.low and (info.qty or 0) >= 2 and not (info.fairBasis == "your earlier scans" and info.sure ~= "low") then
-      local _, strong = ns.Rarity(id, info)
-      if strong then
-        list[#list + 1] = { id = id, r = info.fair and info.low / info.fair or 1 }
-      end
+    local alt = type(it.alt) == "table" and it.alt or {}
+    if info.low and (info.qty or 0) >= 2 and not (info.fairBasis == "your earlier scans" and info.sure ~= "low")
+        and (Num(alt.made) or 0) == 0 and (Num(alt.plain) or 0) == 0 then
+      list[#list + 1] = { id = id, r = info.fair and info.low / info.fair or 1 }
     end
   end
   table.sort(list, function(a, b)
@@ -974,19 +1244,20 @@ local function LadderCandidates()
 end
 
 local function ReportDeals()
-  local deals = ns.Deals()
-  if #deals == 0 then
+  local buys = ns.BuyList()
+  if #buys == 0 then
     return
   end
   local parts = {}
-  for i = 1, math.min(3, #deals) do
-    local d = deals[i]
-    local it = items[d.id]
-    parts[#parts + 1] = ("%s %s (fair %s)"):format(it and it.name or ("item " .. d.id), ns.Money(d.low), ns.Money(d.fair))
+  for i = 1, math.min(3, #buys) do
+    local b = buys[i]
+    local it = items[b.id]
+    parts[#parts + 1] = ("%s up to %s (resale %s, %s risk)"):format(it and it.name or ("item " .. b.id), ns.Money(b.upTo),
+      ns.Money(b.resale), b.risk)
   end
-  ns.Print(("%d rare %s underpriced: %s%s. The Market list's Filter > Underpriced only shows %s."):format(#deals,
-    #deals == 1 and "piece looks" or "pieces look", table.concat(parts, ", "),
-    #deals > 3 and (" and %d more"):format(#deals - 3) or "", #deals == 1 and "it" or "them"))
+  ns.Print(("%d %s worth buying: %s%s. The Market list's Filter > Worth buying lists %s, best first."):format(#buys,
+    #buys == 1 and "piece looks" or "pieces look", table.concat(parts, ", "),
+    #buys > 3 and (" and %d more"):format(#buys - 3) or "", #buys == 1 and "it" or "them"))
 end
 
 StopLadder = function(report)
@@ -1532,9 +1803,15 @@ local function OnTooltipItem(tooltip, data)
   local info = ns.Price(id)
   if info.low then
     tooltip:AddDoubleLine("Lowest in your last scan", ns.Money(info.low) .. (" |c%s(%d listed in all)|r"):format(GreyHex(), info.qty or 0))
-    local deal = ns.Deal(id, info)
-    if deal then
-      tooltip:AddDoubleLine(("Underpriced: %d%% under its fair value"):format(math.floor(deal.under * 100 + 0.5)), ns.Money(deal.fair))
+    local b = ns.Buy(id, info)
+    if b and b.buy then
+      tooltip:AddDoubleLine(("Worth buying up to %s (%s risk)"):format(ns.Money(b.upTo), b.risk), "resale " .. ns.Money(b.resale))
+    elseif b and b.stop then
+      local g = GRAY_FONT_COLOR
+      tooltip:AddLine("Not worth buying: " .. b.stop .. ".", g and g.r or 0.5, g and g.g or 0.5, g and g.b or 0.5, true)
+    end
+    if b and b.cheaper and items[b.cheaper.id] then
+      tooltip:AddDoubleLine("Same look, cheaper: " .. items[b.cheaper.id].name, ns.Money(b.cheaper.low))
     end
   elseif info.value then
     if info.qty ~= nil then
