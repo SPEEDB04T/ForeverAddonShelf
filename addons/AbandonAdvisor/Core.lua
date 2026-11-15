@@ -2,7 +2,7 @@
 local ADDON, ns = ...
 
 ns.ADDON = ADDON
-ns.VERSION = "1.4.2"
+ns.VERSION = "1.4.3"
 
 local defaults = {
     point = nil,
@@ -292,7 +292,7 @@ local function ShareAbandon(questID)
     local sent = ok and (result == nil or result == 0 or result == true)
     ns.lastSend = ("quest %d to %s: %s"):format(questID, channel,
         sent and "sent" or ok and ("the game refused it (code " .. tostring(result) .. ")") or "the call failed")
-    ns.CommLog("out", channel, nil, nil, ok and tostring(result) or "error", "A:" .. questID)
+    ns.CommLog("out", channel, ns.PlayerName(), "player", ok and tostring(result) or "error", "A:" .. questID)
 end
 
 -- QUEST_REMOVED also fires for a hand-in. Forever can send QUEST_TURNED_IN late or not at all,
@@ -379,10 +379,13 @@ function ns.ClearSuggestions()
     suggesting = false
 end
 
--- Who sent it, found in the group (pitfalls.md, "Who sent an addon message"). Names on this
--- realm have a space ("First Last") and senders spell the realm differently from
--- GetNormalizedRealmName() ("CAMWOWUS1Realm9RPPvP" against "RPPvP"), so the sender is matched
--- to a group unit by name, and the realm only settles a tie. Returns unit, name or nil.
+-- Who sent it, found in the group (pitfalls.md, "Names on this client"). On this client
+-- UnitName("player") gives "Bunglfart", "Dunglode" (first name, surname in the realm slot)
+-- while the sender arrives as "Bunglfart Dunglode", and a realm, when one follows, is spelled
+-- differently from GetNormalizedRealmName() ("CAMWOWUS1Realm9RPPvP" against "RPPvP").
+-- So each unit is tried as "first second" on every unit, then as "first"; a sender matches a
+-- spelling when it equals it or goes on with "-realm"; a realm only settles a tie.
+-- Returns unit, the name to show ("First Last") or nil.
 local function Squeeze(text)
     return (tostring(text or ""):lower():gsub("[^%w]", ""))
 end
@@ -403,32 +406,62 @@ local function GroupUnits()
     return units
 end
 
-function ns.FindSender(sender)
-    local who, suffix = sender:match("^([^-]+)%-(.+)$")
-    who = who or sender
-    local candidates = {}
+-- "sender" is the spelling, or the spelling followed by "-realm": returns true and that realm.
+local function Matches(sender, spelling)
+    if sender == spelling then return true, nil end
+    if sender:sub(1, #spelling + 1) == spelling .. "-" then return true, sender:sub(#spelling + 2) end
+    return false
+end
+
+-- Each group unit with its two spellings: long ("first second") and short ("first").
+local function Spellings()
+    local list = {}
     for _, unit in ipairs(GroupUnits()) do
-        local name, realm = ns.Call(UnitName, unit)
-        if ns.Str(name) == who and (unit == "player" or ns.Call(UnitIsUnit, unit, "player") ~= true) then
-            candidates[#candidates + 1] = { unit = unit, name = name, realm = ns.Str(realm) }
+        if unit == "player" or ns.Call(UnitIsUnit, unit, "player") ~= true then
+            local first, second = ns.Call(UnitName, unit)
+            first, second = ns.Str(first), ns.Str(second)
+            if first then
+                list[#list + 1] = { unit = unit, short = first, long = second and (first .. " " .. second),
+                    second = second }
+            end
         end
     end
-    if #candidates <= 1 then
-        local c = candidates[1]
-        if c then return c.unit, c.name end
-        return nil
-    end
-    local own = { ns.Str(ns.Call(GetNormalizedRealmName)), ns.Str(ns.Call(GetRealmName)) }
-    for _, c in ipairs(candidates) do
-        local agrees = suffix == nil
-        if c.realm then
-            agrees = agrees or RealmsAgree(c.realm, suffix)
-        else
-            for _, spelling in ipairs(own) do agrees = agrees or RealmsAgree(spelling, suffix) end
+    return list
+end
+
+function ns.FindSender(sender)
+    local units = Spellings()
+    for _, form in ipairs({ "long", "short" }) do
+        local candidates = {}
+        for _, u in ipairs(units) do
+            local spelling = u[form]
+            local ok, suffix = false, nil
+            if spelling then ok, suffix = Matches(sender, spelling) end
+            if ok then candidates[#candidates + 1] = { unit = u.unit, name = spelling, second = u.second, suffix = suffix } end
         end
-        if agrees then return c.unit, c.name end
+        if #candidates == 1 then return candidates[1].unit, candidates[1].name end
+        if #candidates > 1 then
+            local own = { ns.Str(ns.Call(GetNormalizedRealmName)), ns.Str(ns.Call(GetRealmName)) }
+            for _, c in ipairs(candidates) do
+                local agrees = c.suffix == nil
+                if not agrees and c.second and form == "short" then agrees = RealmsAgree(c.second, c.suffix) end
+                if not agrees and (form == "long" or not c.second) then
+                    for _, spelling in ipairs(own) do agrees = agrees or RealmsAgree(spelling, c.suffix) end
+                end
+                if agrees then return c.unit, c.name end
+            end
+            return candidates[1].unit, candidates[1].name
+        end
     end
-    return candidates[1].unit, candidates[1].name
+    return nil
+end
+
+-- The player's name as other players see it: "First Last" when the game gives two parts.
+function ns.PlayerName()
+    local first, second = ns.Call(UnitName, "player")
+    first, second = ns.Str(first), ns.Str(second)
+    if first and second then return first .. " " .. second end
+    return first
 end
 
 -- What came in and went out, for /abandon debug and for reading SavedVariables after a /reload.
@@ -442,8 +475,41 @@ local function Log(direction, channel, sender, unit, code, text)
 end
 ns.CommLog = Log
 
+-- Hello: when you join a group (or log in while in one) each copy says "H:<version>", and
+-- answers a hello it has not answered yet with "h:<version>". It shows who in the group runs
+-- Abandon Advisor (/abandon debug) and leaves a log line after every group session.
+ns.peers = {}                  -- [name as shown] = version, this session
+local answered = {}            -- [sender] = true once answered
+local wasGrouped = false
+
+local function Send(text, channel)
+    if not ns.GroupMessages() then return false end
+    local ok, result = pcall(C_ChatInfo.SendAddonMessage, PREFIX, text, channel)
+    result = ns.Val(result)
+    Log("out", channel, ns.PlayerName(), "player", ok and tostring(result) or "error", text)
+    return ok and (result == nil or result == 0 or result == true)
+end
+
+function ns.SayHello()
+    local channel = GroupChannel()
+    if not channel or not (ns.db.groupShare or ns.db.groupSuggest) then return false end
+    return Send("H:" .. ns.VERSION, channel)
+end
+
+local function OnGroupChanged()
+    local grouped = GroupChannel() ~= nil
+    if grouped and not wasGrouped then ns.SayHello() end
+    if not grouped then
+        ns.ClearSuggestions()
+        for k in pairs(ns.peers) do ns.peers[k] = nil end
+        for k in pairs(answered) do answered[k] = nil end
+    end
+    wasGrouped = grouped
+end
+ns.OnGroupChanged = OnGroupChanged
+
 local function OnAddonMessage(prefix, text, channel, sender)
-    if ns.Str(prefix) ~= PREFIX or not ns.db.groupSuggest then return end
+    if ns.Str(prefix) ~= PREFIX then return end
     text, channel, sender = ns.Str(text), ns.Str(channel), ns.Str(sender)
     if not (text and channel) or not GROUP_CHANNELS[channel] then return end
     if not sender then                              -- hidden in combat or an instance
@@ -458,8 +524,19 @@ local function OnAddonMessage(prefix, text, channel, sender)
         ns.ignoredSenders[sender] = (ns.ignoredSenders[sender] or 0) + 1
         return
     end
+    local kind, version = text:match("^([Hh]):(.+)$")
+    if kind then
+        ns.peers[who] = version:sub(1, 16)
+        if kind == "H" and not answered[sender] then
+            answered[sender] = true
+            Send("h:" .. ns.VERSION, channel)
+        end
+        return
+    end
+    if not ns.db.groupSuggest then return end
     local questID = tonumber(text:match("^A:(%d+)$"))
     if not questID then return end
+    ns.peers[who] = ns.peers[who] or "?"
     local row = FindRow(questID)
     if not row or row.locked then return end       -- not in your log, finished, pinned or not abandonable
     local known = ns.partner[questID]
@@ -524,6 +601,11 @@ local function Debug()
         ignored[#ignored + 1] = ("%d from %s"):format(count, sender)
     end
     table.sort(ignored)
+    local peers = {}
+    for name, version in pairs(ns.peers) do peers[#peers + 1] = name .. " " .. version end
+    table.sort(peers)
+    ns.Print(("You are %s to the group. Group members with Abandon Advisor: %s"):format(
+        tostring(ns.PlayerName()), #peers > 0 and table.concat(peers, ", ") or "none heard from yet"))
     ns.Print("Messages ignored, sender not found in the group: " .. (#ignored > 0 and table.concat(ignored, "; ") or "none"))
     ns.Print("Quest log: " .. (ns.QuestLog and ns.QuestLog.Status() or "module missing"))
     local res = ns.Compute()
@@ -694,6 +776,7 @@ frame:SetScript("OnEvent", function(_, event, a, b, c, d)
         if C_ChatInfo and C_ChatInfo.RegisterAddonMessagePrefix then
             pcall(C_ChatInfo.RegisterAddonMessagePrefix, PREFIX)
         end
+        ns.After(5, OnGroupChanged)           -- logged in (or /reload) while in a group: say hello
         ns.UI.Create()
         if ns.QuestLog then ns.QuestLog.Init() end
         if ns.Kit and ns.Options then      -- missing until the first full restart after the update
@@ -723,7 +806,7 @@ frame:SetScript("OnEvent", function(_, event, a, b, c, d)
             if id then turnedIn[id] = Now() end
             OnTrackedQuestGone(id)
         elseif event == "GROUP_ROSTER_UPDATE" then
-            if not GroupChannel() then ns.ClearSuggestions() end
+            OnGroupChanged()
         end
         ns.Refresh()
     end

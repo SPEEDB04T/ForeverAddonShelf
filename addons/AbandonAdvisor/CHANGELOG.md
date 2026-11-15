@@ -1,3 +1,7 @@
+## 1.4.3
+- Group: messages from group members are recognised on this client, where the game gives a name as first name and surname ("Bunglfart Dunglode"). Before, every message from the group could be dropped, and your own echo was not recognised as yours. Names show as "First Last".
+- Group: when you join a group (or log in while in one) Abandon Advisor says hello to the group, and answers the hellos of the others. `/abandon debug` shows your name as the group sees it and who in the group has Abandon Advisor. Every group session now leaves its messages in the saved settings.
+
 ## 1.4.2
 - Lists its frames (window, quest log tab page or side button, row tooltip, the two questions) for the LookShots screenshot helper, so the author can see them in the game. Does nothing without LookShots.
 
