@@ -2,7 +2,7 @@
 local ADDON, ns = ...
 
 ns.ADDON = ADDON
-ns.VERSION = "1.3.0"
+ns.VERSION = "1.4.0"
 
 local defaults = {
     point = nil,
@@ -91,6 +91,7 @@ end
 function ns.Compute()
     local player = ns.Scan.Player()
     local quests, meta = ns.Scan.Log(player)
+    player.pos = ns.Scan.TurnIns(quests)
     ns.result = ns.Score.RateAll(quests, player, meta, {
         target = ns.db.target, keep = ns.cdb.keep, drops = ns.db.dropRates,
         partner = ns.db.groupSuggest and ns.partner or nil,
@@ -113,6 +114,89 @@ function ns.ToggleKeep(questID)
     local keep = ns.cdb.keep
     if keep[questID] then keep[questID] = nil else keep[questID] = true end
     return keep[questID] == true
+end
+
+----------------------------------------------------------------------
+-- Hand-in route. The game's own super tracking (its quest arrow and map
+-- pin) points at a stop; once that quest leaves the log it moves to the
+-- next stop, until the player tracks something else.
+----------------------------------------------------------------------
+ns.following = nil              -- the quest the route is tracking, while it follows
+local advancing = false
+
+local function SuperTracked()
+    if not C_SuperTrack then return nil end
+    return ns.Num(ns.Call(C_SuperTrack.GetSuperTrackedQuestID))
+end
+
+function ns.CanTrack()
+    return C_SuperTrack ~= nil and type(C_SuperTrack.SetSuperTrackedQuestID) == "function"
+end
+
+function ns.IsTracked(questID)
+    return questID ~= nil and SuperTracked() == questID
+end
+
+-- Tracks questID and follows the route from it; nil stops tracking.
+function ns.Track(questID)
+    if not ns.CanTrack() then return false end
+    ns.following = questID
+    local ok = pcall(C_SuperTrack.SetSuperTrackedQuestID, questID or 0)
+    if not ok then ns.following = nil end
+    ns.Refresh()
+    return ok
+end
+
+-- Tracks the first stop of the route as it stands now.
+function ns.NextStop()
+    advancing = false
+    local res = ns.Compute()
+    local stop = res.route and res.route.stops[1]
+    if stop then
+        local row = stop.rows[1]
+        ns.Track(row.id)
+        ns.Print(("Next hand-in: %s (%s)."):format(row.title, stop.zone or "unknown zone"))
+        return true
+    end
+    ns.following = nil
+    if res.ready > 0 then
+        ns.Print("The game does not say where your finished quests are handed in; nothing to track.")
+    else
+        ns.Print("No finished quests left to hand in.")
+    end
+    return false
+end
+
+local function OnTrackedQuestGone(questID)
+    if questID and questID == ns.following and not advancing then
+        advancing = true
+        ns.After(1, ns.NextStop)         -- once the log no longer lists it
+    end
+end
+
+local function OnSuperTrackingChanged()
+    local now = SuperTracked()
+    if ns.following and now and now ~= 0 and now ~= ns.following then ns.following = nil end
+end
+
+function ns.RouteReport()
+    local res = ns.Compute()
+    if res.error then ns.Print(res.error); return end
+    local route = res.route
+    if res.ready == 0 then ns.Print("No finished quests to hand in."); return end
+    if #route.stops == 0 then
+        ns.Print("The game does not say where your finished quests are handed in.")
+        return
+    end
+    ns.Print(ns.Score.RouteText(route))
+    for _, stop in ipairs(route.stops) do
+        local titles = {}
+        for _, row in ipairs(stop.rows) do titles[#titles + 1] = row.title end
+        local where = stop.zone or "unknown zone"
+        if stop.leg then where = where .. ", " .. ns.Score.Yards(stop.leg) end
+        ns.Print(("  %d. %s (%s)"):format(stop.number, table.concat(titles, ", "), where))
+    end
+    for _, row in ipairs(route.unplaced) do ns.Print(("  -  %s (no turn-in position)"):format(row.title)) end
 end
 
 ----------------------------------------------------------------------
@@ -208,6 +292,7 @@ local function ShareAbandon(questID)
     local sent = ok and (result == nil or result == 0 or result == true)
     ns.lastSend = ("quest %d to %s: %s"):format(questID, channel,
         sent and "sent" or ok and ("the game refused it (code " .. tostring(result) .. ")") or "the call failed")
+    ns.CommLog("out", channel, nil, nil, ok and tostring(result) or "error", "A:" .. questID)
 end
 
 -- QUEST_REMOVED also fires for a hand-in. Forever can send QUEST_TURNED_IN late or not at all,
@@ -294,29 +379,89 @@ function ns.ClearSuggestions()
     suggesting = false
 end
 
-local function ShortName(sender)
-    local short = Ambiguate and ns.Str(ns.Call(Ambiguate, sender, "short"))
-    return short or sender:match("^([^-]+)") or sender
+-- Who sent it, found in the group (pitfalls.md, "Who sent an addon message"). Names on this
+-- realm have a space ("First Last") and senders spell the realm differently from
+-- GetNormalizedRealmName() ("CAMWOWUS1Realm9RPPvP" against "RPPvP"), so the sender is matched
+-- to a group unit by name, and the realm only settles a tie. Returns unit, name or nil.
+local function Squeeze(text)
+    return (tostring(text or ""):lower():gsub("[^%w]", ""))
 end
 
-local function IsSelf(sender)
-    local name, realm = ns.Call(UnitFullName, "player")
-    name = ns.Str(name) or ns.Str(ns.Call(UnitName, "player"))
-    if not name then return false end
-    if sender == name then return true end
-    realm = ns.Str(realm) or ns.Str(ns.Call(GetNormalizedRealmName))
-    return realm ~= nil and sender == name .. "-" .. realm
+local function RealmsAgree(a, b)
+    a, b = Squeeze(a), Squeeze(b)
+    if a == "" or b == "" then return a == b end
+    return a == b or a:sub(-#b) == b or b:sub(-#a) == a or a:sub(1, #b) == b or b:sub(1, #a) == a
 end
+
+local function GroupUnits()
+    local units = { "player" }
+    if ns.Call(IsInRaid) == true then
+        for i = 1, 40 do units[#units + 1] = "raid" .. i end
+    else
+        for i = 1, 4 do units[#units + 1] = "party" .. i end
+    end
+    return units
+end
+
+function ns.FindSender(sender)
+    local who, suffix = sender:match("^([^-]+)%-(.+)$")
+    who = who or sender
+    local candidates = {}
+    for _, unit in ipairs(GroupUnits()) do
+        local name, realm = ns.Call(UnitName, unit)
+        if ns.Str(name) == who and (unit == "player" or ns.Call(UnitIsUnit, unit, "player") ~= true) then
+            candidates[#candidates + 1] = { unit = unit, name = name, realm = ns.Str(realm) }
+        end
+    end
+    if #candidates <= 1 then
+        local c = candidates[1]
+        if c then return c.unit, c.name end
+        return nil
+    end
+    local own = { ns.Str(ns.Call(GetNormalizedRealmName)), ns.Str(ns.Call(GetRealmName)) }
+    for _, c in ipairs(candidates) do
+        local agrees = suffix == nil
+        if c.realm then
+            agrees = agrees or RealmsAgree(c.realm, suffix)
+        else
+            for _, spelling in ipairs(own) do agrees = agrees or RealmsAgree(spelling, suffix) end
+        end
+        if agrees then return c.unit, c.name end
+    end
+    return candidates[1].unit, candidates[1].name
+end
+
+-- What came in and went out, for /abandon debug and for reading SavedVariables after a /reload.
+ns.ignoredSenders = {}         -- [sender] = messages not matched to anyone in the group, this session
+local function Log(direction, channel, sender, unit, code, text)
+    local log = ns.db.commLog
+    if type(log) ~= "table" then log = {}; ns.db.commLog = log end
+    log[#log + 1] = { t = ns.Num(ns.Call(time)), dir = direction, ch = channel, from = sender, unit = unit,
+        code = code, msg = text and tostring(text):sub(1, 40) }
+    while #log > 40 do table.remove(log, 1) end
+end
+ns.CommLog = Log
 
 local function OnAddonMessage(prefix, text, channel, sender)
     if ns.Str(prefix) ~= PREFIX or not ns.db.groupSuggest then return end
     text, channel, sender = ns.Str(text), ns.Str(channel), ns.Str(sender)
-    if not (text and channel and sender) or not GROUP_CHANNELS[channel] then return end
+    if not (text and channel) or not GROUP_CHANNELS[channel] then return end
+    if not sender then                              -- hidden in combat or an instance
+        ns.ignoredSenders["(hidden)"] = (ns.ignoredSenders["(hidden)"] or 0) + 1
+        Log("in", channel, "(hidden)", "nobody", nil, text)
+        return
+    end
+    local unit, who = ns.FindSender(sender)
+    Log("in", channel, sender, unit or "nobody", nil, text)
+    if unit == "player" then return end             -- your own message, echoed back
+    if not unit then
+        ns.ignoredSenders[sender] = (ns.ignoredSenders[sender] or 0) + 1
+        return
+    end
     local questID = tonumber(text:match("^A:(%d+)$"))
-    if not questID or IsSelf(sender) then return end
+    if not questID then return end
     local row = FindRow(questID)
     if not row or row.locked then return end       -- not in your log, finished, pinned or not abandonable
-    local who = ShortName(sender)
     local known = ns.partner[questID]
     if known and (", " .. known .. ", "):find(", " .. who .. ", ", 1, true) then return end
     ns.partner[questID] = known and (known .. ", " .. who) or who
@@ -344,7 +489,7 @@ function ns.Report()
             local why = {}
             for i = 1, math.min(3, #row.reasons) do why[#why + 1] = row.reasons[i].short end
             ns.Print(("  %s[%s] %s|r: %s (%s)"):format(
-                row.pick and ns.ColorCode("RED_FONT_COLOR", 1, 0.125, 0.125) .. "» "
+                row.pick and ns.ColorCode("RED_FONT_COLOR", 1, 0.125, 0.125) .. "Â» "
                     or ns.ColorCode("HIGHLIGHT_FONT_COLOR", 1, 1, 1), row.level and tostring(row.level) or "?",
                 row.title, VERDICT_TEXT[row.verdict], table.concat(why, ", ")))
         end
@@ -374,6 +519,12 @@ local function Debug()
         ns.db.groupSuggest and "on" or "off", ns.db.groupShare and "on" or "off",
         #marks > 0 and table.concat(marks, "; ") or "none"))
     ns.Print("Last abandon told to the group: " .. (ns.lastSend or "none this session"))
+    local ignored = {}
+    for sender, count in pairs(ns.ignoredSenders) do
+        ignored[#ignored + 1] = ("%d from %s"):format(count, sender)
+    end
+    table.sort(ignored)
+    ns.Print("Messages ignored, sender not found in the group: " .. (#ignored > 0 and table.concat(ignored, "; ") or "none"))
     ns.Print("Quest log: " .. (ns.QuestLog and ns.QuestLog.Status() or "module missing"))
     local res = ns.Compute()
     local p = res.player
@@ -438,6 +589,15 @@ local function Slash(msg)
         end
     elseif cmd == "list" or cmd == "report" then
         ns.Report()
+    elseif cmd == "route" then
+        if arg == "next" or arg == "go" or arg == "follow" then
+            ns.NextStop()
+        elseif arg == "stop" or arg == "off" then
+            ns.Track(nil)
+            ns.Print("Stopped following the hand-in route.")
+        else
+            ns.RouteReport()
+        end
     elseif cmd == "free" or cmd == "target" then
         local n = tonumber(arg)
         if n and n >= 1 and n <= 25 then
@@ -479,7 +639,8 @@ local function Slash(msg)
     elseif cmd == "debug" then
         Debug()
     else
-        ns.Print("Commands: /abandon (window), config (options), log (quest log tab), list, free <n>, auto, drops, "
+        ns.Print("Commands: /abandon (window), config (options), log (quest log tab), list, "
+            .. "route (hand-in order; route next tracks the first stop and follows), free <n>, auto, drops, "
             .. "group, share, unpin, scale <n>, minimap, reset, debug")
     end
     if ns.Kit then ns.Kit.Sync() end      -- an open options window follows what was typed
@@ -524,7 +685,7 @@ local frame = CreateFrame("Frame")
 ns.eventFrame = frame
 local EVENTS = { "PLAYER_LOGIN", "QUEST_LOG_UPDATE", "QUEST_ACCEPTED", "QUEST_REMOVED", "QUEST_TURNED_IN",
     "ZONE_CHANGED_NEW_AREA", "PLAYER_LEVEL_UP", "GROUP_ROSTER_UPDATE", "UI_ERROR_MESSAGE", "CHAT_MSG_ADDON",
-    "PLAYER_REGEN_ENABLED", "QUEST_COMPLETE", "QUEST_FINISHED" }
+    "PLAYER_REGEN_ENABLED", "QUEST_COMPLETE", "QUEST_FINISHED", "SUPER_TRACKING_CHANGED" }
 for _, event in ipairs(EVENTS) do pcall(frame.RegisterEvent, frame, event) end
 
 frame:SetScript("OnEvent", function(_, event, a, b, c, d)
@@ -551,12 +712,16 @@ frame:SetScript("OnEvent", function(_, event, a, b, c, d)
         reward = { id = ns.Num(ns.Call(GetQuestID)) }
     elseif event == "QUEST_FINISHED" then           -- a quest panel closed
         if reward and not reward.closed then reward.closed = Now() end
+    elseif event == "SUPER_TRACKING_CHANGED" then
+        OnSuperTrackingChanged()
     else
         if event == "QUEST_REMOVED" then
             OnQuestRemoved(a)
+            OnTrackedQuestGone(ns.Num(a))
         elseif event == "QUEST_TURNED_IN" then
             local id = ns.Num(a)
             if id then turnedIn[id] = Now() end
+            OnTrackedQuestGone(id)
         elseif event == "GROUP_ROSTER_UPDATE" then
             if not GroupChannel() then ns.ClearSuggestions() end
         end

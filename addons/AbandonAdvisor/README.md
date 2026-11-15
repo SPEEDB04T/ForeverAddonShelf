@@ -8,11 +8,15 @@ The window also opens with `/abandon` (or `/aa`), and by itself when the game re
 
 ## What it tells you
 
-- **Hand in** (blue, the quest giver's turn-in mark): the quest is finished. Handing it in frees the slot and costs nothing, so do these first.
-- **Abandon** (red cross), **Maybe** (yellow question mark), **Keep** (green tick): a score from the rules below. Hover a quest to see every reason and its points.
-- **» marked quests**: the best ones to drop to reach your free-slot target (3 by default, change it with the - / + buttons).
+The list looks like the quest log. At the top are the quests to drop to reach your free-slot target (3 by default; set it in the options or with `/abandon free <n>`). An "Abandon" at the end of the title means drop it. Each quest has a score from the rules below; hover it to see every reason and its points.
 
-Each quest has an Abandon button, which always asks before it abandons. Click a quest to show it in the quest log. Right-click to pin it as keep, so it is never suggested.
+Click a quest to show it in the quest log. Right-click for the same menu as the quest log: Abandon Quest (it always asks first) and Pin as Keep, so a pinned quest is never suggested.
+
+## Hand-in route
+
+Finished quests free a slot and cost nothing, so they come next, in the order that makes the shortest trip from where you stand: "Stop 2 of 4: Elwynn Forest, 300 yds". Quests handed in at the same place are one stop. Distances are straight lines, since the game tells addons nothing about roads, flight paths or portals. Stops on another continent come last, in order but without distances.
+
+Turn-in places come from the game's own quest pins on the map. With Questie installed, Questie places the ones the game has no pin for. Right-click a finished quest and choose Super Track: the game's quest arrow points at that stop, and once you hand it in it moves on to the next one. `/abandon route` prints the route in chat.
 
 ## The rules
 
@@ -36,4 +40,4 @@ The game does not tell addons when someone else abandons a quest, so this works 
 
 ## Commands
 
-`/abandon` or `/aa`: no argument opens the window. `config` opens the options window (also: right-click the minimap button, or Options > AddOns), `minimap` shows or hides the minimap button, `log` opens the quest log on the Abandon Advisor tab, `list` prints the advice in chat, `free <n>` sets the free-slot target, `auto` toggles opening on a full log, `drops` toggles the drop-rate rule, `group` toggles the group suggestions, `share` toggles telling your group about your abandons, `unpin` releases all pinned quests, `scale <n>`, `reset`, `debug`.
+`/abandon` or `/aa`: no argument opens the window. `config` opens the options window (also: right-click the minimap button, or Options > AddOns), `minimap` shows or hides the minimap button, `log` opens the quest log on the Abandon Advisor tab, `list` prints the advice in chat, `route` prints the hand-in route (`route next` super tracks the first stop and follows the route, `route stop` ends it), `free <n>` sets the free-slot target, `auto` toggles opening on a full log, `drops` toggles the drop-rate rule, `group` toggles the group suggestions, `share` toggles telling your group about your abandons, `unpin` releases all pinned quests, `scale <n>`, `reset`, `debug`.

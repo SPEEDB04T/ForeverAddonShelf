@@ -14,11 +14,11 @@ local KEY = "abandonadvisor"
 local NAME = "Abandon Advisor"
 local ICON = "Interface\\Icons\\INV_Misc_Book_08"
 local TOP_BAR = 29       -- the strip above the list, as tall as the quest log's search bar
-local PAD = 8
+local PAD = 12            -- the Map Legend's left padding (MapLegendFrameTemplate ScrollChild leftPadding)
 local FALLBACK_WIDTH = 290
 
 local visible = false
-local panel, list, scrollContent, summary, targetText, empty
+local panel, list, scrollContent, summary, empty
 
 function QL.IsShown()
     return visible
@@ -39,7 +39,6 @@ end
 ----------------------------------------------------------------------
 -- Art
 ----------------------------------------------------------------------
--- The panel's background is the quest log's own parchment (ns.UI.LayParchment).
 local function SetTabIcon(tab)
     local icon = tab and tab.Icon
     if type(icon) ~= "table" or not icon.SetTexture then return end
@@ -65,8 +64,6 @@ end
 
 function QL.Update(res)
     if not panel or not res then return end
-    targetText:SetText(("Aim for %d free"):format(res.target or ns.db.target))
-
     local width = PanelWidth()
     scrollContent:SetWidth(width)
     summary:SetWidth(width - 2 * PAD)
@@ -77,14 +74,7 @@ function QL.Update(res)
     local quests = res.rows or {}
     local top = PAD + textHeight + PAD
     local rowsHeight = ns.UI.FillList(list, quests, top)
-    if #quests == 0 and not res.error then
-        empty:ClearAllPoints()
-        empty:SetPoint("TOPLEFT", scrollContent, "TOPLEFT", PAD, -top)
-        empty:Show()
-        rowsHeight = 30
-    else
-        empty:Hide()
-    end
+    empty:SetShown(#quests == 0 and not res.error)
     scrollContent:SetHeight(top + rowsHeight + PAD)
 end
 
@@ -93,27 +83,10 @@ local function Shown(shown)
     if visible and ns.db then QL.Update(ns.Compute()) end
 end
 
-local function BuildTopBar()
-    local title = panel:CreateFontString(nil, "OVERLAY", "GameFontNormal")
-    title:SetPoint("LEFT", panel, "TOPLEFT", 8, -TOP_BAR / 2)
-    title:SetText(NAME)
-
-    local more = CreateFrame("Button", nil, panel, "UIPanelButtonTemplate")
-    more:SetSize(20, 20)
-    more:SetPoint("RIGHT", panel, "TOPRIGHT", -2, -TOP_BAR / 2)
-    more:SetText("+")
-    more:SetScript("OnClick", function() ns.UI.SetTarget(1) end)
-
-    targetText = panel:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
-    targetText:SetPoint("RIGHT", more, "LEFT", -4, 0)
-
-    local less = CreateFrame("Button", nil, panel, "UIPanelButtonTemplate")
-    less:SetSize(20, 20)
-    less:SetPoint("RIGHT", targetText, "LEFT", -4, 0)
-    less:SetText("-")
-    less:SetScript("OnClick", function() ns.UI.SetTarget(-1) end)
-end
-
+-- Built like the game's Map Legend panel, the quest log's other side-tab page
+-- (Blizzard_UIPanels_Game/Mainline/MapLegendFrame.xml, MapLegendFrameTemplate): the quest log's
+-- border frame, a scroll frame filling it with the quest log's parchment stretched over it,
+-- and the title (Game15Font_Shadow) centred just above the border.
 local function BuildBody()
     local body = CreateFrame("Frame", nil, panel)
     body:SetPoint("TOPLEFT", panel, "TOPLEFT", 0, -TOP_BAR)
@@ -121,12 +94,24 @@ local function BuildBody()
 
     local background = body:CreateTexture(nil, "BACKGROUND")
     background:SetAllPoints(body)
-    local function LayBackground(width, height) ns.UI.LayParchment(background, ns.Num(width), ns.Num(height)) end
-    LayBackground(ns.Num(body:GetWidth()), ns.Num(body:GetHeight()))
-    body:SetScript("OnSizeChanged", function(_, width, height) LayBackground(width, height) end)
+    if ns.UI.HasAtlas("QuestLog-main-background") then
+        background:SetAtlas("QuestLog-main-background")
+    else
+        -- A client without the quest log's parchment: the game's marble panel art.
+        background:SetTexture("Interface\\FrameGeneral\\UI-Background-Marble", "REPEAT", "REPEAT")
+        background:SetHorizTile(true)
+        background:SetVertTile(true)
+    end
+    QL.background = background
 
     -- The quest log's own frame around its list; a client without the template just has no frame.
-    pcall(CreateFrame, "Frame", nil, body, "QuestLogBorderFrameTemplate")
+    local okBorder, border = pcall(CreateFrame, "Frame", nil, body, "QuestLogBorderFrameTemplate")
+    if not (okBorder and type(border) == "table") then border = body end
+
+    local title = body:CreateFontString(nil, "ARTWORK", _G.Game15Font_Shadow and "Game15Font_Shadow" or "GameFontNormalLarge")
+    title:SetPoint("BOTTOM", border, "TOP", -1, 3)
+    title:SetText(NAME)
+    QL.title = title
 
     local ok, scroll = pcall(CreateFrame, "ScrollFrame", nil, body, "ScrollFrameTemplate")
     if ok and scroll then
@@ -157,11 +142,14 @@ local function BuildBody()
     summary:SetJustifyH("LEFT")
     summary:SetJustifyV("TOP")
 
-    empty = scrollContent:CreateFontString(nil, "OVERLAY", "GameFontDisable")
-    empty:SetText("Your quest log is empty.")
+    -- The quest log's empty text (QuestScrollFrame.EmptyText: Game16Font, centre, 50 up).
+    empty = body:CreateFontString(nil, "ARTWORK", _G.Game16Font and "Game16Font" or "GameFontNormalLarge")
+    empty:SetWidth(250)
+    empty:SetPoint("CENTER", body, "CENTER", 0, 50)
+    empty:SetText(_G.QUEST_LOG_NO_QUESTS or "Your quest log is empty.")
     empty:Hide()
 
-    list = ns.UI.NewList(scrollContent, true)
+    list = ns.UI.NewList(scrollContent)
 end
 
 local function BuildPanel(map)
@@ -172,7 +160,6 @@ local function BuildPanel(map)
     panel:SetFrameLevel((ns.Num(map:GetFrameLevel()) or 0) + 20)
     panel:EnableMouse(true)
     panel:Hide()
-    BuildTopBar()
     BuildBody()
 end
 

@@ -1,29 +1,26 @@
--- Abandon Advisor: the window (rated quest list, abandon buttons, confirm popup)
+-- Abandon Advisor: the window (rated quest list, right-click menu, confirm popup)
+--
+-- Each quest row copies the quest log's own quest row (QuestLogTitleTemplate and
+-- QuestLogQuests_AddQuestButton in Blizzard_UIPanels_Game/Mainline/QuestMapFrame.xml/.lua):
+-- the title in its difficulty colour at 31,-8, a tag on the right in the same colour, an
+-- objective-style line under it, the quest log's yellow glow under the mouse, and a
+-- right-click menu (Abandon Quest) instead of buttons on the row.
 local _, ns = ...
 local UI = {}
 ns.UI = UI
 
 local WIDTH, HEIGHT = 540, 440
-local ROW_H = 36           -- the window's rows: verdict and button side by side
-local COMPACT_ROW_H = 40   -- the quest log's narrow rows: button under the verdict
 local POPUP = "ABANDONADVISOR_CONFIRM"
 local NAME = "Abandon Advisor"
 local ICON = "Interface\\Icons\\INV_Misc_Book_08"
-local ATTIC = 88            -- the window's strip under the title bar, beside the portrait (summary)
-local BUTTON_BAR = 26       -- the window's bottom strip (hint, free-slot target)
+local ATTIC = 88            -- the window's strip beside the portrait, for the summary (FrameTemplate_SetAtticHeight)
 
--- Each verdict's colour is one of the game's text colours (numbers only for a client without it)
--- and its icon is the game's own: ready check marks, and the quest giver's turn-in mark.
-local VERDICT = {
-    turnin  = { label = "Hand in", color = { "LIGHTBLUE_FONT_COLOR", 0.53, 0.67, 1 },
-                icon = "Interface\\GossipFrame\\ActiveQuestIcon" },
-    abandon = { label = "Abandon", color = { "RED_FONT_COLOR", 1, 0.125, 0.125 },
-                icon = "Interface\\RaidFrame\\ReadyCheck-NotReady" },
-    maybe   = { label = "Maybe",   color = { "YELLOW_FONT_COLOR", 1, 1, 0 },
-                icon = "Interface\\RaidFrame\\ReadyCheck-Waiting" },
-    keep    = { label = "Keep",    color = { "GREEN_FONT_COLOR", 0.1, 1, 0.1 },
-                icon = "Interface\\RaidFrame\\ReadyCheck-Ready" },
-}
+-- QuestLogTitleTemplate and QuestLogQuests_AddQuestButton.
+local TEXT_LEFT, TEXT_TOP = 31, 8          -- Text: TOPLEFT x=31 y=-8
+local TEXT_RIGHT = 18                      -- Text/TagText right edge: Checkbox (14) + 4 from the row's right
+local ROW_LEFT = 4                         -- QuestMapFrameOverrides.titleFrameLeftPadding (Camelot)
+local OBJECTIVE_GAP, ROW_EXTRA = 3, 6      -- objective 3 below the text; 6 more "because of POI icon"
+local FALLBACK_LINE = 12                   -- a line's height when the client can't measure it
 
 ----------------------------------------------------------------------
 -- Helpers
@@ -34,50 +31,47 @@ local function White() return Color("HIGHLIGHT_FONT_COLOR", 1, 1, 1) end
 local function Gray() return Color("GRAY_FONT_COLOR", 0.5, 0.5, 0.5) end
 local function Red() return Color("RED_FONT_COLOR", 1, 0.125, 0.125) end
 local function Green() return Color("GREEN_FONT_COLOR", 0.1, 1, 0.1) end
-local function VerdictColor(v) return Color(v.color[1], v.color[2], v.color[3], v.color[4]) end
 
-local function AtlasInfo(atlas)
-    if not (C_Texture and C_Texture.GetAtlasInfo) then return nil end
-    local info = ns.Call(C_Texture.GetAtlasInfo, atlas)
-    if type(info) == "table" then return info end
+local function Text(name, fallback)
+    local value = _G[name]
+    if type(value) == "string" and value ~= "" then return value end
+    return fallback
 end
 
--- The quest log's own parchment over the whole box, cropped rather than squashed.
--- False when the client has no such atlas.
-function UI.CoverWithAtlas(texture, atlas, width, height)
-    local info = AtlasInfo(atlas)
-    local iw, ih = info and ns.Num(info.width), info and ns.Num(info.height)
-    local left, right = info and ns.Num(info.leftTexCoord), info and ns.Num(info.rightTexCoord)
-    local top, bottom = info and ns.Num(info.topTexCoord), info and ns.Num(info.bottomTexCoord)
-    if not (iw and ih and left and right and top and bottom) or iw <= 0 or ih <= 0 then return false end
-    texture:SetAtlas(atlas)
-    if not (width and height) or width <= 0 or height <= 0 then return true end
-    local box, native = width / height, iw / ih
-    if native > box then
-        local cut = (right - left) * (1 - box / native) / 2
-        left, right = left + cut, right - cut
-    else
-        local cut = (bottom - top) * (1 - native / box) / 2
-        top, bottom = top + cut, bottom - cut
-    end
-    texture:SetTexCoord(left, right, top, bottom)
-    return true
+local function HasAtlas(atlas)
+    if not (C_Texture and C_Texture.GetAtlasInfo) then return false end
+    return type((ns.Call(C_Texture.GetAtlasInfo, atlas))) == "table"
 end
+UI.HasAtlas = HasAtlas
 
--- A list background: the quest log's parchment, else the game's marble panel art.
-function UI.LayParchment(texture, width, height)
-    if UI.CoverWithAtlas(texture, "QuestLog-main-background", width, height) then return end
-    texture:SetTexture("Interface\\FrameGeneral\\UI-Background-Marble", "REPEAT", "REPEAT")
-    if texture.SetHorizTile then texture:SetHorizTile(true) end
-    if texture.SetVertTile then texture:SetVertTile(true) end
-    texture:SetTexCoord(0, 1, 0, 1)
-end
 local function LevelColor(row)
     if row.level and not row.scaling and GetQuestDifficultyColor then
         local color = ns.Call(GetQuestDifficultyColor, row.level)
         if type(color) == "table" and color.r then return color.r, color.g, color.b end
     end
-    return 1, 0.82, 0
+    return Gold()
+end
+
+-- The quest log's title colours: normal and under the mouse (GetDifficultyColor).
+local function TitleColors(row)
+    if GetDifficultyColor and C_PlayerInfo and C_PlayerInfo.GetContentDifficultyQuestForPlayer then
+        local difficulty = ns.Call(C_PlayerInfo.GetContentDifficultyQuestForPlayer, row.id)
+        if difficulty ~= nil then
+            local color, highlight = ns.Call(GetDifficultyColor, difficulty)
+            if type(color) == "table" and type(color.r) == "number" then
+                if not (type(highlight) == "table" and type(highlight.r) == "number") then highlight = color end
+                return color, highlight
+            end
+        end
+    end
+    local r, g, b = LevelColor(row)
+    local color = { r = r, g = g, b = b }
+    return color, color
+end
+
+local function ObjectiveColor(highlighted)
+    if highlighted then return Color("QUEST_OBJECTIVE_HIGHLIGHT_FONT_COLOR", 1, 1, 1) end
+    return Color("QUEST_OBJECTIVE_FONT_COLOR", 0.8, 0.8, 0.8)
 end
 
 local function MoneyText(copper)
@@ -101,6 +95,17 @@ local function OpenInQuestLog(row)
         if QuestLog_SetSelection then pcall(QuestLog_SetSelection, row.index) end
         if QuestLog_Update then pcall(QuestLog_Update) end
     end
+end
+
+local function CanAbandon(row)
+    return row.verdict ~= "turnin" and row.canAbandon ~= false
+end
+
+local function TogglePin(row)
+    if row.verdict == "turnin" then return end
+    local pinned = ns.ToggleKeep(row.id)
+    ns.Print((pinned and "Pinned as keep: %s" or "Unpinned: %s"):format(row.title))
+    UI.UpdateAll(ns.Compute())
 end
 
 ----------------------------------------------------------------------
@@ -139,39 +144,97 @@ local function ConfirmAbandon(row)
 end
 
 ----------------------------------------------------------------------
--- Row tooltip
+-- Right-click menu: the game's context menu, as the quest log's own rows
+-- have (QuestMapLogTitleButton_CreateContextMenu: ... "Abandon Quest").
 ----------------------------------------------------------------------
-local function RowEnter(self)
+local function OpenMenu(owner, row)
+    local pinText = row.pinned and "Unpin" or "Pin as Keep"
+    if not (MenuUtil and MenuUtil.CreateContextMenu) then
+        -- A client without the menu: right-click pins (or super tracks a finished quest),
+        -- shift + right-click abandons (after asking).
+        if row.verdict == "turnin" then
+            if ns.CanTrack() then ns.Track(not ns.IsTracked(row.id) and row.id or nil) end
+        elseif IsShiftKeyDown and IsShiftKeyDown() then
+            if CanAbandon(row) then ConfirmAbandon(row) end
+        else
+            TogglePin(row)
+        end
+        return
+    end
+    if row.verdict == "turnin" then
+        -- The quest log's own pair (SUPER_TRACK_QUEST / STOP_SUPER_TRACK_QUEST); here tracking
+        -- a stop also follows the route: the next stop is tracked once this one is handed in.
+        if not ns.CanTrack() then return end
+        pcall(MenuUtil.CreateContextMenu, owner, function(_, root)
+            if ns.IsTracked(row.id) then
+                root:CreateButton(Text("STOP_SUPER_TRACK_QUEST", "Stop Super Tracking"), function() ns.Track(nil) end)
+            else
+                root:CreateButton(Text("SUPER_TRACK_QUEST", "Super Track"), function() ns.Track(row.id) end)
+            end
+        end)
+        return
+    end
+    pcall(MenuUtil.CreateContextMenu, owner, function(_, root)
+        root:CreateButton(pinText, function() TogglePin(row) end)
+        if CanAbandon(row) then
+            root:CreateButton(Text("ABANDON_QUEST", "Abandon Quest"), function() ConfirmAbandon(row) end)
+        end
+    end)
+end
+
+----------------------------------------------------------------------
+-- Row tooltip: laid out like the quest log's (QuestMapLogTitleButton_OnEnter):
+-- title, the quest's state, white objectives (grey when done), green click hints.
+----------------------------------------------------------------------
+local function PlaceTooltip(owner)
+    GameTooltip:SetOwner(owner, "ANCHOR_NONE")
+    GameTooltip:ClearAllPoints()
+    local right, screen = ns.Num(owner:GetRight()), UIParent and ns.Num(UIParent:GetRight())
+    if right and screen and right + 34 + 251 > screen then
+        GameTooltip:SetPoint("TOPRIGHT", owner, "TOPLEFT", -5, 0)
+    else
+        GameTooltip:SetPoint("TOPLEFT", owner, "TOPRIGHT", 34, 0)
+    end
+end
+
+local VERDICT_LABEL = { turnin = "Hand in", abandon = "Abandon", maybe = "Maybe", keep = "Keep" }
+
+local function ShowTooltip(self)
     local row = self.data
     if not row or not GameTooltip then return end
-    GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
-    -- Laid out like the game's own tooltips: the quest's name in its difficulty colour, gold labels,
-    -- white values, red for what counts against the quest, green for what counts for it, grey hints.
-    local r, g, b = LevelColor(row)
-    GameTooltip:AddLine(row.title, r, g, b)
-    local v = VERDICT[row.verdict]
-    local right = row.verdict == "turnin" and "" or ("score %d"):format(row.score)
-    local vr, vg, vb = VerdictColor(v)
+    PlaceTooltip(self)
+    GameTooltip:SetText(row.title)
     local wr, wg, wb = White()
-    GameTooltip:AddDoubleLine(v.label, right, vr, vg, vb, wr, wg, wb)
-    if row.pick then
-        local rr, rg, rb = Red()
-        GameTooltip:AddLine("Marked: one of the first to drop to reach your free-slot target.", rr, rg, rb, true)
+    local gr, gg, gb = Gold()
+    if row.verdict == "turnin" then
+        GameTooltip:AddLine(Text("QUEST_WATCH_QUEST_READY", "Ready for turn-in"), wr, wg, wb, true)
+        if row.stop and row.stops > 1 then
+            GameTooltip:AddLine(("Stop %d of %d on the shortest route through your finished quests."):format(
+                row.stop, row.stops), wr, wg, wb, true)
+        end
+        if ns.following and ns.following == row.id then
+            GameTooltip:AddLine("Super tracked: handing it in tracks the next stop.", wr, wg, wb, true)
+        end
+    else
+        local label = row.pinned and "Pinned as keep" or VERDICT_LABEL[row.verdict]
+        GameTooltip:AddDoubleLine(label, ("score %d"):format(row.score), gr, gg, gb, wr, wg, wb)
+        if row.pick then
+            GameTooltip:AddLine("One of the first to drop to reach your free-slot target.", wr, wg, wb, true)
+        end
     end
-    GameTooltip:AddLine(" ")
+    if #row.reasons > 0 then GameTooltip:AddLine(" ") end
     for _, reason in ipairs(row.reasons) do
         if reason.pts > 0 then
             local cr, cg, cb = Red()
-            GameTooltip:AddDoubleLine(reason.text, ("+%d"):format(reason.pts), cr, cg, cb, cr, cg, cb)
+            GameTooltip:AddDoubleLine(reason.text, ("+%d"):format(reason.pts), wr, wg, wb, cr, cg, cb)
         elseif reason.pts < 0 then
             local cr, cg, cb = Green()
-            GameTooltip:AddDoubleLine(reason.text, tostring(reason.pts), cr, cg, cb, cr, cg, cb)
+            GameTooltip:AddDoubleLine(reason.text, tostring(reason.pts), wr, wg, wb, cr, cg, cb)
         else
             GameTooltip:AddLine(reason.text, wr, wg, wb, true)
         end
     end
     GameTooltip:AddLine(" ")
-    local gr, gg, gb = Gold()
     local function Fact(label, value) GameTooltip:AddDoubleLine(label, value, gr, gg, gb, wr, wg, wb) end
     if row.zone then Fact("Zone", row.zone) end
     if row.level then Fact("Level", tostring(row.level)) end
@@ -182,24 +245,63 @@ local function RowEnter(self)
         Fact("XP", text)
     end
     if row.money and row.money > 0 then Fact("Money", MoneyText(row.money)) end
-    if row.distance then Fact("Distance", ("%d yd"):format(row.distance)) end
+    if row.turnIn and row.turnIn.zone then Fact("Hand in", row.turnIn.zone) end
+    if row.stop then
+        if row.leg then Fact(row.stop == 1 and "From you" or "From the stop before", ns.Score.Yards(row.leg)) end
+    elseif row.distance then
+        Fact("Distance", ns.Score.Yards(row.distance))
+    end
     if row.drop then Fact("Drops", ns.Score.DropText(row.drop)) end
+    local objectives = false
     local sr, sg, sb = Gray()
     for _, objective in ipairs(row.objectives or {}) do
         if objective.text then
+            if not objectives then GameTooltip:AddLine(" "); objectives = true end
+            local dash = Text("QUEST_DASH", "- ")
             if objective.done then
-                GameTooltip:AddLine("- " .. objective.text, sr, sg, sb, true)
+                GameTooltip:AddLine(dash .. objective.text, sr, sg, sb, true)
             else
-                GameTooltip:AddLine("- " .. objective.text, wr, wg, wb, true)
+                GameTooltip:AddLine(dash .. objective.text, wr, wg, wb, true)
             end
         end
     end
     GameTooltip:AddLine(" ")
-    GameTooltip:AddLine("Click: show in quest log   Right-click: pin as keep / unpin", sr, sg, sb)
+    local hr, hg, hb = Green()
+    GameTooltip:AddLine("<Click to show it in the quest log>", hr, hg, hb)
+    if row.verdict ~= "turnin" then
+        GameTooltip:AddLine("<Right-click to abandon or pin it>", hr, hg, hb)
+    elseif ns.CanTrack() then
+        GameTooltip:AddLine("<Right-click to super track it>", hr, hg, hb)
+    end
     GameTooltip:Show()
 end
 
-local function RowLeave()
+----------------------------------------------------------------------
+-- Rows. A list is one column of rated quests; the window has one and the
+-- quest log panel has another. Both use the quest log's row.
+----------------------------------------------------------------------
+function UI.NewList(content)
+    return { content = content, rows = {} }
+end
+
+local function SetRowColors(row, highlighted)
+    local color, highlight = TitleColors(row.data)
+    local c = highlighted and highlight or color
+    row.title:SetTextColor(c.r, c.g, c.b)
+    row.tag:SetTextColor(c.r, c.g, c.b)
+    row.why:SetTextColor(ObjectiveColor(highlighted))
+end
+
+local function RowEnter(self)
+    if not self.data then return end
+    SetRowColors(self, true)
+    self.hl:Show()
+    ShowTooltip(self)
+end
+
+local function RowLeave(self)
+    if self.data then SetRowColors(self, false) end
+    self.hl:Hide()
     if GameTooltip then GameTooltip:Hide() end
 end
 
@@ -207,80 +309,37 @@ local function RowClick(self, button)
     local row = self.data
     if not row then return end
     if button == "RightButton" then
-        if row.verdict == "turnin" then return end
-        local pinned = ns.ToggleKeep(row.id)
-        ns.Print((pinned and "Pinned as keep: %s" or "Unpinned: %s"):format(row.title))
-        UI.UpdateAll(ns.Compute())
+        OpenMenu(self, row)
     else
         OpenInQuestLog(row)
     end
 end
 
-----------------------------------------------------------------------
--- Rows. A list is one column of rated quests; the window has one and
--- the quest log panel has another (narrower, so its rows are compact).
-----------------------------------------------------------------------
-function UI.NewList(content, compact)
-    return { content = content, rows = {}, compact = compact or false,
-        rowHeight = compact and COMPACT_ROW_H or ROW_H }
-end
-
-local function CreateRow(list, index)
-    local parent, compact = list.content, list.compact
-    local row = CreateFrame("Button", nil, parent)
-    row:SetHeight(list.rowHeight)
+local function CreateRow(list)
+    local row = CreateFrame("Button", nil, list.content)
+    row:SetHeight(TEXT_TOP + 2 * FALLBACK_LINE + OBJECTIVE_GAP + ROW_EXTRA)
     row:RegisterForClicks("LeftButtonUp", "RightButtonUp")
 
-    -- The quest log's own title highlight under the mouse.
-    row.hl = row:CreateTexture(nil, "HIGHLIGHT")
-    row.hl:SetAllPoints(row)
-    row.hl:SetTexture("Interface\\QuestFrame\\UI-QuestTitleHighlight")
-    row.hl:SetBlendMode("ADD")
-    row.hl:SetAlpha(0.6)
-
-    -- The verdict's game icon at the row's left (see VERDICT).
-    row.icon = row:CreateTexture(nil, "ARTWORK")
-    row.icon:SetSize(16, 16)
-    row.icon:SetPoint("TOPLEFT", row, "TOPLEFT", 4, -4)
-
-    row.button = CreateFrame("Button", nil, row, "UIPanelButtonTemplate")
-    row.button:SetText("Abandon")
-    row.button:SetScript("OnClick", function(self)
-        local data = self:GetParent().data
-        if data then ConfirmAbandon(data) end
-    end)
-
-    row.verdict = row:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
-    row.verdict:SetJustifyH("RIGHT")
-    row.title = row:CreateFontString(nil, "OVERLAY", "GameFontNormal")
-    row.why = row:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
-
-    -- Each text is pinned by its two top corners. A top corner plus a side's
-    -- middle would make the game work the height out from the anchors.
-    local titleInset, whyInset
-    if compact then
-        row.verdict:SetWidth(84)
-        row.verdict:SetPoint("TOPRIGHT", row, "TOPRIGHT", -6, -6)
-        row.button:SetSize(66, 18)
-        row.button:SetPoint("BOTTOMRIGHT", row, "BOTTOMRIGHT", -4, 3)
-        titleInset, whyInset = 6 + 84 + 4, 4 + 66 + 4
-    else
-        row.button:SetSize(74, 20)
-        row.button:SetPoint("RIGHT", row, "RIGHT", -4, 0)
-        row.verdict:SetWidth(74)
-        row.verdict:SetPoint("RIGHT", row.button, "LEFT", -8, 0)
-        titleInset = 4 + 74 + 8 + 74 + 6
-        whyInset = titleInset
-    end
-    row.title:SetPoint("TOPLEFT", row, "TOPLEFT", 24, -5)
-    row.title:SetPoint("TOPRIGHT", row, "TOPRIGHT", -titleInset, -5)
+    row.title = row:CreateFontString(nil, "ARTWORK", "GameFontNormalLeft")
     row.title:SetJustifyH("LEFT")
-    row.title:SetWordWrap(false)
-
-    row.why:SetPoint("TOPLEFT", row, "TOPLEFT", 24, -21)
-    row.why:SetPoint("TOPRIGHT", row, "TOPRIGHT", -whyInset, -21)
+    row.tag = row:CreateFontString(nil, "ARTWORK", "GameFontNormalLeft")
+    row.tag:SetPoint("TOPRIGHT", row, "TOPRIGHT", -TEXT_RIGHT, -TEXT_TOP)
+    row.why = row:CreateFontString(nil, "ARTWORK", _G.ObjectiveFont and "ObjectiveFont" or "GameFontHighlightSmall")
     row.why:SetJustifyH("LEFT")
-    row.why:SetWordWrap(false)
+
+    -- The quest log's glow behind the title under the mouse (HighlightTexture, BORDER layer).
+    row.hl = row:CreateTexture(nil, "BORDER")
+    if HasAtlas("questlog-quest-glow-yellow") then
+        row.hl:SetAtlas("questlog-quest-glow-yellow", true)
+        row.hl:SetPoint("TOP", row.title, "TOP", 0, 4)
+        row.hl:SetPoint("BOTTOM", row.title, "BOTTOM", 0, -4)
+    else
+        -- A client without that atlas: its own quest log's title highlight.
+        row.hl:SetTexture("Interface\\QuestFrame\\UI-QuestTitleHighlight")
+        row.hl:SetBlendMode("ADD")
+        row.hl:SetAllPoints(row)
+    end
+    row.hl:Hide()
 
     row:SetScript("OnEnter", RowEnter)
     row:SetScript("OnLeave", RowLeave)
@@ -288,60 +347,90 @@ local function CreateRow(list, index)
     return row
 end
 
-local function FillRow(row, data)
-    row.data = data
-    local v = VERDICT[data.verdict]
-    row.icon:SetTexture(v.icon)
+local function LineHeight(fontString)
+    local height = ns.Num(fontString:GetStringHeight())
+    if not height or height < 6 then return FALLBACK_LINE end
+    return height
+end
 
-    local r, g, b = LevelColor(data)
-    local title = ("[%s] %s"):format(data.level and tostring(data.level) or "?", data.title)
-    if data.tagName then title = title .. " (" .. data.tagName .. ")" end
-    if data.pick then title = ns.ColorCode("RED_FONT_COLOR", 1, 0.125, 0.125) .. "»|r " .. title end
-    row.title:SetText(title)
-    row.title:SetTextColor(r, g, b)
+-- What the row's right-hand tag says: only the advice that asks something of you.
+local function TagFor(data)
+    if data.pinned then return "Pinned" end
+    if data.pick or data.verdict == "abandon" then return "Abandon" end
+end
 
+-- What the line under the title says: for a finished quest its place on the hand-in route
+-- (or the quest log's "Ready for turn-in"), otherwise the reasons.
+local function LineFor(data)
+    if data.verdict == "turnin" then
+        if not (data.stop and data.stops > 1) then return Text("QUEST_WATCH_QUEST_READY", "Ready for turn-in") end
+        local line = ("Stop %d of %d"):format(data.stop, data.stops)
+        local zone = data.turnIn and data.turnIn.zone
+        if zone then line = line .. ": " .. zone end
+        if data.leg then line = line .. ", " .. ns.Score.Yards(data.leg) end
+        return line
+    end
     local why = {}
     for i = 1, math.min(3, #data.reasons) do why[#why + 1] = data.reasons[i].short end
     local line = table.concat(why, ", ")
     if data.zone and not data.sameZone then line = data.zone .. ": " .. line end
+    return line
+end
+
+-- Fills the row and returns its height (QuestLogQuests_AddQuestButton's sum).
+local function FillRow(row, data)
+    row.data = data
+    local tag = TagFor(data)
+    row.tag:SetText(tag or "")
+    row.tag:SetShown(tag ~= nil)
+
+    row.title:ClearAllPoints()
+    row.title:SetPoint("TOPLEFT", row, "TOPLEFT", TEXT_LEFT, -TEXT_TOP)
+    if tag then
+        row.title:SetPoint("TOPRIGHT", row.tag, "TOPLEFT", -4, 0)
+    else
+        row.title:SetPoint("TOPRIGHT", row, "TOPRIGHT", -TEXT_RIGHT, -TEXT_TOP)
+    end
+    row.title:SetText(data.title)
+
+    local titleHeight = LineHeight(row.title)
+    local y = TEXT_TOP + titleHeight + OBJECTIVE_GAP
+    row.why:ClearAllPoints()
+    row.why:SetPoint("TOPLEFT", row, "TOPLEFT", TEXT_LEFT, -y)
+    row.why:SetPoint("TOPRIGHT", row, "TOPRIGHT", -TEXT_RIGHT, -y)
+    local line = LineFor(data)
     row.why:SetText(line)
+    local height = TEXT_TOP + titleHeight + ROW_EXTRA
+    if line ~= "" then height = height + OBJECTIVE_GAP + LineHeight(row.why) end
 
-    if data.verdict == "turnin" then
-        row.verdict:SetText(v.label)
-    else
-        row.verdict:SetText(("%s %d"):format(data.pinned and "Pinned" or v.label, data.score))
-    end
-    row.verdict:SetTextColor(VerdictColor(v))
-
-    if data.verdict == "turnin" or data.canAbandon == false then
-        row.button:Hide()
-    else
-        row.button:Show()
-    end
+    SetRowColors(row, false)
+    row.hl:Hide()
+    row:SetHeight(height)
     row:Show()
+    return height
 end
 
 -- Lays the rated quests out in `list`, the first row `top` below the content's
 -- top edge. Returns how tall the rows are together.
 function UI.FillList(list, quests, top)
     top = top or 0
-    local parent, height = list.content, list.rowHeight
+    local parent, y = list.content, top
     for i, data in ipairs(quests) do
         local row = list.rows[i]
         if not row then
-            row = CreateRow(list, i)
+            row = CreateRow(list)
             list.rows[i] = row
         end
         row:ClearAllPoints()
-        row:SetPoint("TOPLEFT", parent, "TOPLEFT", 0, -(top + (i - 1) * height))
-        row:SetPoint("TOPRIGHT", parent, "TOPRIGHT", 0, -(top + (i - 1) * height))
-        FillRow(row, data)
+        row:SetPoint("TOPLEFT", parent, "TOPLEFT", ROW_LEFT, -y)
+        row:SetPoint("TOPRIGHT", parent, "TOPRIGHT", 0, -y)
+        y = y + FillRow(row, data)
     end
     for i = #quests + 1, #list.rows do
         list.rows[i].data = nil
         list.rows[i]:Hide()
     end
-    return #quests * height
+    return y - top
 end
 
 ----------------------------------------------------------------------
@@ -367,14 +456,8 @@ function UI.ApplyScale()
     if UI.frame then UI.frame:SetScale(ns.db.scale or 1) end
 end
 
-local function SetTarget(delta)
-    ns.db.target = math.max(1, math.min(25, (ns.db.target or 3) + delta))
-    UI.UpdateAll(ns.Compute())
-end
-UI.SetTarget = SetTarget
-
--- The game's framed window with a portrait (the one the character, spellbook and friends
--- windows use). A client without it gets the plainer framed window, then the game's dialog box.
+-- The game's framed window with a portrait (ButtonFrameTemplate, SharedUIPanelTemplates.xml).
+-- A client without it gets the plainer framed window, then the game's dialog box.
 local function NewWindow()
     for _, template in ipairs({ "ButtonFrameTemplate", "BasicFrameTemplateWithInset" }) do
         local ok, f = pcall(CreateFrame, "Frame", "AbandonAdvisorFrame", UIParent, template)
@@ -417,20 +500,21 @@ function UI.Create()
 
     -- Title and close button: the template's own where it has them.
     -- side: the list's distance from the window's edges where there is no template inset.
-    local summaryLeft, summaryTop, listTop, listBottom, side = 14, -30, -88, 34, 8
+    local summaryLeft, summaryTop, listTop, listBottom, side = 14, -30, -88, 8, 8
     local titleText = Child(f, "TitleContainer") and Child(f.TitleContainer, "TitleText") or Child(f, "TitleText")
     if template == "ButtonFrameTemplate" then
         if type(f.SetTitle) == "function" then pcall(f.SetTitle, f, NAME) end
         if titleText then titleText:SetText(NAME) end
         if type(f.SetPortraitToAsset) == "function" then pcall(f.SetPortraitToAsset, f, ICON) end
-        summaryLeft, summaryTop, listTop, listBottom = 66, -28, -ATTIC, BUTTON_BAR
+        -- PANEL_INSET_BOTTOM_OFFSET: the inset reaches down to 4 when there is no button bar.
+        summaryLeft, summaryTop, listTop, listBottom = 66, -28, -ATTIC, 4
     elseif titleText then
         titleText:SetText(NAME)
     else
         f.title = f:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
         f.title:SetPoint("TOP", f, "TOP", 0, -18)
         f.title:SetText(NAME)
-        summaryLeft, summaryTop, listTop, listBottom, side = 20, -40, -96, 40, 14
+        summaryLeft, summaryTop, listTop, listBottom, side = 20, -40, -96, 14, 14
     end
     if not Child(f, "CloseButton") then
         f.close = CreateFrame("Button", nil, f, "UIPanelCloseButton")
@@ -444,8 +528,7 @@ function UI.Create()
     f.summary:SetJustifyV("TOP")
     f.summary:SetHeight(summaryTop - listTop - 4)
 
-    -- The list sits in the template's inset (moved down to make room for the summary),
-    -- on the quest log's own parchment.
+    -- The list sits in the template's inset, on the inset's own background.
     local body = Child(f, "Inset")
     if body then
         body:ClearAllPoints()
@@ -457,34 +540,6 @@ function UI.Create()
         body:SetPoint("BOTTOMRIGHT", f, "BOTTOMRIGHT", -side, listBottom)
     end
     f.body = body
-    f.parchment = body:CreateTexture(nil, "BACKGROUND", nil, 1)
-    f.parchment:SetPoint("TOPLEFT", body, "TOPLEFT", 3, -3)
-    f.parchment:SetPoint("BOTTOMRIGHT", body, "BOTTOMRIGHT", -3, 3)
-    UI.LayParchment(f.parchment, ns.Num(body:GetWidth()), ns.Num(body:GetHeight()))
-    body:SetScript("OnSizeChanged", function(_, width, height)
-        UI.LayParchment(f.parchment, ns.Num(width), ns.Num(height))
-    end)
-
-    -- Bottom strip: hint on the left, free-slot target [-] Aim for N free [+] on the right.
-    local barY = math.floor((listBottom - 20) / 2 + 0.5)
-    f.more = CreateFrame("Button", nil, f, "UIPanelButtonTemplate")
-    f.more:SetSize(22, 20)
-    f.more:SetPoint("BOTTOMRIGHT", f, "BOTTOMRIGHT", -10, math.max(3, barY))
-    f.more:SetText("+")
-    f.more:SetScript("OnClick", function() SetTarget(1) end)
-
-    f.targetText = f:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
-    f.targetText:SetPoint("RIGHT", f.more, "LEFT", -6, 0)
-
-    f.less = CreateFrame("Button", nil, f, "UIPanelButtonTemplate")
-    f.less:SetSize(22, 20)
-    f.less:SetPoint("RIGHT", f.targetText, "LEFT", -6, 0)
-    f.less:SetText("-")
-    f.less:SetScript("OnClick", function() SetTarget(-1) end)
-
-    f.hint = f:CreateFontString(nil, "OVERLAY", "GameFontDisableSmall")
-    f.hint:SetPoint("LEFT", f, "BOTTOMLEFT", side + 4, listBottom / 2 + 1)
-    f.hint:SetText("Hover a quest for the reasons. Right-click to pin it as keep.")
 
     -- The game's current scroll frame and bar (as in the quest log), else the older one.
     local ok, scroll = pcall(CreateFrame, "ScrollFrame", "AbandonAdvisorScroll", body, "ScrollFrameTemplate")
@@ -496,23 +551,25 @@ function UI.Create()
     scroll:SetPoint("BOTTOMRIGHT", body, "BOTTOMRIGHT", -24, 4)
     local bar = Child(scroll, "ScrollBar")
     if bar and bar.ClearAllPoints then
+        -- The quest log's own placement (scrollBarX 8, scrollBarTopY 2, scrollBarBottomY -4).
         bar:ClearAllPoints()
-        bar:SetPoint("TOPLEFT", scroll, "TOPRIGHT", 6, 0)
-        bar:SetPoint("BOTTOMLEFT", scroll, "BOTTOMRIGHT", 6, 0)
+        bar:SetPoint("TOPLEFT", scroll, "TOPRIGHT", 8, 2)
+        bar:SetPoint("BOTTOMLEFT", scroll, "BOTTOMRIGHT", 8, -4)
     end
 
     f.content = CreateFrame("Frame", nil, scroll)
-    f.content:SetSize(WIDTH - 44, ROW_H)
+    f.content:SetSize(WIDTH - 44, 40)
     scroll:SetScrollChild(f.content)
     scroll:SetScript("OnSizeChanged", function(_, width)
         width = ns.Num(width)
         if width and width > 100 then f.content:SetWidth(width) end
     end)
-    f.list = UI.NewList(f.content, false)
+    f.list = UI.NewList(f.content)
 
-    f.empty = f:CreateFontString(nil, "OVERLAY", "GameFontDisable")
+    -- The quest log's empty text (EmptyText: Game16Font, centred).
+    f.empty = f:CreateFontString(nil, "OVERLAY", _G.Game16Font and "Game16Font" or "GameFontNormalLarge")
     f.empty:SetPoint("CENTER", body, "CENTER", 0, 0)
-    f.empty:SetText("Your quest log is empty.")
+    f.empty:SetText(Text("QUEST_LOG_NO_QUESTS", "Your quest log is empty."))
     f.empty:Hide()
 
     local function OnShow() UI.Update(ns.Compute()) end
@@ -528,10 +585,9 @@ function UI.Update(res)
     local f = UI.frame
     if not f or not res then return end
     f.summary:SetText(ns.Score.Summary(res))
-    f.targetText:SetText(("Aim for %d free"):format(res.target or ns.db.target))
 
     local quests = res.rows or {}
-    f.content:SetHeight(math.max(ROW_H, UI.FillList(f.list, quests, 0)))
+    f.content:SetHeight(math.max(40, UI.FillList(f.list, quests, 0)))
     if #quests == 0 and not res.error then f.empty:Show() else f.empty:Hide() end
 end
 
