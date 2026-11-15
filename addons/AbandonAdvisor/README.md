@@ -34,7 +34,7 @@ The game does not tell addons when someone else abandons a quest, so this works 
 
 1. Download `AbandonAdvisor-x.y.z.zip` from the latest release.
 2. Unzip it into `World of Warcraft\_forever_\Interface\AddOns`, so you end up with `AddOns\AbandonAdvisor\AbandonAdvisor.toc`.
-3. Restart the game.
+3. Type `/reload` in game (or log in).
 
 ## Commands
 

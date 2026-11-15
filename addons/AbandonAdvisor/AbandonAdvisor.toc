@@ -1,7 +1,7 @@
 ## Interface: 16001, 16002
 ## Title: Abandon Advisor
 ## Notes: Rates every quest in your log and tells you which ones to abandon when you need room.
-## Version: 1.5.0
+## Version: 1.5.1
 ## OptionalDeps: Questie, ForeverCore
 ## SavedVariables: AbandonAdvisorDB
 ## SavedVariablesPerCharacter: AbandonAdvisorCharDB

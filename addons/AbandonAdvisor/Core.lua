@@ -2,7 +2,7 @@
 local ADDON, ns = ...
 
 ns.ADDON = ADDON
-ns.VERSION = "1.5.0"
+ns.VERSION = "1.5.1"
 
 local defaults = {
     point = nil,
@@ -563,11 +563,11 @@ end
 ----------------------------------------------------------------------
 -- Slash commands
 ----------------------------------------------------------------------
--- Kit.lua and Options.lua are new in 1.2.0. The game only finds new files after a full restart,
--- so right after an update a /reload runs this file without them: say so instead of erroring.
+-- Kit.lua and Options.lua are new in 1.2.0. Until the game loads them (on Forever a /reload
+-- does), this file runs without them: say so instead of erroring.
 local function HasKit()
     if ns.Kit and ns.Options then return true end
-    ns.Print("The options window and the minimap button appear after you restart the game once (this update added new files, and /reload does not load those).")
+    ns.Print("The options window and the minimap button appear after a /reload (this update added new files the game has not loaded yet).")
     return false
 end
 
@@ -689,7 +689,7 @@ frame:SetScript("OnEvent", function(_, event, a, b, c, d)
         ns.After(5, OnGroupChanged)           -- logged in (or /reload) while in a group: say hello
         ns.UI.Create()
         if ns.QuestLog then ns.QuestLog.Init() end
-        if ns.Kit and ns.Options then      -- missing until the first full restart after the update
+        if ns.Kit and ns.Options then      -- missing until the game loads the new files (/reload)
             local ok, err = pcall(ns.Options.Init)
             if not ok then ns.Print("options error: " .. tostring(err)) end
         end

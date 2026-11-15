@@ -1,3 +1,7 @@
+## 1.5.1
+- The list order is unchanged and now pinned by a test: quests marked to drop first, then drop, maybe and keep, each from the strongest reason to drop down. Finished quests moved to Turn-in Route in 1.5.0, which is why they no longer lead the list.
+- After an update that adds files, the message now says a `/reload` loads the options window and the minimap button (no game restart needed).
+
 ## 1.5.0
 - Abandon Advisor is back to one job: which quests to drop, and why. The hand-in route moved to the new Turn-in Route addon (`/turnin`), which plans the trip with flight paths, the hearthstone and boats.
 - The window and the quest log tab list only quests you could drop. Finished quests are left out; the summary says how many there are and how many slots handing them in frees.
