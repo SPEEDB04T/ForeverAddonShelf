@@ -8,10 +8,29 @@
 -- The buttons are secure (they cast), so in a fight nothing here may be shown, hidden, moved
 -- or re-aimed. That is why there is a button for every aura and the advice is only paint:
 -- checked state, glow and icon colour can change in a fight, the buttons themselves can not.
-local _, ns = ...
+local addonName, ns = ...
 local Data = ns.Data
 local UI = {}
 ns.UI = UI
+
+-- LookShots (a screenshot helper on the developer's machine only) takes one game screenshot
+-- of each listed frame the first time it shows. Harmless when LookShots is not installed.
+-- The options window and minimap button are the shared kit's, which lists them itself.
+do
+    local version = "?"
+    local get = (C_AddOns and C_AddOns.GetAddOnMetadata) or GetAddOnMetadata
+    if get then
+        local ok, v = pcall(get, addonName or "AuraAdvisor", "Version")
+        if ok and type(v) == "string" then version = v end
+    end
+    LookShotsTargets = type(LookShotsTargets) == "table" and LookShotsTargets or {}
+    LookShotsTargets["AuraAdvisor"] = {
+        version = version,
+        frames = {
+            { label = "aura bar", frame = function() return UI.frame end },
+        },
+    }
+end
 
 -- StanceBar's buttons: SmallActionButtonTemplate is 30 x 30; the stance bar's default Edit Mode
 -- IconPadding is 2 (EditModePresetLayouts.lua).

@@ -1,5 +1,9 @@
 # Changelog
 
+## 1.1.2 (2026-11-14)
+
+- Lists the aura bar for LookShots, the developer's screenshot helper, so the bar can be checked in the game. Does nothing for anyone without that helper.
+
 ## 1.1.1 (2026-11-14)
 
 - The options window and minimap button were redrawn by the shared kit: they now copy the game's own Options rows and its round minimap button.
