@@ -788,11 +788,11 @@ local function PrintHelp()
     print("  /pinata on|off   -  /pinata minimap (minimap button on/off)   -  /pinata reset   -  /pinata debug")
 end
 
--- Kit.lua and Options.lua sit next to this file. If a /reload ran this file without them
--- (files added by an update only load after a full restart), say so instead of erroring.
+-- Kit.lua and Options.lua sit next to this file. If this file ran without them
+-- (on Forever, files added by an update load on the next /reload), say so instead of erroring.
 local function HasKit()
     if ns.Kit and ns.Options then return true end
-    print(PREFIX .. "the options window and the minimap button appear after you restart the game once.")
+    print(PREFIX .. "the options window and the minimap button appear after a /reload.")
     return false
 end
 

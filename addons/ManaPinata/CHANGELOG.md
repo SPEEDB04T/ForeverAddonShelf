@@ -1,5 +1,9 @@
 # Changelog
 
+## 1.0.5
+
+- If the options window's files are missing after an update, the chat line now says a /reload brings them, not a game restart.
+
 ## 1.0.4
 
 - Lists the first piñata and the first blue health bar on screen for LookShots, so they can be checked in a screenshot. Does nothing without LookShots.
