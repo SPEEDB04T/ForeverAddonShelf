@@ -1,5 +1,9 @@
 # Changelog
 
+## 1.10.1
+
+- Mailbox buttons say what they do: the line on top reads "Your emote: Smuttanie ...", and the buttons are "Send emote to Bob", "Other line" and "Whisper price". In the list they are "Emote" and "Whisper".
+
 ## 1.10.0
 
 - Mailbox replies are custom emotes now, with their name in it: "Smuttanie gives Bob a look that costs extra." They need no target, so they always reach the right person (the 1.9.0 click-to-target did not work in the game).

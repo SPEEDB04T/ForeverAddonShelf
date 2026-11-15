@@ -270,7 +270,7 @@ Sync = function()
             row.what:SetText(What(v, now))
             row.age:SetText(Ago(now - v.at))
             if v.reply then
-                row.emote:SetText("Reply")
+                row.emote:SetText("Emote")
                 SetReply(row.emote, v)
                 row.emote:Show()
                 row.done:SetShown((v.doneAt and v.doneAt >= v.at) and true or false)
@@ -281,7 +281,7 @@ Sync = function()
             end
             if v.pitch then
                 local pitched = v.pitchedAt and now - v.pitchedAt < PITCH_GAP
-                row.pitch:SetText(pitched and "Pitched" or "Pitch")
+                row.pitch:SetText(pitched and "Whispered" or "Whisper")
                 row.pitch:SetEnabled(not pitched and offer ~= nil)
                 row.pitch:Show()
             else
@@ -301,9 +301,10 @@ Sync = function()
         local who = Short(v.name)
         cta.text:SetText(v.kind == "emote" and v.what or (who .. " " .. What(v, now)))
         cta.text:SetFontObject(GameFontNormalLarge or GameFontNormal)
-        cta.line:SetText((Me() or "You") .. " " .. (Line(v) or ""))
+        cta.line:SetText((NORMAL_FONT_COLOR_CODE or "") .. "Your emote:" .. (NORMAL_FONT_COLOR_CODE and "|r" or "") .. " "
+            .. (Me() or "You") .. " " .. (Line(v) or ""))
         cta.line:Show()
-        cta.emote:SetText("Reply to " .. who)
+        cta.emote:SetText("Send emote to " .. who)
         SetReply(cta.emote, v)
         cta.emote:Show()
         cta.again.visitor = v
@@ -323,7 +324,7 @@ Sync = function()
         cta.pitch:Hide()
     end
     frame.status:SetText(manual and "No emotes back by itself here: the replies are your click."
-        or "Reply sends the emote with their name in it. Pitch whispers them.")
+        or "Send emote: says the line above as an /e emote. Whisper price: your ware and price.")
     Fade()
 end
 M.Sync = function() Sync() end
@@ -480,7 +481,7 @@ end
 local function PitchTip(self)
     if not GameTooltip then return end
     GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
-    GameTooltip:SetText("Pitch")
+    GameTooltip:SetText("Whisper price")
     GameTooltip:AddLine("Whispers this person one line about the ware whose turn it is, with its price. "
         .. "Only for somebody who emoted at you or whispered you first, and once in ten minutes.", 1, 0.82, 0, true)
     GameTooltip:Show()
@@ -490,7 +491,7 @@ local function ReplyTip(self)
     local v = self.visitor
     if not (GameTooltip and v and v.reply) then return end
     GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
-    GameTooltip:SetText("Reply to " .. Short(v.name))
+    GameTooltip:SetText("Send emote to " .. Short(v.name))
     GameTooltip:AddLine((Me() or "You") .. " " .. (Line(v) or ""), 1, 0.5, 0.25, true)
     GameTooltip:AddLine("Goes out as an emote, for everybody nearby to see.", 1, 0.82, 0, true)
     GameTooltip:Show()
@@ -565,15 +566,15 @@ local function Build()
         if c and c.r then cta.line:SetTextColor(c.r, c.g, c.b) else cta.line:SetTextColor(1, 0.5, 0.25) end
     end
     cta.line:Hide()
-    cta.emote = ReplyButton(f, "Reply", 190, 30)
+    cta.emote = ReplyButton(f, "Send emote", 190, 30)
     cta.emote:SetPoint("TOPLEFT", f, "TOPLEFT", 14, -78)
     cta.emote:SetScript("OnEnter", ReplyTip)
     cta.emote:SetScript("OnLeave", HideTip)
-    cta.again = Button(f, "Another", 90, 30)
+    cta.again = Button(f, "Other line", 90, 30)
     cta.again:SetPoint("LEFT", cta.emote, "RIGHT", 6, 0)
     cta.again:SetScript("OnClick", function(self) M.Another(self.visitor) end)
     cta.again:Hide()
-    cta.pitch = Button(f, "Pitch", 90, 30)
+    cta.pitch = Button(f, "Whisper price", 110, 30)
     cta.pitch:SetPoint("LEFT", cta.again, "RIGHT", 6, 0)
     cta.pitch:SetScript("OnClick", function(self) M.Pitch(self.visitor) end)
     cta.pitch:SetScript("OnEnter", PitchTip)
@@ -587,9 +588,9 @@ local function Build()
         row:SetHeight(ROW_H)
         row:SetPoint("TOPLEFT", f, "TOPLEFT", 12, -TOP - (r - 1) * ROW_H)
         row:SetPoint("TOPRIGHT", f, "TOPRIGHT", -12, -TOP - (r - 1) * ROW_H)
-        row.pitch = Button(row, "Pitch", 62)
+        row.pitch = Button(row, "Whisper", 72)
         row.pitch:SetPoint("RIGHT", row, "RIGHT", 0, 0)
-        row.emote = ReplyButton(row, "Reply", 66)
+        row.emote = ReplyButton(row, "Emote", 62)
         row.emote:SetPoint("RIGHT", row.pitch, "LEFT", -4, 0)
         row.emote:SetScript("OnEnter", ReplyTip)
         row.emote:SetScript("OnLeave", HideTip)
@@ -651,7 +652,7 @@ function M.Start()
     frame:Show()
     Emote("DANCE")
     Tick()
-    ns.Print("mailbox mode is on. Reply on the big button answers whoever is waiting. Close the window to turn it off.")
+    ns.Print("mailbox mode is on. Send emote on the big button answers whoever is waiting. Close the window to turn it off.")
     return true
 end
 
