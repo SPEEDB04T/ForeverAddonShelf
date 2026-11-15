@@ -29,6 +29,10 @@ local function Rows()
           get = Get("remind"), set = Set("remind") },
         { kind = "check", label = "Play a sound with the reminder",
           get = Get("sound"), set = Set("sound") },
+        { kind = "check", label = "Show a Post button with the reminder",
+          tip = "With the reminder, a small window opens in the middle of the screen: the next ad as it will read, "
+              .. "the ware it is for, a big Post ad button and Reroll. It waits for the end of a fight.",
+          get = Get("prompt"), set = Set("prompt") },
 
         { kind = "header", text = "Wares in the ads" },
         { kind = "choice", label = "Which ads",

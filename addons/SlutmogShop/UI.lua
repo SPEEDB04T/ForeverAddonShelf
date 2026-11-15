@@ -444,6 +444,170 @@ local function ShowItem(item, link)
     item:Show()
 end
 
+-- An item button showing the ware an ad is for. links() gives the ware's link and, for a set, the
+-- other half's. A click tries it on (a set whole); a shift-click links it.
+local function NewItemButton(parent, links, second)
+    local item = FromTemplate("Button", parent, "ItemButtonTemplate") or CreateFrame("Button", nil, parent)
+    item:SetSize(37, 37)
+    if not Has(item, "icon") then
+        item.icon = item:CreateTexture(nil, "BORDER")
+        item.icon:SetAllPoints(item)
+    end
+    item:RegisterForClicks("LeftButtonUp")
+    item:SetScript("OnClick", function()
+        local first, other = links()
+        local link = second and other or first
+        if not link then return end
+        if type(IsModifiedClick) == "function" and IsModifiedClick("CHATLINK") and type(HandleModifiedItemClick) == "function" then
+            HandleModifiedItemClick(link)
+        elseif type(DressUpItemLink) == "function" then
+            pcall(DressUpItemLink, first)                   -- a set is tried on whole
+            if other then pcall(DressUpItemLink, other) end
+        end
+    end)
+    item:SetScript("OnEnter", function(self)
+        local first, other = links()
+        local link = second and other or first
+        if not (GameTooltip and link) then return end
+        GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
+        if pcall(GameTooltip.SetHyperlink, GameTooltip, link) then
+            GameTooltip:AddLine(" ")
+            GameTooltip:AddLine(other and "Half of the set this ad is for. Click to try the set on in the dressing room."
+                or "The ware this ad is for. Click to try it on in the dressing room.", Color(NORMAL_FONT_COLOR, 1, 0.82, 0), true)
+            GameTooltip:Show()
+        end
+    end)
+    item:SetScript("OnLeave", HideTip)
+    item:Hide()
+    return item
+end
+
+---------------------------------------------------------------------------
+-- The prompt: when it is time for another ad, a small window in the middle of the screen with
+-- the ad as it will read, the ware, a big Post button and Reroll.
+---------------------------------------------------------------------------
+local prompt
+local promptLink, promptLink2
+
+local function SyncPrompt()
+    if not (prompt and prompt:IsShown() and ns.db) then return end
+    local p, why = ns.Next()
+    local w = p and p.ware and ns.db.wares[p.ware]
+    promptLink = w and w.link or nil
+    local w2 = promptLink and p.ware2 and ns.db.wares[p.ware2]
+    promptLink2 = w2 and w2.link or nil
+    local text = prompt.text
+    text:ClearAllPoints()
+    if promptLink then
+        ShowItem(prompt.item, promptLink)
+        if promptLink2 then
+            ShowItem(prompt.item2, promptLink2)
+            text:SetPoint("TOPLEFT", prompt.item2, "TOPRIGHT", 10, 0)
+        else
+            prompt.item2:Hide()
+            text:SetPoint("TOPLEFT", prompt.item, "TOPRIGHT", 10, 0)
+        end
+    else
+        prompt.item:Hide()
+        prompt.item2:Hide()
+        text:SetPoint("TOPLEFT", prompt, "TOPLEFT", 18, -36)
+    end
+    text:SetPoint("BOTTOMRIGHT", prompt, "BOTTOMRIGHT", -18, 62)
+    if p then
+        text:SetText(p.text)
+        text:SetTextColor(Color(HIGHLIGHT_FONT_COLOR, 1, 1, 1))
+    else
+        text:SetText("Nothing to post: " .. tostring(why))
+        text:SetTextColor(Color(GRAY_FONT_COLOR, 0.5, 0.5, 0.5))
+    end
+    prompt.post:SetEnabled(p ~= nil)
+    prompt.reroll:SetEnabled(p ~= nil)
+end
+
+local function BuildPrompt()
+    if prompt then return prompt end
+    local f = FromTemplate("Frame", UIParent, "BasicFrameTemplateWithInset", "SlutmogShopPrompt")
+        or FromTemplate("Frame", UIParent, "TooltipBackdropTemplate", "SlutmogShopPrompt")
+        or CreateFrame("Frame", "SlutmogShopPrompt", UIParent)
+    prompt = f
+    f:SetSize(440, 196)
+    f:SetPoint("CENTER", UIParent, "CENTER", 0, 150)
+    if f.SetFrameStrata then f:SetFrameStrata("DIALOG") end
+    f:SetClampedToScreen(true)
+    f:SetMovable(true)
+    f:EnableMouse(true)
+    f:RegisterForDrag("LeftButton")
+    f:SetScript("OnDragStart", function(self) self:StartMoving() end)
+    f:SetScript("OnDragStop", function(self) self:StopMovingOrSizing() end)
+    if Has(f, "TitleText") then f.TitleText:SetText("Time for an ad") end
+    if not Has(f, "CloseButton") then
+        local close = FromTemplate("Button", f, "UIPanelCloseButton")
+        if close then
+            close:SetPoint("TOPRIGHT", 0, 0)
+            close:SetScript("OnClick", function() f:Hide() end)
+        end
+    end
+    local function Links() return promptLink, promptLink2 end
+    f.item = NewItemButton(f, Links, false)
+    f.item:SetPoint("TOPLEFT", f, "TOPLEFT", 18, -36)
+    f.item2 = NewItemButton(f, Links, true)
+    f.item2:SetPoint("TOPLEFT", f.item, "TOPRIGHT", 4, 0)
+    f.text = Text(f, "GameFontHighlight")
+    f.text:SetJustifyH("LEFT")
+    f.text:SetJustifyV("TOP")
+    if f.text.SetWordWrap then f.text:SetWordWrap(true) end
+
+    f.post = Button(f, "Post ad", 200, 40)
+    f.post:SetPoint("BOTTOM", f, "BOTTOM", 0, 14)
+    if f.post.SetNormalFontObject and GameFontNormalLarge then pcall(f.post.SetNormalFontObject, f.post, GameFontNormalLarge) end
+    if f.post.SetHighlightFontObject and GameFontHighlightLarge then pcall(f.post.SetHighlightFontObject, f.post, GameFontHighlightLarge) end
+    f.post:SetScript("OnClick", function()
+        if ns.Post() then f:Hide() end
+    end)
+    OnHover(f.post, "Post ad", "Posts the ad above, exactly as it reads.")
+
+    f.reroll = Button(f, "Reroll", 84, 24)
+    f.reroll:SetPoint("BOTTOMRIGHT", f, "BOTTOMRIGHT", -14, 22)
+    f.reroll:SetScript("OnClick", function()
+        Sound(SOUNDKIT and SOUNDKIT.IG_MAINMENU_OPTION_CHECKBOX_ON)
+        ns.Reroll()
+    end)
+    OnHover(f.reroll, "Reroll", "Another ad for the same ware. The one shown is not voted on; it comes round again later.")
+
+    f.later = Button(f, "Not now", 84, 24)
+    f.later:SetPoint("BOTTOMLEFT", f, "BOTTOMLEFT", 14, 22)
+    f.later:SetScript("OnClick", function()
+        f:Hide()
+        if ns.Snooze then ns.Snooze() end
+    end)
+    OnHover(f.later, "Not now", "Closes this and asks again after the reminder time (Options > Remind me after).")
+    f:Hide()
+    return f
+end
+
+-- Shows the prompt. Not while the shop window is open (it has the same buttons) and not without an ad.
+function UI.ShowPrompt(force)
+    if not ns.db or not ns.Next() then return false end
+    if not force and UI.IsOpen() then return false end
+    local ok, err = pcall(BuildPrompt)
+    if not ok then
+        ns.Print("the ad prompt could not be built: " .. tostring(err))
+        return false
+    end
+    prompt:Show()
+    if prompt.Raise then prompt:Raise() end
+    SyncPrompt()
+    return true
+end
+
+function UI.HidePrompt()
+    if prompt then prompt:Hide() end
+end
+
+function UI.Prompt()
+    return prompt
+end
+
 local function SyncPreview()
     local p, why = ns.Next()
     local text = frame.preview
@@ -741,42 +905,10 @@ local function BuildPreview(host)
     box:SetPoint("TOPLEFT", pv, "TOPLEFT", 6, -36)
     box:SetPoint("BOTTOMRIGHT", pv, "BOTTOMRIGHT", -6, 6)
     frame.previewBox = box
-    local function ItemButton(second)
-        local item = FromTemplate("Button", box, "ItemButtonTemplate") or CreateFrame("Button", nil, box)
-        item:SetSize(37, 37)
-        if not Has(item, "icon") then
-            item.icon = item:CreateTexture(nil, "BORDER")
-            item.icon:SetAllPoints(item)
-        end
-        item:RegisterForClicks("LeftButtonUp")
-        item:SetScript("OnClick", function()
-            local link = second and adLink2 or adLink
-            if not link then return end
-            if type(IsModifiedClick) == "function" and IsModifiedClick("CHATLINK") and type(HandleModifiedItemClick) == "function" then
-                HandleModifiedItemClick(link)
-            elseif type(DressUpItemLink) == "function" then
-                pcall(DressUpItemLink, adLink)                  -- a set is tried on whole
-                if adLink2 then pcall(DressUpItemLink, adLink2) end
-            end
-        end)
-        item:SetScript("OnEnter", function(self)
-            local link = second and adLink2 or adLink
-            if not (GameTooltip and link) then return end
-            GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
-            if pcall(GameTooltip.SetHyperlink, GameTooltip, link) then
-                GameTooltip:AddLine(" ")
-                GameTooltip:AddLine(adLink2 and "Half of the set this ad is for. Click to try the set on in the dressing room."
-                    or "The ware this ad is for. Click to try it on in the dressing room.", Color(NORMAL_FONT_COLOR, 1, 0.82, 0), true)
-                GameTooltip:Show()
-            end
-        end)
-        item:SetScript("OnLeave", HideTip)
-        item:Hide()
-        return item
-    end
-    frame.item = ItemButton(false)
+    local function Links() return adLink, adLink2 end
+    frame.item = NewItemButton(box, Links, false)
     frame.item:SetPoint("TOPLEFT", box, "TOPLEFT", 9, -9)
-    frame.item2 = ItemButton(true)
+    frame.item2 = NewItemButton(box, Links, true)
     frame.item2:SetPoint("TOPLEFT", frame.item, "TOPRIGHT", 4, 0)
     frame.preview = Text(box, "GameFontHighlightSmall")
     frame.preview:SetPoint("TOPLEFT", box, "TOPLEFT", 9, -8)
@@ -932,6 +1064,7 @@ end
 -- Refreshing and opening
 ---------------------------------------------------------------------------
 function UI.Refresh()
+    SyncPrompt()
     if not (frame and ns.db and frame:IsShown()) then return end
     if type(frame.SetTitle) == "function" then pcall(frame.SetTitle, frame, ns.ShopName()) end
     if not Focused(frame.shop) then frame.shop:SetText(ns.db.shop or "") end
@@ -960,6 +1093,7 @@ function UI.Open()
         ns.Print("the shop window could not be built: " .. tostring(err))
         return
     end
+    UI.HidePrompt()
     frame:Show()
     if frame.Raise then frame:Raise() end
 end
@@ -987,6 +1121,7 @@ function UI.ListLooks()
         version = ns.VERSION,
         frames = {
             { label = "shop window", frame = function() return frame and frame:IsShown() and frame or nil end },
+            { label = "ad prompt", frame = function() return prompt and prompt:IsShown() and prompt or nil end },
         },
     }
 end

@@ -15,7 +15,7 @@
 -- works too). A reminder in your own chat says when it is time for the next one.
 local ADDON, ns = ...
 
-ns.VERSION = "1.6.2"
+ns.VERSION = "1.7.0"
 ns.TITLE = "Slutmog Shop"
 ns.ICON = "Interface\\Icons\\INV_Misc_Coin_02"
 ns.ACCENT = { 0.96, 0.55, 0.78 }
@@ -100,6 +100,7 @@ local DEFAULTS = {
     gap = 60,               -- seconds that must pass between two ads (0: no limit)
     remind = 5,             -- minutes after an ad until the reminder (0: none)
     sound = true,           -- the reminder plays a sound
+    prompt = true,          -- the reminder also puts a Post button in the middle of the screen
     stockOnly = true,       -- skip wares that are in neither your bags nor your bank
     autoAdd = true,         -- pieces from the slutmog list found in your bags go on the shelf by themselves
     order = "turns",        -- wares take turns ("turns") or come at random ("random")
@@ -1313,6 +1314,16 @@ local function Sound(kit, fallback)
     pcall(PlaySound, kit or fallback)
 end
 
+-- The prompt waits for the end of a fight: a window in the middle of the screen has no place in one.
+local function ShowPrompt(token)
+    if token ~= remindToken or not db.prompt then return end
+    if type(InCombatLockdown) == "function" and InCombatLockdown() then
+        C_Timer.After(3, function() ShowPrompt(token) end)
+        return
+    end
+    if ns.UI and ns.UI.ShowPrompt then pcall(ns.UI.ShowPrompt) end
+end
+
 local function ScheduleReminder()
     remindToken = remindToken + 1
     local token = remindToken
@@ -1323,8 +1334,10 @@ local function ScheduleReminder()
         Print(("time for another ad for %s: click the minimap button, press your key or type /slutshop post.")
             :format(ns.ShopName()))
         if db.sound then Sound(SOUNDKIT and SOUNDKIT.ALARM_CLOCK_WARNING_3, 12867) end
+        ShowPrompt(token)
     end)
 end
+ns.Snooze = ScheduleReminder
 
 local function EchoMissed(sent)
     if awaiting ~= sent then return end
@@ -1379,6 +1392,7 @@ function ns.Post()
     if p.src then db.sent[p.src] = (tonumber(db.sent[p.src]) or 0) + 1 end
     sent.entry = Log(label, p.text, awaiting == sent and "sent" or "seen")
     Commit(p)
+    if ns.UI and ns.UI.HidePrompt then pcall(ns.UI.HidePrompt) end
     ScheduleReminder()
     if awaiting == sent and C_Timer and C_Timer.After then
         C_Timer.After(ECHO_WAIT, function() EchoMissed(sent) end)
@@ -1493,6 +1507,7 @@ local function PrintHelp()
         "/slutshop ads [item link] - the ready-made ads for a piece (without a link: which wares have them)",
         "/slutshop set [top] [bottom] - sell two of your wares as a set, one ad for both (/slutshop unset [item] undoes it)",
         "/slutshop reroll - another ad for the same ware",
+        "/slutshop prompt - the Post button in the middle of the screen, now",
         "/slutshop channel Trade - where ads go (Say, Yell, Guild or any channel you are in)",
         "/slutshop options - the options",
         "/slutshop status - what the shop is set to",
@@ -1585,6 +1600,10 @@ local function Slash(msg)
             Print("shift-click two of your wares into the command: /slutshop set [top] [bottom]")
         else
             Print("shift-click a ware that is part of a set into the command: /slutshop unset [item]")
+        end
+    elseif cmd == "prompt" then
+        if not (ns.UI and ns.UI.ShowPrompt and ns.UI.ShowPrompt(true)) then
+            Print("nothing to post: " .. tostring(select(2, ns.Next())))
         end
     elseif cmd == "reroll" then
         if ns.Reroll() then ns.Preview() else Print("nothing to post: " .. tostring(select(2, ns.Next()))) end

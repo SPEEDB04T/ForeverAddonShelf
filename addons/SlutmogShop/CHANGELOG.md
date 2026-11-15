@@ -1,5 +1,10 @@
 # Changelog
 
+## 1.7.0
+
+- When it is time for another ad (the reminder), a small window opens in the middle of the screen: the next ad as it will read, the ware's icon (click to try it on), a big **Post ad** button and **Reroll**. **Not now** closes it and asks again after the reminder time. It waits for the end of a fight and stays away while the shop window is open. Options > "Show a Post button with the reminder" turns it off; `/slutshop prompt` shows it now.
+- 35 new ad lines and new set lines; the lines voted No on the review page are gone.
+
 ## 1.6.2
 
 - Every ready-made ad now says the piece is for transmog: the ending reads "[item] for transmog, 10g at Shop" or "Transmog: [item], 10g on the AH", and set ads say "Mog set: [top] + [bottom]".
