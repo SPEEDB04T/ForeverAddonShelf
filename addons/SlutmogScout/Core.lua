@@ -115,6 +115,7 @@ local BIND_QUEST = ItemBind.Quest or 4
 
 local items = {}
 local byDisplay = {}          -- display id -> ids on the list with that look
+local reviewItems = {}        -- id -> list entry made for a piece the list left off and the player said yes to
 
 local function GameBuild()
   if not GetBuildInfo then
@@ -174,6 +175,10 @@ function ns.RebuildItems()
   -- switch the list's own names are used until the check has run again.
   local names = chk and chk.locale == Locale() and type(chk.names) == "table" and chk.names or nil
   local mine = db and type(db.grades) == "table" and db.grades or {}
+  -- the player's yes or no from the Review tab: a no takes a piece off the
+  -- list, a yes puts it on (also a piece the list left off) and keeps it from
+  -- being hidden as cropped
+  local review = db and type(db.review) == "table" and db.review or {}
   for id, it in pairs(ns.ITEMS) do
     it.id = id
     -- a grade the player set with /smog grade wins over the generator's
@@ -182,15 +187,31 @@ function ns.RebuildItems()
     end
     local g = GRADES[mine[id]] and mine[id] or nil
     it.grade, it.gradeMine = g or it.genGrade or nil, g and true or nil
+    it.reviewYes = review[id] == true or nil
     it.listName = it.listName or it.name
     it.name = names and names[id] or it.listName
-    if not (db and db.hidden[id]) and not (bad and bad[id]) then
+    if review[id] ~= false and (review[id] == true or not (db and db.hidden[id])) and not (bad and bad[id]) then
+      items[id] = it
+    end
+  end
+  for id, r in pairs(ns.REVIEW or {}) do
+    if review[id] == true and not ns.ITEMS[id] and type(r) == "table" then
+      local it = reviewItems[id]
+      if not it then
+        it = { name = r.name, armor = r.armor, slot = r.slot, q = r.q, req = r.req, skin = r.skin,
+          src = r.inst and "dungeon" or "world", inst = r.inst, fromReview = true,
+          look = "you said yes in the review" .. (r.look and (" (" .. r.look .. ")") or "") }
+        reviewItems[id] = it
+      end
+      it.id, it.reviewYes = id, true
+      local g = GRADES[mine[id]] and mine[id] or nil
+      it.grade, it.gradeMine = g, g and true or nil
       items[id] = it
     end
   end
   if db then
     for id, it in pairs(db.custom) do
-      if type(it) == "table" then
+      if type(it) == "table" and review[id] ~= false then
         it.custom = true
         it.id = id
         local g = GRADES[mine[id]] and mine[id] or nil
@@ -413,6 +434,9 @@ function ns.RemoveItem(text)
     return
   end
   local name = items[id].name
+  if type(db.review) == "table" and db.review[id] == true then
+    db.review[id] = nil -- a yes from the review would keep it on the list
+  end
   if db.custom[id] then
     db.custom[id] = nil
   else
@@ -421,6 +445,139 @@ function ns.RemoveItem(text)
   ns.RebuildItems()
   ns.Print(("Removed %s. |cffffff00/smog restore|r brings back removed built-in pieces."):format(name))
   ns.Fire("ITEMS")
+end
+
+-------------------------------------------------------------------------------
+-- Review: the player's yes or no on each piece, from the Review tab
+-------------------------------------------------------------------------------
+-- true (yes), false (no) or nil (not reviewed yet)
+function ns.ReviewFlag(id)
+  if db and type(db.review) == "table" then
+    return db.review[id]
+  end
+  return nil
+end
+
+-- Sets the player's yes (true), no (false) or clears it (nil). False when the
+-- piece is neither on the list nor among the pieces it left off.
+function ns.SetReview(id, flag)
+  if not (ns.ITEMS[id] or (ns.REVIEW and ns.REVIEW[id]) or db.custom[id]) then
+    return false
+  end
+  if type(db.review) ~= "table" then
+    db.review = {}
+  end
+  if flag == nil then
+    db.review[id] = nil
+  else
+    db.review[id] = flag and true or false
+  end
+  ns.RebuildItems()
+  ns.Fire("ITEMS")
+  return true
+end
+
+-- Every piece the Review tab shows: the list's own, every BoE chest and leg
+-- piece it left off (with why), and pieces the player added. src is the
+-- piece's data, onList true for the list's own pieces.
+function ns.ReviewPieces()
+  local out = {}
+  local function add(id, src, onList, why)
+    out[#out + 1] = { id = id, src = src, onList = onList, why = why, flag = ns.ReviewFlag(id) }
+  end
+  for id, it in pairs(ns.ITEMS) do
+    add(id, it, true)
+  end
+  for id, r in pairs(ns.REVIEW or {}) do
+    if type(r) == "table" and not ns.ITEMS[id] then
+      add(id, r, false, r.why)
+    end
+  end
+  for id, it in pairs(db.custom) do
+    if type(it) == "table" and not ns.ITEMS[id] and not (ns.REVIEW and ns.REVIEW[id]) then
+      add(id, it, false, "added by you with /smog add")
+    end
+  end
+  return out
+end
+
+-------------------------------------------------------------------------------
+-- Level range: pieces whose required level lies outside it are hidden
+-- everywhere (the Market list, the buys, the deals, the farm guide, the review)
+-------------------------------------------------------------------------------
+local LEVEL_CAP = 70
+function ns.LevelRange()
+  local o = db and db.opts
+  if not o then
+    return nil, nil
+  end
+  return Num(o.levelMin), Num(o.levelMax)
+end
+
+function ns.SetLevelRange(lo, hi)
+  lo, hi = Num(lo), Num(hi)
+  lo = lo and math.floor(lo) or nil
+  hi = hi and math.floor(hi) or nil
+  if lo and lo <= 1 then
+    lo = nil
+  end
+  if hi and hi >= LEVEL_CAP then
+    hi = nil
+  end
+  if lo and hi and lo > hi then
+    lo, hi = hi, lo
+  end
+  if lo and lo < 1 then
+    lo = 1
+  end
+  db.opts.levelMin, db.opts.levelMax = lo, hi
+  if ns.PricesChanged then
+    ns.PricesChanged()
+  end
+  ns.Fire("ITEMS")
+  return lo, hi
+end
+
+function ns.InLevelRange(it)
+  local lo, hi = ns.LevelRange()
+  local req = it and Num(it.req) or 1
+  return not ((lo and req < lo) or (hi and req > hi))
+end
+
+-- "20-40", "20 40", "30-" (30 and up), "-40" (up to 40), "off"
+function ns.LevelRangeText()
+  local lo, hi = ns.LevelRange()
+  if not lo and not hi then
+    return "any level"
+  end
+  return ("level %d-%d"):format(lo or 1, hi or LEVEL_CAP)
+end
+
+function ns.LevelCommand(text)
+  text = (type(text) == "string" and text or ""):gsub("^%s+", ""):gsub("%s+$", "")
+  if text == "" then
+    ns.Print("Showing pieces of " .. ns.LevelRangeText() .. " (required level). |cffffff00/smog level|r 20-40 sets it, |cffffff00/smog level off|r clears it.")
+    return
+  end
+  if text:lower() == "off" or text:lower() == "any" then
+    ns.SetLevelRange(nil, nil)
+    ns.Print("Level range cleared: pieces of any level show.")
+    return
+  end
+  local a, b = text:match("^(%d*)%s*%-%s*(%d*)$")
+  if not a then
+    a, b = text:match("^(%d+)%s+(%d+)$")
+  end
+  if not a then
+    a = text:match("^(%d+)$")
+    b = a
+  end
+  if not a or (a == "" and (b or "") == "") then
+    ns.Print("Usage: |cffffff00/smog level|r 20-40, 30- (30 and up), -40 (up to 40) or off")
+    return
+  end
+  ns.SetLevelRange(tonumber(a), tonumber(b))
+  ns.Print("Showing pieces of " .. ns.LevelRangeText() .. " (required level).")
 end
 
 -------------------------------------------------------------------------------
@@ -760,10 +917,10 @@ local DEMAND_SHOW = 2     -- own prices at 2 times ordinary gear or more: demand
 local GRADE_CROPPED = 0.85 -- a shown cropped piece without demand evidence scores lower
 ns.DEMAND_SHOW, ns.GRADE_CROPPED = DEMAND_SHOW, GRADE_CROPPED
 function ns.Shown(it, info)
-  if it == nil then
+  if it == nil or not ns.InLevelRange(it) then
     return false
   end
-  if it.grade == "cropped" and not ns.ShowCropped() and not (it.id and ns.Demanded(it.id, info)) then
+  if it.grade == "cropped" and not it.reviewYes and not ns.ShowCropped() and not (it.id and ns.Demanded(it.id, info)) then
     return false
   end
   return ns.ShowCommon() or not ns.Common(it, info)
@@ -861,7 +1018,7 @@ end
 local function UpdateBaseline(other, now)
   local bands, rows = {}, {}
   for id, price in pairs(other) do
-    if not (ns.ITEMS[id] or db.custom[id]) then
+    if not (ns.ITEMS[id] or db.custom[id] or ns.ReviewFlag(id) == true) then
       local name, q, req, equip = CachedFacts(id)
       if name and q and q >= 2 and q <= 4 and equip and OFF_SLOTS[equip] then
         local key = BandKey(q, req)
@@ -912,7 +1069,7 @@ function ns.OffList()
   local list = db and type(db.offList) == "table" and type(db.offList.list) == "table" and db.offList.list or {}
   local out = {}
   for _, r in ipairs(list) do
-    if type(r) == "table" and Num(r.id) and not (ns.ITEMS[r.id] or db.custom[r.id]) then
+    if type(r) == "table" and Num(r.id) and not (ns.ITEMS[r.id] or db.custom[r.id] or ns.ReviewFlag(r.id) == true) then
       out[#out + 1] = r
     end
   end
@@ -1050,7 +1207,7 @@ function ns.Buy(id, info)
   local alt = type(it.alt) == "table" and it.alt or {}
   local common = not ns.ShowCommon() and ns.Common(it, info)
   local demanded = ns.Demanded(id, info)
-  if it.grade == "cropped" and not ns.ShowCropped() and not demanded then
+  if it.grade == "cropped" and not it.reviewYes and not ns.ShowCropped() and not demanded then
     stop("a cropped look (it covers the bust or most of the thigh), which few buy for slutmog")
   elseif common then
     b.common = common
@@ -1188,7 +1345,7 @@ function ns.Buy(id, info)
 
   -- the grade only lowers the score, and only without demand evidence
   local g = 1
-  if it.grade == "cropped" then
+  if it.grade == "cropped" and not it.reviewYes then
     if demanded then
       pro(("a cropped look, but it sells for %.1f times ordinary gear of its level"):format(demanded))
     else
@@ -1226,7 +1383,7 @@ function ns.BuyList()
   local out = {}
   for id in pairs(items) do
     local b = ns.Buy(id)
-    if b and b.buy then
+    if b and b.buy and ns.InLevelRange(items[id]) then
       out[#out + 1] = b
     end
   end
@@ -2576,6 +2733,10 @@ SlashCmdList.SLUTMOGSCOUT = function(input)
     ns.Toggle("farm", true)
   elseif cmd == "measured" then
     ns.Toggle("measured", true)
+  elseif cmd == "review" then
+    ns.Toggle("review", true)
+  elseif cmd == "level" or cmd == "levels" then
+    ns.LevelCommand(rest)
   elseif cmd == "add" then
     ns.AddCustom(rest)
   elseif cmd == "remove" then
@@ -2641,6 +2802,8 @@ SlashCmdList.SLUTMOGSCOUT = function(input)
     print("  |cffffff00/smog scan|r  scan the auction house (it must be open)")
     print("  |cffffff00/smog farm|r  open the farm guide")
     print("  |cffffff00/smog measured|r  open your measured farm results")
+    print("  |cffffff00/smog review|r  look at every piece, on the list or left off, and say yes or no")
+    print("  |cffffff00/smog level|r 20-40  show only pieces of these required levels (|cffffff00off|r clears it)")
     print("  |cffffff00/smog add <item link or id> [note]|r  add your own piece")
     print("  |cffffff00/smog remove <item link or id>|r  take a piece off the list")
     print("  |cffffff00/smog restore|r  bring back removed built-in pieces")

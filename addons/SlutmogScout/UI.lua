@@ -1,4 +1,4 @@
--- Slutmog Scout: window (Market, Farm guide and Measured tabs) and the auction house button
+-- Slutmog Scout: window (Market, Farm guide, Measured and Review tabs) and the auction house button
 local ADDON, ns = ...
 
 -- Fallback only: the game's own item quality colours, used when the game's
@@ -114,14 +114,17 @@ end
 local HEADER_OVERLAP = 2 -- SetColumnHeaderOverlap(2) in the auction house table builder
 local CELL_FONT = "Number14FontWhite"
 
-local TAB_DEFS = { { "market", "Market", 80 }, { "farm", "Farm guide", 90 }, { "measured", "Measured", 90 } }
+local TAB_DEFS = { { "market", "Market", 80 }, { "farm", "Farm guide", 90 }, { "measured", "Measured", 90 }, { "review", "Review", 80 } }
 local TAB_INDEX = {}
 for i, def in ipairs(TAB_DEFS) do
   TAB_INDEX[def[1]] = i
 end
 
-local state = { tab = "market", armor = "all", listedOnly = false, buyOnly = false, sortKey = "value", sortAsc = false, farmItem = nil }
-local win, marketView, farmView, measuredView, statusText, scanButton, farmHeader, farmClear, listedCheck, listedText
+-- listedOnly starts on: the Market list shows what can be bought now
+local state = { tab = "market", armor = "all", listedOnly = true, buyOnly = false, sortKey = "value", sortAsc = false, farmItem = nil,
+  reviewShow = "todo", reviewSel = nil, reviewIndex = 1, female = true }
+local win, marketView, farmView, measuredView, reviewView, statusText, scanButton, farmHeader, farmClear, listedCheck, listedText
+local levelBox
 local filterButton, dealsCheck, dealsText, croppedCheck, croppedText, commonCheck, commonText
 local tabButtons, armorButtons, headerText = {}, {}, {}
 
@@ -603,6 +606,12 @@ local function RefreshMarket()
       c.mob:SetText(("%d-%d"):format(d.lo, d.hi))
     end
   end
+  if state.listedOnly and not state.buyOnly then
+    marketView.empty:SetText(ns.db.lastScan and "None of these pieces was listed in your last scan. Scan again, or untick Filter > Listed now only to see every piece."
+      or "No scan yet. Open the auction house and scan, or untick Filter > Listed now only to see every piece.")
+  else
+    marketView.empty:SetText("No pieces match this filter.")
+  end
   marketView.empty:SetShown(#data == 0)
 end
 
@@ -800,6 +809,205 @@ local function RefreshMeasured()
 end
 
 -------------------------------------------------------------------------------
+-- Review tab: every piece, on the list or left off, on a model, with a yes or
+-- no from the player. A yes puts a piece on the list (and never hides it as
+-- cropped), a no takes it off. import_review.py copies the flags into the
+-- item list's generator.
+-------------------------------------------------------------------------------
+local REVIEW_SHOW = { { "todo", "Not reviewed yet" }, { "off", "Left off the list" }, { "on", "On the list" }, { "all", "All pieces" } }
+
+-- Where the piece stands now, in a few words.
+local function ListStatus(p)
+  local it = ns.Items()[p.id]
+  if not it then
+    if p.flag == false then
+      return "off the list (your no)"
+    elseif p.onList then
+      return ns.db.hidden[p.id] and "removed by you" or "hidden by the game-build check"
+    end
+    return "left off the list"
+  end
+  if not p.onList and p.flag == true then
+    return "on the list (your yes)"
+  end
+  if it.grade == "cropped" and not it.reviewYes and not ns.ShowCropped() and not ns.Demanded(p.id) then
+    return "on the list, hidden as cropped"
+  end
+  if not ns.ShowCommon() and ns.Common(it) then
+    return "on the list, hidden as easy, common gear"
+  end
+  return "on the list"
+end
+
+local function FlagLabel(flag)
+  if flag == true then
+    return "|cff40ff40Yes|r"
+  elseif flag == false then
+    return "|cffff4040No|r"
+  end
+  return ""
+end
+
+local function ReviewDetail(p)
+  local s = p.src
+  local look = s.look or "not measured"
+  if s.grade then
+    look = s.grade .. ": " .. look
+  end
+  if p.why and not p.onList then
+    return p.why .. "; " .. look
+  end
+  return look
+end
+
+local function ReviewData()
+  local rows = {}
+  local listed = ns.Items()
+  for _, p in ipairs(ns.ReviewPieces()) do
+    local s = p.src
+    local on = listed[p.id] ~= nil
+    local want = state.reviewShow
+    if ArmorFilter(s) and ns.InLevelRange(s) and (want == "all" or (want == "todo" and p.flag == nil)
+        or (want == "on" and on) or (want == "off" and not on)) then
+      rows[#rows + 1] = p
+    end
+  end
+  -- the barest first: on the list the most likely to be right, off it the
+  -- most likely to be missing
+  table.sort(rows, function(a, b)
+    local as, bs = a.src.skin or -1, b.src.skin or -1
+    if as ~= bs then
+      return as > bs
+    end
+    return a.id < b.id
+  end)
+  return rows
+end
+
+local function ReviewItemName(p)
+  return ("|c%s%s|r"):format(QualityHex(p.src.q or 2), p.src.name or ("Item " .. p.id))
+end
+
+-- Dresses the model in the piece: the player's own body, or a female one of
+-- the player's race when the player's character is male (the list measures
+-- the female textures).
+local function DressModel(id)
+  local model = reviewView and reviewView.model
+  if not model or not id then
+    return
+  end
+  local function dress()
+    if not reviewView.model or state.reviewSel ~= id then
+      return
+    end
+    local sex = UnitSex and UnitSex("player")
+    local custom = false
+    if state.female and sex ~= 3 and model.SetCustomRace then
+      custom = pcall(function()
+        local _, _, raceID = UnitRace("player")
+        local female = Enum and Enum.UnitSex and Enum.UnitSex.Female or 1
+        model:SetCustomRace(raceID or 1, female)
+      end)
+    end
+    if not custom then
+      pcall(model.SetUnit, model, "player") -- the player's own body
+    end
+    pcall(model.Undress, model)
+    pcall(model.TryOn, model, "item:" .. id)
+  end
+  if C_Item.GetItemInfo(id) or not (Item and Item.CreateFromItemID) then
+    dress()
+  else
+    local ok, item = pcall(Item.CreateFromItemID, Item, id)
+    if ok and item then
+      item:ContinueOnItemLoad(dress)
+    end
+  end
+end
+
+local function RefreshReview()
+  local data = ReviewData()
+  -- keep the selected piece; when it left the view (just flagged), take the
+  -- one that moved into its place
+  local index
+  for i, p in ipairs(data) do
+    if p.id == state.reviewSel then
+      index = i
+    end
+  end
+  if not index and #data > 0 then
+    index = math.min(math.max(1, state.reviewIndex or 1), #data)
+  end
+  local sel = index and data[index] or nil
+  local changed = (sel and sel.id) ~= reviewView.shownId
+  state.reviewSel, state.reviewIndex = sel and sel.id or nil, index or 1
+  reviewView.list:SetCount(#data)
+  for i, p in ipairs(data) do
+    local row = reviewView.list.rows[i]
+    row.entry = p
+    SetStripe(row, i)
+    row.title:SetText(ReviewItemName(p) .. "  " .. Grey(("%s, level %d"):format(TypeLabel(p.src), p.src.req or 1)))
+    local skin = p.src.skin and Grey(("%d%% bare"):format(p.src.skin)) or Grey("not measured")
+    row.pool:SetText(skin .. "  " .. FlagLabel(p.flag))
+    row.detail:SetText(Grey(ListStatus(p)) .. "  " .. ReviewDetail(p))
+    if p.id == state.reviewSel then
+      row:LockHighlight()
+    else
+      row:UnlockHighlight()
+    end
+  end
+  reviewView.empty:SetShown(#data == 0)
+  if state.reviewShow == "todo" then
+    reviewView.empty:SetText("Every piece in this filter has your yes or no. Filter > All pieces shows them again.")
+  else
+    reviewView.empty:SetText("No pieces match this filter.")
+  end
+  local panel = reviewView.panel
+  panel.female:SetChecked(state.female)
+  if not sel then
+    panel.name:SetText("")
+    panel.info:SetText("")
+    panel.detail:SetText("")
+    panel.yes:Disable()
+    panel.no:Disable()
+    panel.clear:Disable()
+    reviewView.shownId = nil
+    return
+  end
+  panel.name:SetText(ReviewItemName(sel))
+  panel.info:SetText(("%s, level %d. %s.%s"):format(TypeLabel(sel.src), sel.src.req or 1, ListStatus(sel),
+    sel.flag ~= nil and ("  You said " .. FlagLabel(sel.flag) .. ".") or ""))
+  panel.detail:SetText(ReviewDetail(sel))
+  panel.yes:SetEnabled(sel.flag ~= true)
+  panel.no:SetEnabled(sel.flag ~= false)
+  panel.clear:SetEnabled(sel.flag ~= nil)
+  if changed then
+    reviewView.shownId = sel.id
+    DressModel(sel.id)
+  end
+end
+
+local function ReviewFlagSelected(flag)
+  local id = state.reviewSel
+  if id then
+    ns.SetReview(id, flag) -- fires ITEMS, which refreshes the window
+  end
+end
+
+local function ReviewCounts()
+  local all, yes, no = 0, 0, 0
+  for _, p in ipairs(ns.ReviewPieces()) do
+    all = all + 1
+    if p.flag == true then
+      yes = yes + 1
+    elseif p.flag == false then
+      no = no + 1
+    end
+  end
+  return all, yes, no
+end
+
+-------------------------------------------------------------------------------
 -- Window
 -------------------------------------------------------------------------------
 local function UpdateStatus()
@@ -813,6 +1021,12 @@ local function UpdateStatus()
     scanButton:Disable()
   elseif ns.ladder and ns.ladder.active then
     statusText:SetText(("Checking the other listings of possible buys... %d left"):format(#ns.ladder.queue + (ns.ladder.current and 1 or 0)))
+    scanButton:SetText("Scan")
+    scanButton:SetEnabled(ns.AuctionHouseOpen())
+  elseif state.tab == "review" then
+    local all, yes, no = ReviewCounts()
+    statusText:SetText(("%d of %d pieces reviewed: %d yes, %d no. A yes puts a piece on the list, a no takes it off. Drag the model to turn it, scroll to zoom.")
+      :format(yes + no, all, yes, no))
     scanButton:SetText("Scan")
     scanButton:SetEnabled(ns.AuctionHouseOpen())
   else
@@ -842,7 +1056,11 @@ Refresh = function()
   end
   -- The armor filter does nothing on the Measured tab or while the Farm
   -- guide shows the spots of one piece, so it is not offered there.
-  local filterUseful = state.tab == "market" or (state.tab == "farm" and not (state.farmItem and ns.Items()[state.farmItem]))
+  local filterUseful = state.tab == "market" or state.tab == "review" or (state.tab == "farm" and not (state.farmItem and ns.Items()[state.farmItem]))
+  if levelBox then
+    levelBox:SetShown(filterUseful)
+    levelBox.Sync()
+  end
   if filterButton then
     filterButton:SetShown(filterUseful)
     if filterButton.smogValidate then
@@ -854,23 +1072,28 @@ Refresh = function()
       b:SetShown(filterUseful)
     end
     listedCheck:SetShown(state.tab == "market")
+    listedCheck:SetChecked(state.listedOnly)
     listedText:SetShown(state.tab == "market")
     dealsCheck:SetShown(state.tab == "market")
     dealsText:SetShown(state.tab == "market")
-    croppedCheck:SetShown(filterUseful)
-    croppedText:SetShown(filterUseful)
+    local lookUseful = filterUseful and state.tab ~= "review"
+    croppedCheck:SetShown(lookUseful)
+    croppedText:SetShown(lookUseful)
     croppedCheck:SetChecked(ns.ShowCropped())
-    commonCheck:SetShown(filterUseful)
-    commonText:SetShown(filterUseful)
+    commonCheck:SetShown(lookUseful)
+    commonText:SetShown(lookUseful)
     commonCheck:SetChecked(ns.ShowCommon())
   end
   marketView:SetShown(state.tab == "market")
   farmView:SetShown(state.tab == "farm")
   measuredView:SetShown(state.tab == "measured")
+  reviewView:SetShown(state.tab == "review")
   if state.tab == "market" then
     RefreshMarket()
   elseif state.tab == "farm" then
     RefreshFarm()
+  elseif state.tab == "review" then
+    RefreshReview()
   else
     RefreshMeasured()
   end
@@ -961,7 +1184,8 @@ local function SelectTab(key)
 end
 
 local function FilterIsDefault()
-  return state.armor == "all" and not state.listedOnly and not state.buyOnly and not ns.ShowCropped() and not ns.ShowCommon()
+  return state.armor == "all" and state.listedOnly and not state.buyOnly and not ns.ShowCropped() and not ns.ShowCommon()
+    and state.reviewShow == "todo"
 end
 
 -- The filter: the game's filter dropdown, as the auction house's search bar
@@ -1005,6 +1229,20 @@ local function CreateFilterDropdown()
         Refresh()
       end)
     end
+    if state.tab == "review" then
+      root:QueueSpacer()
+      root:CreateTitle("Show")
+      for _, def in ipairs(REVIEW_SHOW) do
+        root:CreateRadio(def[2], function()
+          return state.reviewShow == def[1]
+        end, function()
+          state.reviewShow = def[1]
+          state.reviewIndex = 1
+          Refresh()
+        end, def[1])
+      end
+      return
+    end
     -- cropped looks: a top that covers the bust, shorts that cover most of the thigh
     root:QueueSpacer()
     root:CreateTitle("Look")
@@ -1021,7 +1259,7 @@ local function CreateFilterDropdown()
     return nil
   end
   if pcall(dd.SetIsDefaultCallback, dd, FilterIsDefault) and pcall(dd.SetDefaultCallback, dd, function()
-    state.armor, state.listedOnly, state.buyOnly = "all", false, false
+    state.armor, state.listedOnly, state.buyOnly, state.reviewShow = "all", true, false, "todo"
     if ns.ShowCropped() then
       ns.SetShowCropped(false)
     end
@@ -1090,6 +1328,222 @@ local function CreateFilterButtons(startX)
   commonCheck:SetScript("OnClick", function(self)
     ns.SetShowCommon(self:GetChecked() and true or false)
   end)
+end
+
+-- Level range: the classic auction house's two level boxes (InputBoxTemplate,
+-- "Level Range" and a dash), left of the filter. Saved; empty means no limit.
+local function CreateLevelRange(anchor)
+  local box = CreateFrame("Frame", nil, win)
+  box:SetSize(150, 22)
+  box:SetPoint("RIGHT", anchor, "LEFT", -14, 0)
+  local function MakeBox()
+    local e = TryCreate("EditBox", nil, box, "InputBoxTemplate") or CreateFrame("EditBox", nil, box)
+    e:SetSize(26, 20)
+    e:SetAutoFocus(false)
+    e:SetNumeric(true)
+    e:SetMaxLetters(2)
+    e:SetJustifyH("CENTER")
+    return e
+  end
+  local maxBox = MakeBox()
+  maxBox:SetPoint("RIGHT", box, "RIGHT", 0, 0)
+  local dash = box:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+  dash:SetPoint("RIGHT", maxBox, "LEFT", -6, 0)
+  dash:SetText("-")
+  local minBox = MakeBox()
+  minBox:SetPoint("RIGHT", dash, "LEFT", -8, 0)
+  local label = box:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+  label:SetPoint("RIGHT", minBox, "LEFT", -10, 0)
+  label:SetText("Level range")
+  box.min, box.max = minBox, maxBox
+  function box.Sync()
+    local lo, hi = ns.LevelRange()
+    if not minBox:HasFocus() then
+      minBox:SetText(lo and tostring(lo) or "")
+    end
+    if not maxBox:HasFocus() then
+      maxBox:SetText(hi and tostring(hi) or "")
+    end
+  end
+  local function Apply()
+    local lo, hi = ns.LevelRange()
+    local newLo, newHi = tonumber(minBox:GetText() or ""), tonumber(maxBox:GetText() or "")
+    if newLo ~= lo or newHi ~= hi then
+      ns.SetLevelRange(newLo, newHi) -- fires ITEMS, which refreshes the window
+    end
+    box.Sync()
+  end
+  box.Apply = Apply
+  for _, e in ipairs({ minBox, maxBox }) do
+    e:SetScript("OnEnterPressed", function(self)
+      self:ClearFocus()
+    end)
+    e:SetScript("OnEditFocusLost", Apply)
+    e:SetScript("OnEscapePressed", function(self)
+      local lo, hi = ns.LevelRange()
+      local v = self == minBox and lo or hi
+      self:SetText(v and tostring(v) or "")
+      self:ClearFocus()
+    end)
+    e:SetScript("OnTabPressed", function(self)
+      (self == minBox and maxBox or minBox):SetFocus()
+    end)
+    e:SetScript("OnEnter", function(self)
+      GameTooltip:SetOwner(self, "ANCHOR_TOP")
+      GameTooltip:AddLine("Level range")
+      GameTooltip:AddLine("Only pieces whose required level lies in this range show, in every tab, the buys and the chat lines after a scan. Leave a box empty for no limit.", 1, 1, 1, true)
+      GameTooltip:Show()
+    end)
+    e:SetScript("OnLeave", GameTooltip_Hide)
+  end
+  box.Sync()
+  return box
+end
+
+-- The Review tab: the list on the left, the piece on a model and the yes and
+-- no buttons on the right (the dressing room's model in the game's inset).
+local REVIEW_PANEL_W = 320
+local function CreateReviewView()
+  reviewView = MakeView()
+  MakePlainList(reviewView, FARM_ROW_H, function(parent)
+    local row = BuildWideRow(parent, function(self)
+      if self.entry then
+        GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
+        pcall(GameTooltip.SetItemByID, GameTooltip, self.entry.id)
+        GameTooltip:Show()
+      end
+    end)
+    row:SetScript("OnClick", function(self)
+      local p = self.entry
+      if not p then
+        return
+      end
+      if IsModifiedClick("CHATLINK") then
+        local _, link = C_Item.GetItemInfo(p.id)
+        if link then
+          ChatEdit_InsertLink(link)
+        end
+        return
+      end
+      state.reviewSel = p.id
+      Refresh()
+    end)
+    return row
+  end)
+  -- the list leaves room for the panel at the right
+  reviewView.inset:ClearAllPoints()
+  reviewView.inset:SetPoint("TOPLEFT", 0, 0)
+  reviewView.inset:SetPoint("BOTTOMRIGHT", -(REVIEW_PANEL_W + 6), 0)
+  local scroll = reviewView.list.scroll
+  scroll:ClearAllPoints()
+  scroll:SetPoint("TOPLEFT", 4, -3)
+  scroll:SetPoint("BOTTOMRIGHT", reviewView.inset, "BOTTOMRIGHT", -26, 3)
+  reviewView.empty:ClearAllPoints()
+  reviewView.empty:SetPoint("TOP", scroll, "TOP", 0, -45)
+  reviewView.empty:SetPoint("LEFT", reviewView.inset, "LEFT", 45, 0)
+  reviewView.empty:SetPoint("RIGHT", reviewView.inset, "RIGHT", -45, 0)
+
+  local panel = CreateFrame("Frame", nil, reviewView)
+  panel:SetPoint("TOPRIGHT", 0, 0)
+  panel:SetPoint("BOTTOMRIGHT", 0, 0)
+  panel:SetWidth(REVIEW_PANEL_W)
+  reviewView.panel = panel
+  local modelInset = MakeInset(panel)
+  modelInset:SetPoint("TOPLEFT", 0, 0)
+  modelInset:SetPoint("TOPRIGHT", 0, 0)
+  modelInset:SetHeight(292)
+  local model = TryCreate("DressUpModel", nil, modelInset)
+  if model then
+    model:SetPoint("TOPLEFT", 4, -4)
+    model:SetPoint("BOTTOMRIGHT", -4, 4)
+    pcall(model.EnableMouse, model, true)
+    pcall(model.EnableMouseWheel, model, true)
+    -- drag to turn it, as in the dressing room; the wheel zooms in
+    model:SetScript("OnMouseDown", function(self)
+      self.dragX = GetCursorPosition()
+    end)
+    model:SetScript("OnMouseUp", function(self)
+      self.dragX = nil
+    end)
+    model:SetScript("OnUpdate", function(self)
+      if self.dragX then
+        local x = GetCursorPosition()
+        local ok, facing = pcall(self.GetFacing, self)
+        if ok and type(facing) == "number" then
+          pcall(self.SetFacing, self, facing + (x - self.dragX) * 0.02)
+        end
+        self.dragX = x
+      end
+    end)
+    model:SetScript("OnMouseWheel", function(self, delta)
+      self.zoom = math.max(0, math.min(0.9, (self.zoom or 0) + delta * 0.1))
+      pcall(self.SetPortraitZoom, self, self.zoom)
+    end)
+    reviewView.model = model
+  end
+  local nameFont = _G.GameFontNormalLarge and "GameFontNormalLarge" or "GameFontNormal"
+  panel.name = panel:CreateFontString(nil, "OVERLAY", nameFont)
+  panel.name:SetPoint("TOPLEFT", modelInset, "BOTTOMLEFT", 4, -8)
+  panel.name:SetPoint("RIGHT", panel, "RIGHT", -4, 0)
+  panel.name:SetJustifyH("LEFT")
+  panel.name:SetWordWrap(false)
+  panel.info = panel:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+  panel.info:SetPoint("TOPLEFT", panel.name, "BOTTOMLEFT", 0, -4)
+  panel.info:SetPoint("RIGHT", panel, "RIGHT", -4, 0)
+  panel.info:SetJustifyH("LEFT")
+  panel.info:SetWordWrap(true)
+  panel.detail = panel:CreateFontString(nil, "OVERLAY", "GameFontDisableSmall")
+  panel.detail:SetPoint("TOPLEFT", panel.info, "BOTTOMLEFT", 0, -4)
+  panel.detail:SetPoint("RIGHT", panel, "RIGHT", -4, 0)
+  panel.detail:SetJustifyH("LEFT")
+  panel.detail:SetWordWrap(true)
+  local function Tip(button, title, text)
+    button:SetScript("OnEnter", function(self)
+      GameTooltip:SetOwner(self, "ANCHOR_TOP")
+      GameTooltip:AddLine(title)
+      GameTooltip:AddLine(text, 1, 1, 1, true)
+      GameTooltip:Show()
+    end)
+    button:SetScript("OnLeave", GameTooltip_Hide)
+  end
+  panel.yes = MakeButton(panel, "Yes", 96, function()
+    ReviewFlagSelected(true)
+  end)
+  panel.yes:SetPoint("BOTTOMLEFT", 0, 28)
+  Tip(panel.yes, "Yes, a slutmog", "Puts the piece on the list and never hides it as cropped. Then the next piece shows.")
+  panel.no = MakeButton(panel, "No", 96, function()
+    ReviewFlagSelected(false)
+  end)
+  panel.no:SetPoint("LEFT", panel.yes, "RIGHT", 6, 0)
+  Tip(panel.no, "No", "Takes the piece off the list. Then the next piece shows.")
+  panel.clear = MakeButton(panel, "Undo", 96, function()
+    ReviewFlagSelected(nil)
+  end)
+  panel.clear:SetPoint("LEFT", panel.no, "RIGHT", 6, 0)
+  Tip(panel.clear, "Undo", "Forgets your yes or no: the piece is judged by its measure again.")
+  panel.female = CreateFrame("CheckButton", nil, panel, "UICheckButtonTemplate")
+  panel.female:SetSize(24, 24)
+  panel.female:SetPoint("BOTTOMLEFT", -2, 0)
+  panel.female:SetHitRectInsets(0, -150, 0, 0)
+  local femaleText = panel:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+  femaleText:SetPoint("LEFT", panel.female, "RIGHT", 2, 0)
+  femaleText:SetText("Female body")
+  panel.female:SetScript("OnClick", function(self)
+    state.female = self:GetChecked() and true or false
+    reviewView.shownId = nil
+    Refresh()
+  end)
+  Tip(panel.female, "Female body", "Shows the piece on a female body of your race when your character is male. The list measures the female textures.")
+  local canFemale = model and type(model.SetCustomRace) == "function"
+  panel.female:SetShown(canFemale and true or false)
+  femaleText:SetShown(canFemale and true or false)
+  if not model then
+    -- no model frame in this client: the list and the buttons still work
+    modelInset:Hide()
+    panel.name:ClearAllPoints()
+    panel.name:SetPoint("TOPLEFT", 4, -8)
+    panel.name:SetPoint("RIGHT", panel, "RIGHT", -4, 0)
+  end
 end
 
 local function CreateTabs()
@@ -1265,6 +1719,7 @@ local function CreateWindow()
   if not filterButton then
     CreateFilterButtons(tabsX)
   end
+  levelBox = CreateLevelRange(filterButton or scanButton)
 
   -- the totals line at the bottom, as under the Who list
   statusText = win:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
@@ -1316,6 +1771,8 @@ local function CreateWindow()
     return BuildWideRow(parent, MeasuredRowTooltip)
   end)
   measuredView.empty:SetText("Nothing measured yet. Loot mobs anywhere and this tab fills in by itself.")
+
+  CreateReviewView()
 
   win:SetScript("OnShow", Refresh)
 end
@@ -1418,6 +1875,7 @@ LookShotsTargets["SlutmogScout"] = {
     { label = "window: Farm guide", frame = WindowOn("farm", false) },
     { label = "window: one piece's farm spots", frame = WindowOn("farm", true) },
     { label = "window: Measured", frame = WindowOn("measured") },
+    { label = "window: Review", frame = WindowOn("review") },
     { label = "auction house button", frame = function() return ahButton end, pad = 60 },
   },
 }

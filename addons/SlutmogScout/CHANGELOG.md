@@ -1,5 +1,28 @@
 # Changelog
 
+## 1.10.0
+
+Review every piece yourself, a level range, and the Market list starts on what is listed now.
+
+- **Review tab.** It lists every BoE chest and leg piece that no profession makes: the 166 on the list and
+  the 460 the list leaves out, each with why (for example "measures 22% bare, under the 24% cut-off", or a
+  robe that is only bare below the waist). Click a piece to see it on a model. Drag the model to turn it
+  and scroll to zoom. With "Female body" ticked, a male character sees the piece on a female body of his
+  race. Then press **Yes** or **No**, and the next piece comes up.
+  - A yes puts the piece on the list, also a piece the list left out, and never hides it as cropped.
+  - A no takes the piece off the list. Undo forgets your answer.
+  - Filter > Show picks what the tab lists: not reviewed yet (the default), left off the list, on the
+    list, or all pieces. The barest pieces come first.
+  - `/smog review` opens the tab. The bottom line counts how many you have reviewed.
+- **Level range.** The two level boxes next to the Filter button, as in the classic auction house, or
+  `/smog level 20-40` (`30-` for 30 and up, `-40` for up to 40, `off` to clear). Pieces whose required
+  level is outside the range are hidden everywhere: the Market list, the buys and deals, the farm guide,
+  the review and the chat lines after a scan. The range is saved.
+- **Listed now only is on by default.** The Market list opens on the pieces listed in your last scan.
+  Untick Filter > Listed now only to see every piece. The filter's reset button turns it back on.
+- The item list's generator applies the review answers. tools/SlutmogScout/import_review.py copies them from
+  the saved variables.
+
 ## 1.9.0
 
 Buy a piece straight from the list.
