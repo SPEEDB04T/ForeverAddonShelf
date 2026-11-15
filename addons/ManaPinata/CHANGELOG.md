@@ -1,5 +1,9 @@
 # Changelog
 
+## 1.0.2
+
+- The game's own marks on the health bar stay on top of the blue: the target border, the darkening on enemies you have not targeted, the mouse-over highlight and the health text. Before, a blue enemy you had not targeted looked like your target.
+
 ## 1.0.1
 
 - The blue health bar uses the game's own mana-bar blue, so it looks like a mana bar.

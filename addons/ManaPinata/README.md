@@ -31,7 +31,7 @@ For WoW Forever (Interface 16001).
 
 - **Works in fights.** During fights the game hides debuffs from addons. The piñata is drawn on one of the game's own aura slots, which the game shows and hides itself, so the addon never has to read the debuff.
 - **Other nameplate addons** (BetterBlizzPlates and the like) keep working. If their debuff icons sit where the piñata hangs, move it with the two sliders or `/pinata y` and `/pinata x`.
-- **The blue health bar** is a copy of the bar's own fill, in the game's mana-bar blue, laid over it, so the bar's real colour (threat, class, whatever another addon set) is untouched underneath and comes back by itself. It shrinks with the enemy's health like the bar does. Text that another addon draws directly on the health bar can end up under the blue; if that bothers you, `/pinata bar` turns it off.
+- **The blue health bar** is a copy of the bar's own fill, in the game's mana-bar blue, laid over it, so the bar's real colour (threat, class, whatever another addon set) is untouched underneath and comes back by itself. It shrinks with the enemy's health like the bar does. The game's own marks on the bar (target border, the darkening on enemies you have not targeted, mouse-over highlight, health text) stay on top of the blue. Text that another addon draws directly on the health bar can end up under it; if that bothers you, `/pinata bar` turns it off.
 - **Test piñatas** hide the real ones while they are up, and end by themselves when a fight starts.
 - **Swing** changes made in the middle of a fight reach piñatas that are already up when the fight ends.
 - **Friendly targets** never get one: the game only allows this kind of check for debuffs on enemies.

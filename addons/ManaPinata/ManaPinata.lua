@@ -324,8 +324,37 @@ local function TryNative(p, kind)
     end
 end
 
+-- The game draws its own marks on the health bar in the bar's frame: the
+-- darkening on every enemy that is not the target, the target border, the
+-- mouse-over highlight, the aggro flash, heal absorbs and the health text
+-- (Blizzard_NamePlates.xml; the unit frame moves selectionHighlight and
+-- aggroFlash onto the bar). The blue lies one frame level up, so it would
+-- cover them and an enemy that is not the target would look like the target.
+-- They move to a frame of ours one level above the blue. Their layers,
+-- anchors and showing and hiding stay the game's; one another addon has
+-- already moved is left where it is.
+local BAR_MARKS = { "deselectedOverlay", "selectedBorder", "myHealAbsorb", "myHealAbsorbLeftShadow",
+    "myHealAbsorbRightShadow", "overAbsorbGlow", "overHealAbsorbGlow", "Text", "LeftText", "RightText" }
+local FRAME_MARKS = { "selectionHighlight", "aggroFlash" }
+
+local function LiftMarks(p)
+    local bar, top = p.bar, p.barTop
+    local function Lift(region)
+        if type(region) ~= "table" or type(region.SetParent) ~= "function" then return end
+        pcall(function()
+            if region:GetParent() == bar then region:SetParent(top) end
+        end)
+    end
+    for _, key in ipairs(BAR_MARKS) do Lift(rawget(bar, key)) end
+    local uf = p.plate.UnitFrame
+    if type(uf) == "table" then
+        for _, key in ipairs(FRAME_MARKS) do Lift(rawget(uf, key)) end
+    end
+end
+
 -- The addon's own frame on the health bar: it carries the test colour and
 -- the bar's aura container, and shows, fades and hides with the bar itself.
+-- Above it, the frame that keeps the game's marks on top of the blue.
 -- False while the nameplate has no health bar the addon can use.
 local function EnsureBar(p)
     if p.barHolder then return true end
@@ -335,16 +364,21 @@ local function EnsureBar(p)
     local ok = pcall(function()
         local fill = bar:GetStatusBarTexture()
         if not fill then error("the health bar has no fill") end
+        local level = bar:GetFrameLevel() or 0
         local holder = CreateFrame("Frame", nil, bar)
         holder:SetAllPoints(bar)
-        holder:SetFrameLevel((bar:GetFrameLevel() or 0) + 1)
+        holder:SetFrameLevel(level + 1)
         holder:Hide()
+        local top = CreateFrame("Frame", nil, bar)
+        top:SetAllPoints(bar)
+        top:SetFrameLevel(level + 2)
         local test = BarArt(holder, fill)
         test:Hide()
-        p.fill, p.barTest, p.barHolder = fill, test, holder
+        p.bar, p.fill, p.barTest, p.barHolder, p.barTop = bar, fill, test, holder, top
     end)
-    if not ok then p.barFailed = true end
-    return ok
+    if not ok then p.barFailed = true; return false end
+    LiftMarks(p)
+    return true
 end
 
 local function Build(plate)
@@ -393,6 +427,7 @@ local function ApplyBar(p, unit, live)
         -- refused there, done the next time this nameplate comes up outside one.
         CopyFill(p.barTest, p.fill)
         if p.barTex then pcall(CopyFill, p.barTex, p.fill) end
+        LiftMarks(p)                       -- in case the game put one back on the bar
         if live then TryNative(p, "bar") end
     end
     local err = Switch(p.barContainer, (want and live) and unit or nil)
