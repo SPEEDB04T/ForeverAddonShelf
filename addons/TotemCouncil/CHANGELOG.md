@@ -1,5 +1,9 @@
 # Changelog
 
+## 1.2.0
+
+- New look that matches the game's own UI. The totem bar uses the action bar's button frames, and warnings light the game's button border (red: missing, orange: doubled up or planned twice, yellow: about to run out or not your plan). The plan clash that used to be a small orange dot is now that steady orange border. The group marker beside the bar is a small button with the addon's icon. The group plan is a standard portrait window with the totems as small action slots, the accept/decline box is the game's dialog box, and the totem menu uses the game's dropdown look with a tick on the current choice.
+
 ## 1.1.1
 
 - Fixed: plans and live totems were not shared with other shamans on ordinary realms. The addon read a realm setting ("this realm blocks addon messages") that has nothing to do with messages inside a group, and sent nothing. It now sends, and `/totems status` shows the game's answer if a message is ever refused.

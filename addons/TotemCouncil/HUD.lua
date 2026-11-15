@@ -5,11 +5,12 @@ local ADDON, ns = ...
 local HUD = {}
 ns.HUD = HUD
 
-local SIZE, GAP, PIP = 34, 4, 8
+local SIZE, GAP, PIP = 34, 4, 22
+local PIP_ICON = "Interface\\Icons\\Spell_Nature_Windfury"
 
-local RED = { 1.0, 0.15, 0.15 }
-local ORANGE = { 1.0, 0.55, 0.10 }
-local YELLOW = { 1.0, 0.85, 0.20 }
+local C = ns.COLOR
+local RED, ORANGE, YELLOW, BLUE = C.red, C.orange, C.yellow, C.blue
+local GRAY = C.gray
 
 local function UseKeyDown()
     local ok, v
@@ -44,11 +45,11 @@ local function OnEnter(self)
     local a = st.active
     local planInfo = st.plan and ns.Info(st.plan)
     GameTooltip:SetOwner(self, "ANCHOR_TOP")
-    GameTooltip:AddLine(el.name .. " totem", el.color[1], el.color[2], el.color[3])
+    GameTooltip:AddLine(el.name .. " totem")      -- gold, like every game tooltip title
     if a then
         GameTooltip:AddDoubleLine(a.name or "Unknown totem", HUD.FormatTime(st.remaining or 0), 1, 1, 1, 1, 1, 1)
     else
-        GameTooltip:AddLine("No totem down", 0.7, 0.7, 0.7)
+        GameTooltip:AddLine("No totem down", GRAY[1], GRAY[2], GRAY[3])
     end
     if planInfo then
         if st.state == "missing" then
@@ -57,7 +58,7 @@ local function OnEnter(self)
             GameTooltip:AddLine("Your plan here is " .. planInfo.name, YELLOW[1], YELLOW[2], YELLOW[3])
         end
     else
-        GameTooltip:AddLine("Nothing planned: right-click to pick one", 0.7, 0.7, 0.7)
+        GameTooltip:AddLine("Nothing planned: right-click to pick one", GRAY[1], GRAY[2], GRAY[3])
     end
     if st.overlap then
         GameTooltip:AddLine(" ")
@@ -73,13 +74,13 @@ local function OnEnter(self)
     local bound = self:GetAttribute("type1") == "spell" and self:GetAttribute("spell1") or nil
     local known = ns.db.clickCast and st.plan and ns.Known(st.plan) or nil
     local want = known and known.name or nil
-    if bound then GameTooltip:AddLine("Left-click: drop " .. bound, 0.5, 0.8, 1) end
+    if bound then GameTooltip:AddLine("Left-click: drop " .. bound, 1, 1, 1) end
     if bound ~= want and InCombatLockdown() then
         GameTooltip:AddLine(want and ("Left-click changes to " .. want .. " after combat") or "Left-click turns off after combat",
             ORANGE[1], ORANGE[2], ORANGE[3], true)
     end
-    GameTooltip:AddLine("Right-click: choose the totem to keep up", 0.5, 0.8, 1)
-    if not ns.db.locked then GameTooltip:AddLine("Drag: move the bar (/totems lock)", 0.5, 0.5, 0.5) end
+    GameTooltip:AddLine("Right-click: choose the totem to keep up", 1, 1, 1)
+    if not ns.db.locked then GameTooltip:AddLine("Drag: move the bar (/totems lock)", GRAY[1], GRAY[2], GRAY[3]) end
     GameTooltip:Show()
 end
 
@@ -135,26 +136,17 @@ local function CreateButton(f, slot, index)
     b:SetScript("OnDragStart", StartMove)
     b:SetScript("OnDragStop", StopMove)
 
-    b.border = b:CreateTexture(nil, "BACKGROUND")
-    b.border:SetPoint("TOPLEFT", -2, 2)
-    b.border:SetPoint("BOTTOMRIGHT", 2, -2)
-    b.border:SetColorTexture(1, 1, 1, 1)
-    b.border:SetAlpha(0)
-
-    b.bg = b:CreateTexture(nil, "BORDER")
-    b.bg:SetAllPoints()
-    b.bg:SetColorTexture(0, 0, 0, 0.55)
-
-    b.icon = b:CreateTexture(nil, "ARTWORK")
+    -- the game's action button: empty-slot background, icon, metal frame,
+    -- pressed and mouse-over art (ns.ButtonArt)
+    ns.ButtonArt(b, SIZE)
+    b.icon = b:CreateTexture(nil, "BACKGROUND")
     b.icon:SetAllPoints()
     b.icon:SetTexCoord(0.07, 0.93, 0.07, 0.93)
-
-    b.hl = b:CreateTexture(nil, "HIGHLIGHT")
-    b.hl:SetAllPoints()
-    b.hl:SetColorTexture(1, 1, 1, 0.12)
+    ns.IconMask(b, b.icon, SIZE)
 
     b.cd = CreateFrame("Cooldown", nil, b, "CooldownFrameTemplate")
-    b.cd:SetAllPoints()
+    b.cd:SetPoint("TOPLEFT", 2, -2)
+    b.cd:SetPoint("BOTTOMRIGHT", -2, 2)
     b.cd.noCooldownCount = true     -- keep cooldown-text addons off it, the bar draws its own
     if b.cd.SetHideCountdownNumbers then b.cd:SetHideCountdownNumbers(true) end
     if b.cd.SetDrawEdge then b.cd:SetDrawEdge(false) end
@@ -165,30 +157,23 @@ local function CreateButton(f, slot, index)
     b.over:SetAllPoints()
     b.over:SetFrameLevel(b.cd:GetFrameLevel() + 2)
 
-    b.strip = b.over:CreateTexture(nil, "ARTWORK")
-    b.strip:SetHeight(2)
-    b.strip:SetPoint("BOTTOMLEFT", 0, 0)
-    b.strip:SetPoint("BOTTOMRIGHT", 0, 0)
-    b.strip:SetColorTexture(el.color[1], el.color[2], el.color[3], 0.9)
+    -- warning border: the game's own action-button border, tinted (it uses
+    -- the same piece in green for equipped items)
+    b.border = ns.ButtonBorder(b.over, b, SIZE)
 
     b.timer = b.over:CreateFontString(nil, "OVERLAY", "NumberFontNormal")
     b.timer:SetPoint("CENTER", 0, 0)
     local font, _, flags = b.timer:GetFont()
     if font then b.timer:SetFont(font, 15, flags or "OUTLINE") end
 
-    b.letter = b.over:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+    -- empty slot: the element's letter, quiet, like an unbound key label
+    b.letter = b.over:CreateFontString(nil, "OVERLAY", "GameFontDisable")
     b.letter:SetPoint("CENTER", 0, 0)
     b.letter:SetText(el.letter)
-    b.letter:SetTextColor(el.color[1], el.color[2], el.color[3], 0.7)
 
-    b.badge = b.over:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
-    b.badge:SetPoint("TOPRIGHT", 1, 1)
-
-    b.dot = b.over:CreateTexture(nil, "OVERLAY")
-    b.dot:SetSize(6, 6)
-    b.dot:SetPoint("TOPLEFT", 1, -1)
-    b.dot:SetColorTexture(ORANGE[1], ORANGE[2], ORANGE[3], 1)
-    b.dot:Hide()
+    -- corner mark, where the action bar puts its hotkey text
+    b.badge = b.over:CreateFontString(nil, "OVERLAY", "NumberFontNormalSmallGray")
+    b.badge:SetPoint("TOPRIGHT", -2, -3)
 
     b:SetScript("OnEnter", OnEnter)
     b:SetScript("OnLeave", OnLeave)
@@ -220,13 +205,19 @@ function HUD.Create()
     end
 
     -- small marker that appears when another shaman is in the group; opens the group plan
+    -- (a small action-style button with the addon's own icon; its border
+    -- lights up for an open proposal or a clash)
     local pip = CreateFrame("Button", nil, f)
     f.pip = pip
-    pip:SetSize(PIP, SIZE)
-    pip:SetPoint("LEFT", f, "RIGHT", 3, 0)
-    pip.tex = pip:CreateTexture(nil, "ARTWORK")
-    pip.tex:SetAllPoints()
-    pip.tex:SetColorTexture(0.5, 0.6, 0.8, 0.7)
+    pip:SetSize(PIP, PIP)
+    pip:SetPoint("BOTTOMLEFT", f, "BOTTOMRIGHT", GAP + 1, 0)
+    ns.ButtonArt(pip, PIP)
+    pip.icon = pip:CreateTexture(nil, "BACKGROUND")
+    pip.icon:SetAllPoints()
+    pip.icon:SetTexture(PIP_ICON)
+    pip.icon:SetTexCoord(0.07, 0.93, 0.07, 0.93)
+    ns.IconMask(pip, pip.icon, PIP)
+    pip.border = ns.ButtonBorder(pip, pip, PIP)
     pip:SetScript("OnClick", function() ns.Board.Toggle() end)
     pip:SetScript("OnEnter", function(self)
         f.hover = true
@@ -234,12 +225,15 @@ function HUD.Create()
         GameTooltip:SetOwner(self, "ANCHOR_TOP")
         GameTooltip:AddLine("Group totem plan")
         GameTooltip:AddLine(("%d other shaman(s) in the group"):format(G.OtherShamans()), 1, 1, 1)
+        if G.proposal and not G.proposal.doneAt then
+            GameTooltip:AddLine("A new plan is waiting for answers", BLUE[1], BLUE[2], BLUE[3])
+        end
         if G.conflictCount > 0 then
             GameTooltip:AddLine(("%d totem(s) planned twice"):format(G.conflictCount), ORANGE[1], ORANGE[2], ORANGE[3])
         else
-            GameTooltip:AddLine("No conflicts", 0.3, 1, 0.3)
+            GameTooltip:AddLine("No conflicts", C.green[1], C.green[2], C.green[3])
         end
-        GameTooltip:AddLine("Click to open", 0.5, 0.8, 1)
+        GameTooltip:AddLine("Click to open", GRAY[1], GRAY[2], GRAY[3])
         GameTooltip:Show()
     end)
     pip:SetScript("OnLeave", OnLeave)
@@ -278,14 +272,8 @@ end
 ----------------------------------------------------------------------
 -- Drawing (runs ten times a second; nothing here is blocked in combat)
 ----------------------------------------------------------------------
-local function SetBorder(b, color, alpha)
-    if color then
-        b.border:SetColorTexture(color[1], color[2], color[3], 1)
-        b.border:SetAlpha(alpha)
-    else
-        b.border:SetAlpha(0)
-    end
-end
+local SetBorder = ns.SetBorder
+local WARN_BADGE = ns.Paint("red", "!")
 
 function HUD.Update()
     local f = HUD.frame
@@ -329,13 +317,8 @@ function HUD.Update()
         if a then
             local left = st.remaining or 0
             b.timer:SetText(HUD.FormatTime(left))
-            if left <= 5 then
-                b.timer:SetTextColor(1, 0.25, 0.25)
-            elseif left <= soon then
-                b.timer:SetTextColor(1, 0.9, 0.3)
-            else
-                b.timer:SetTextColor(1, 1, 1)
-            end
+            local c = (left <= 5 and RED) or (left <= soon and YELLOW) or C.white
+            b.timer:SetTextColor(c[1], c[2], c[3])
         else
             b.timer:SetText("")
         end
@@ -343,19 +326,22 @@ function HUD.Update()
         -- border and badge, most urgent first
         local badge = ""
         if st.warn then
-            SetBorder(b, RED, pulse)
-            badge = "|cffff3030!|r"
+            SetBorder(b, "warn", RED, pulse)
+            badge = WARN_BADGE
             attention = true
         elseif st.overlap then
-            SetBorder(b, ORANGE, slowPulse)
-            badge = ("|cffff9a3cx%d|r"):format(#st.overlap + 1)
+            SetBorder(b, "overlap", ORANGE, slowPulse)
+            badge = ns.Paint("orange", "x" .. (#st.overlap + 1))
             attention = true
         elseif a and ns.inCombat and not st.temp and (a.duration or 0) > 15 and (st.remaining or 0) <= 5 then
             -- temporary totems are not there to be refreshed, and short ones
             -- (Fire Nova, Mana Tide, Stoneclaw) would pulse their whole life
-            SetBorder(b, YELLOW, pulse)
+            SetBorder(b, "expiring", YELLOW, pulse)
+        elseif st.conflict then
+            -- another shaman plans the same totem: steady orange until sorted
+            SetBorder(b, "conflict", ORANGE, 0.8)
         elseif st.state == "offplan" then
-            SetBorder(b, YELLOW, 0.55)
+            SetBorder(b, "offplan", YELLOW, 0.55)
         else
             SetBorder(b, nil)
         end
@@ -363,7 +349,6 @@ function HUD.Update()
             b.badge:SetText(badge)
             b.shownBadge = badge
         end
-        b.dot:SetShown(st.conflict ~= nil and not st.overlap)
     end
 
     -- group marker
@@ -372,11 +357,11 @@ function HUD.Update()
     f.pip:SetShown(others)
     if others then
         if G.proposal and not G.proposal.doneAt then
-            f.pip.tex:SetColorTexture(0.3, 0.6, 1, slowPulse)
+            SetBorder(f.pip, "proposal", BLUE, slowPulse)
         elseif G.conflictCount > 0 then
-            f.pip.tex:SetColorTexture(ORANGE[1], ORANGE[2], ORANGE[3], 0.9)
+            SetBorder(f.pip, "conflict", ORANGE, 0.9)
         else
-            f.pip.tex:SetColorTexture(0.3, 0.8, 0.4, 0.6)
+            SetBorder(f.pip, nil)
         end
     end
 

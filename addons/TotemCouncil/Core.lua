@@ -68,6 +68,102 @@ function ns.ResetErrors()
     seenErrors, errorCount = {}, 0
 end
 
+----------------------------------------------------------------------
+-- Look: the game's own colours and button art, so every frame reads as
+-- part of the default UI. Values match Blizzard's in case a constant is missing.
+----------------------------------------------------------------------
+local function GameColor(c, r, g, b)
+    if type(c) == "table" and type(c.r) == "number" then return { c.r, c.g, c.b } end
+    return { r, g, b }
+end
+ns.COLOR = {
+    gold   = GameColor(NORMAL_FONT_COLOR, 1, 0.82, 0),
+    white  = GameColor(HIGHLIGHT_FONT_COLOR, 1, 1, 1),
+    gray   = GameColor(GRAY_FONT_COLOR, 0.5, 0.5, 0.5),
+    red    = GameColor(RED_FONT_COLOR, 1, 0.125, 0.125),
+    orange = GameColor(ORANGE_FONT_COLOR, 1, 0.5, 0.25),
+    yellow = GameColor(YELLOW_FONT_COLOR, 1, 1, 0),
+    green  = GameColor(GREEN_FONT_COLOR, 0.1, 1, 0.1),
+    blue   = GameColor(LIGHTBLUE_FONT_COLOR, 0.53, 0.67, 1),
+}
+local shamanColor = type(RAID_CLASS_COLORS) == "table" and RAID_CLASS_COLORS.SHAMAN
+ns.COLOR.shaman = GameColor(shamanColor, 0, 0.44, 0.87)
+
+-- text in one of those colours
+function ns.Paint(key, text)
+    local c = ns.COLOR[key] or ns.COLOR.white
+    local function hex(v) return math.floor(v * 255 + 0.5) end
+    return ("|cff%02x%02x%02x%s|r"):format(hex(c[1]), hex(c[2]), hex(c[3]), tostring(text))
+end
+
+-- The action button frame, as the game's action bars draw it on this client
+-- (Blizzard_ActionBar/Mainline/ActionButtonTemplate.xml): slot background,
+-- metal frame, pressed and mouse-over art, and the border that the game
+-- tints for equipped items (here: tinted for warnings). size = button size.
+function ns.ButtonArt(b, size)
+    local w = size * 46 / 45            -- the frame art is a pixel wider than a 45 button
+    b.slotBg = b:CreateTexture(nil, "BACKGROUND", nil, -1)
+    b.slotBg:SetAtlas("UI-HUD-ActionBar-IconFrame-Background")
+    b.slotBg:SetAllPoints()
+    local function frameArt(setter, getter, atlas)
+        if not b[setter] then return end
+        b[setter](b, atlas)
+        local t = b[getter] and b[getter](b)
+        if t then
+            t:ClearAllPoints()
+            t:SetPoint("TOPLEFT")
+            t:SetSize(w, size)
+        end
+    end
+    frameArt("SetNormalAtlas", "GetNormalTexture", "UI-HUD-ActionBar-IconFrame")
+    frameArt("SetPushedAtlas", "GetPushedTexture", "UI-HUD-ActionBar-IconFrame-Down")
+    frameArt("SetHighlightAtlas", "GetHighlightTexture", "UI-HUD-ActionBar-IconFrame-Mouseover")
+    return w
+end
+
+-- rounds the icon's corners to fit inside the frame art, as the action bars do
+function ns.IconMask(b, icon, size)
+    if not b.CreateMaskTexture or not icon.AddMaskTexture then return end
+    local m = b:CreateMaskTexture()
+    if not m then return end
+    m:SetAtlas("UI-HUD-ActionBar-IconFrame-Mask")
+    m:SetPoint("CENTER", icon, "CENTER")
+    m:SetSize(size, size)
+    icon:AddMaskTexture(m)
+end
+
+-- the tintable border on top of a button (parent: a frame above the cooldown)
+function ns.ButtonBorder(parent, anchor, size)
+    local t = parent:CreateTexture(nil, "OVERLAY", nil, -1)
+    t:SetAtlas("UI-HUD-ActionBar-IconFrame-Border")
+    t:SetPoint("TOPLEFT", anchor, "TOPLEFT")
+    t:SetSize(size * 46 / 45, size)
+    t:SetAlpha(0)
+    return t
+end
+
+-- light up (or clear) a button's border; state is a word tests can read back
+function ns.SetBorder(b, state, color, alpha)
+    b.borderState = state
+    if color then
+        b.border:SetVertexColor(color[1], color[2], color[3])
+        b.border:SetAlpha(alpha or 1)
+    else
+        b.border:SetAlpha(0)
+    end
+end
+
+-- the game's dark dialog box (StaticPopup look), for frames without a template
+function ns.DialogBackdrop(f)
+    if not f.SetBackdrop then return end
+    f:SetBackdrop(BACKDROP_DARK_DIALOG_32_32 or {
+        bgFile = "Interface\\DialogFrame\\UI-DialogBox-Background-Dark",
+        edgeFile = "Interface\\DialogFrame\\UI-DialogBox-Border",
+        tile = true, tileEdge = true, tileSize = 32, edgeSize = 32,
+        insets = { left = 11, right = 12, top = 12, bottom = 11 },
+    })
+end
+
 local function PlayerDead()
     if not UnitIsDeadOrGhost then return false end
     local ok, dead = pcall(UnitIsDeadOrGhost, "player")

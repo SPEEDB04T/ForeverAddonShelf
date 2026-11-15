@@ -8,21 +8,13 @@ ns.Board = Board
 local ROW_H, CELL, NAME_W, PAD, MAX_ROWS = 40, 30, 150, 12, 12
 local COL_W = CELL + 22
 local WIDTH = PAD * 2 + NAME_W + 4 * COL_W
+-- layout inside the game's ButtonFrameTemplate: title bar, header strip
+-- beside the portrait, the inset with the rows, and the button bar
+local ROWS_TOP, BAR_H, STATUS_H = 64, 26, 40
+local ICON = "Interface\\Icons\\Spell_Nature_Windfury"
 
-local RED = { 1.0, 0.2, 0.2 }
-local BLUE = { 0.3, 0.6, 1.0 }
-
-local function Backdrop(f, r, g, b)
-    if not f.SetBackdrop then return end
-    f:SetBackdrop({
-        bgFile = "Interface\\Tooltips\\UI-Tooltip-Background",
-        edgeFile = "Interface\\Tooltips\\UI-Tooltip-Border",
-        tile = true, tileSize = 16, edgeSize = 14,
-        insets = { left = 3, right = 3, top = 3, bottom = 3 },
-    })
-    f:SetBackdropColor(0.04, 0.05, 0.08, 0.94)
-    f:SetBackdropBorderColor(r or 0.35, g or 0.5, b or 0.8, 1)
-end
+local C = ns.COLOR
+local RED, BLUE, GRAY = C.red, C.blue, C.gray
 
 local function MakeButton(parent, text, width)
     local b = CreateFrame("Button", nil, parent, "UIPanelButtonTemplate")
@@ -51,7 +43,7 @@ local function NextToast()
     else
         toast.icon:Hide()
     end
-    toast:SetHeight(math.max(74, (toast.text:GetStringHeight() or 30) + 54))
+    toast:SetHeight(math.max(90, (toast.text:GetStringHeight() or 30) + 70))
     toast.left = 45
     toast.shownAt = GetTime()
     toast:Show()
@@ -69,31 +61,32 @@ local function CloseToast(answer)
 end
 
 local function CreateToast()
+    -- the game's own pop-up dialog look (StaticPopup): dark dialog box,
+    -- white text, two panel buttons
     toast = CreateFrame("Frame", "TotemCouncilToast", UIParent, BackdropTemplateMixin and "BackdropTemplate" or nil)
-    toast:SetSize(300, 80)
+    toast:SetSize(320, 80)
     toast:SetPoint("TOP", UIParent, "TOP", 0, -170)
     toast:SetFrameStrata("DIALOG")
     toast:EnableMouse(true)
-    Backdrop(toast, 0.3, 0.6, 1)
+    ns.DialogBackdrop(toast)
     toast.icon = toast:CreateTexture(nil, "ARTWORK")
-    toast.icon:SetSize(28, 28)
-    toast.icon:SetPoint("TOPLEFT", 12, -12)
+    toast.icon:SetSize(32, 32)
+    toast.icon:SetPoint("TOPLEFT", 18, -18)
     toast.icon:SetTexCoord(0.07, 0.93, 0.07, 0.93)
-    toast.text = toast:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
-    toast.text:SetPoint("TOPLEFT", 48, -12)
-    toast.text:SetPoint("RIGHT", -12, 0)
+    toast.text = toast:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
+    toast.text:SetPoint("TOPLEFT", 58, -18)
+    toast.text:SetPoint("RIGHT", -18, 0)
     toast.text:SetJustifyH("LEFT")
-    toast.text:SetTextColor(0.85, 0.85, 0.85)
-    toast.accept = MakeButton(toast, "Accept", 90)
-    toast.accept:SetPoint("BOTTOMRIGHT", toast, "BOTTOM", -4, 10)
+    toast.accept = MakeButton(toast, ACCEPT or "Accept", 110)
+    toast.accept:SetPoint("BOTTOMRIGHT", toast, "BOTTOM", -4, 16)
     toast.accept:SetScript("OnClick", function()
         -- a request that only just appeared can't be accepted yet, so a
         -- double-click on the one before it does not accept this one unread
         if GetTime() - (toast.shownAt or 0) < 0.6 then return end
         CloseToast("y")
     end)
-    toast.decline = MakeButton(toast, "Decline", 90)
-    toast.decline:SetPoint("BOTTOMLEFT", toast, "BOTTOM", 4, 10)
+    toast.decline = MakeButton(toast, DECLINE or "Decline", 110)
+    toast.decline:SetPoint("BOTTOMLEFT", toast, "BOTTOM", 4, 16)
     toast.decline:SetScript("OnClick", function() CloseToast("n") end)
     -- an unanswered request counts as declined after 45 seconds
     toast:SetScript("OnUpdate", function(self, elapsed)
@@ -124,12 +117,12 @@ local function CellEnter(self)
     local G = ns.Group
     local el = ns.ELEMENTS[slot]
     GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
-    GameTooltip:AddLine(m.name .. ": " .. el.name, el.color[1], el.color[2], el.color[3])
+    GameTooltip:AddLine(m.name .. ": " .. el.name)
     local key = G.Effective(m, slot)
     local info = key and ns.Info(key)
     if G.Fixed(m) then
         GameTooltip:AddLine(info and ("Last seen dropping " .. info.name) or "No totem seen yet", 1, 1, 1)
-        GameTooltip:AddLine("No Totem Council: can't take suggestions. Announce posts the plan in chat.", 0.6, 0.6, 0.6, true)
+        GameTooltip:AddLine("No Totem Council: can't take suggestions. Announce posts the plan in chat.", GRAY[1], GRAY[2], GRAY[3], true)
     else
         GameTooltip:AddLine(info and ("Plans " .. info.name) or "Nothing planned", 1, 1, 1)
     end
@@ -138,7 +131,7 @@ local function CellEnter(self)
         local liveInfo = ns.Info(live.key)
         local left = m.isPlayer and (live.start + live.duration - GetTime()) or (live.expires - GetTime())
         GameTooltip:AddLine(("Down now: %s (%s)"):format(liveInfo and liveInfo.name or live.name or "a totem",
-            ns.HUD.FormatTime(left)), 0.6, 0.9, 0.6)
+            ns.HUD.FormatTime(left)), C.green[1], C.green[2], C.green[3])
     end
     local conflict = G.conflictMap[m.name] and G.conflictMap[m.name][slot]
     if conflict then
@@ -151,9 +144,9 @@ local function CellEnter(self)
         GameTooltip:AddLine(("%s proposes: %s"):format(prop.from, newInfo and newInfo.name or "nothing"), BLUE[1], BLUE[2], BLUE[3], true)
     end
     if m.isPlayer then
-        GameTooltip:AddLine("Click to change", 0.5, 0.8, 1)
+        GameTooltip:AddLine("Click to change", GRAY[1], GRAY[2], GRAY[3])
     elseif not G.Fixed(m) then
-        GameTooltip:AddLine("Click to suggest a totem", 0.5, 0.8, 1)
+        GameTooltip:AddLine("Click to suggest a totem", GRAY[1], GRAY[2], GRAY[3])
     end
     GameTooltip:Show()
 end
@@ -168,7 +161,7 @@ end
 local function CreateRow(i)
     local row = CreateFrame("Frame", nil, frame)
     row:SetSize(WIDTH - PAD * 2, ROW_H)
-    row:SetPoint("TOPLEFT", frame, "TOPLEFT", PAD, -(52 + (i - 1) * ROW_H))
+    row:SetPoint("TOPLEFT", frame, "TOPLEFT", PAD, -(ROWS_TOP + (i - 1) * ROW_H))
     row.name = row:CreateFontString(nil, "OVERLAY", "GameFontNormal")
     row.name:SetPoint("TOPLEFT", 0, -5)
     row.name:SetWidth(NAME_W - 6)
@@ -185,21 +178,16 @@ local function CreateRow(i)
         c.slot = slot
         c:SetSize(CELL, CELL)
         c:SetPoint("LEFT", row, "LEFT", NAME_W + (index - 1) * COL_W + (COL_W - CELL) / 2, 0)
-        c.border = c:CreateTexture(nil, "BACKGROUND")
-        c.border:SetPoint("TOPLEFT", -2, 2)
-        c.border:SetPoint("BOTTOMRIGHT", 2, -2)
-        c.border:SetColorTexture(1, 1, 1, 1)
-        c.bg = c:CreateTexture(nil, "BORDER")
-        c.bg:SetAllPoints()
-        c.bg:SetColorTexture(0, 0, 0, 0.6)
-        c.icon = c:CreateTexture(nil, "ARTWORK")
+        -- each cell is a small action slot (same art as the totem bar);
+        -- red border = planned twice, light blue = proposed change
+        ns.ButtonArt(c, CELL)
+        c.icon = c:CreateTexture(nil, "BACKGROUND")
         c.icon:SetAllPoints()
         c.icon:SetTexCoord(0.07, 0.93, 0.07, 0.93)
-        c.hl = c:CreateTexture(nil, "HIGHLIGHT")
-        c.hl:SetAllPoints()
-        c.hl:SetColorTexture(1, 1, 1, 0.15)
+        ns.IconMask(c, c.icon, CELL)
+        c.border = ns.ButtonBorder(c, c, CELL)
         c.live = c:CreateFontString(nil, "OVERLAY", "NumberFontNormalSmall")
-        c.live:SetPoint("BOTTOMRIGHT", 1, 0)
+        c.live:SetPoint("BOTTOMRIGHT", -2, 3)
         c:SetScript("OnEnter", CellEnter)
         c:SetScript("OnLeave", function() GameTooltip:Hide() end)
         c:SetScript("OnClick", CellClick)
@@ -211,7 +199,15 @@ end
 
 function Board.Create()
     if frame then return end
-    frame = CreateFrame("Frame", "TotemCouncilBoard", UIParent, BackdropTemplateMixin and "BackdropTemplate" or nil)
+    -- the game's portrait panel with a button bar and an inset (the same
+    -- frame as the friends list or the dungeon finder); a plain dialog box
+    -- if the template is missing on this client
+    local ok, f = pcall(CreateFrame, "Frame", "TotemCouncilBoard", UIParent, "ButtonFrameTemplate")
+    if not ok or not f then
+        f = CreateFrame("Frame", "TotemCouncilBoard", UIParent, BackdropTemplateMixin and "BackdropTemplate" or nil)
+        ns.DialogBackdrop(f)
+    end
+    frame = f
     Board.frame = frame
     frame:SetSize(WIDTH, 200)
     frame:SetFrameStrata("HIGH")
@@ -225,7 +221,6 @@ function Board.Create()
         local point, _, relPoint, x, y = self:GetPoint()
         ns.db.boardPoint = { point, relPoint, x, y }
     end)
-    Backdrop(frame)
     local p = ns.db.boardPoint
     if p then
         frame:SetPoint(p[1], UIParent, p[2], p[3], p[4])
@@ -233,40 +228,59 @@ function Board.Create()
         frame:SetPoint("CENTER", UIParent, "CENTER", 0, 60)
     end
 
-    frame.title = frame:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
-    frame.title:SetPoint("TOPLEFT", PAD, -10)
-    frame.title:SetText("Totem Council")
+    -- title, portrait and close button come with the template when it loaded
+    local function Child(t, key)
+        local v = type(t) == "table" and rawget(t, key) or nil
+        return type(v) == "table" and v or nil
+    end
+    local titleText = Child(Child(frame, "TitleContainer"), "TitleText")
+    if titleText then
+        titleText:SetText("Totem Council")
+        frame.title = titleText
+    else
+        frame.title = frame:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+        frame.title:SetPoint("TOP", 0, -16)
+        frame.title:SetText("Totem Council")
+    end
+    local portrait = Child(Child(frame, "PortraitContainer"), "portrait")
+    if portrait then
+        if SetPortraitToTexture then
+            pcall(SetPortraitToTexture, portrait, ICON)     -- round, like every portrait panel
+        else
+            portrait:SetTexture(ICON)
+        end
+    end
+    frame.close = Child(frame, "CloseButton") or CreateFrame("Button", nil, frame, "UIPanelCloseButton")
+    if not Child(frame, "CloseButton") then frame.close:SetPoint("TOPRIGHT", -4, -4) end
 
-    frame.close = CreateFrame("Button", nil, frame, "UIPanelCloseButton")
-    frame.close:SetPoint("TOPRIGHT", 2, 2)
-
+    -- column headings: gold, like every list heading in the game
     for index, slot in ipairs(ns.SLOT_ORDER) do
         local el = ns.ELEMENTS[slot]
         local h = frame:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
-        h:SetPoint("TOP", frame, "TOPLEFT", PAD + NAME_W + (index - 1) * COL_W + COL_W / 2, -36)
+        h:SetPoint("BOTTOM", frame, "TOPLEFT", PAD + NAME_W + (index - 1) * COL_W + COL_W / 2, -(ROWS_TOP - 6))
         h:SetText(el.name)
-        h:SetTextColor(el.color[1], el.color[2], el.color[3])
     end
 
     frame.empty = frame:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
-    frame.empty:SetPoint("TOPLEFT", PAD, -58)
+    frame.empty:SetPoint("TOPLEFT", PAD, -(ROWS_TOP + 6))
     frame.empty:SetWidth(WIDTH - PAD * 2)
     frame.empty:SetJustifyH("LEFT")
     frame.empty:SetText("No shamans in your group yet.\n\nWhen another shaman joins, their totems show up here: their plan if they have Totem Council, otherwise whatever they are seen dropping. Totems planned twice in one group turn red.\n\n/totems demo adds two pretend shamans so you can try it.")
 
     frame.status = frame:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
-    frame.status:SetPoint("BOTTOMLEFT", PAD, 40)
+    frame.status:SetPoint("BOTTOMLEFT", PAD, BAR_H + 8)
     frame.status:SetWidth(WIDTH - PAD * 2)
     frame.status:SetJustifyH("LEFT")
 
+    -- buttons sit in the template's bottom bar, like the game's panels
     frame.resolve = MakeButton(frame, "Sort it out", 110)
-    frame.resolve:SetPoint("BOTTOMLEFT", PAD, 12)
+    frame.resolve:SetPoint("BOTTOMLEFT", 6, 4)
     frame.resolve:SetScript("OnClick", function() ns.Safe(ns.Group.Propose) end)
     frame.resolve:SetScript("OnEnter", function(self)
         GameTooltip:SetOwner(self, "ANCHOR_TOP")
         GameTooltip:AddLine("Sort it out")
         GameTooltip:AddLine("Works out a plan with no totem dropped twice in one group and sends it to every shaman with Totem Council. Each one accepts or declines their own change.", 1, 1, 1, true)
-        GameTooltip:AddLine("Shamans without the addon keep their totems; otherwise the one earlier in the alphabet keeps theirs and the other moves to the first free totem in their menu.", 0.6, 0.6, 0.6, true)
+        GameTooltip:AddLine("Shamans without the addon keep their totems; otherwise the one earlier in the alphabet keeps theirs and the other moves to the first free totem in their menu.", GRAY[1], GRAY[2], GRAY[3], true)
         GameTooltip:Show()
     end)
     frame.resolve:SetScript("OnLeave", function() GameTooltip:Hide() end)
@@ -282,8 +296,13 @@ function Board.Create()
     end)
     frame.announce:SetScript("OnLeave", function() GameTooltip:Hide() end)
 
+    if not ok then
+        -- the plain dialog box has a thick border: keep the buttons off it
+        frame.resolve:SetPoint("BOTTOMLEFT", 16, 14)
+    end
+
     frame.hint = frame:CreateFontString(nil, "OVERLAY", "GameFontDisableSmall")
-    frame.hint:SetPoint("TOPRIGHT", -30, -15)
+    frame.hint:SetPoint("TOPRIGHT", -PAD, -30)
     frame.hint:SetText("click a totem to change it")
 
     frame:SetScript("OnShow", function() ns.Safe(Board.Refresh) end)
@@ -329,15 +348,17 @@ function Board.Refresh()
         local m = list[i]
         local row = rows[i] or CreateRow(i)
         row.name:SetText(m.name)
-        if m.isPlayer then row.name:SetTextColor(1, 1, 1) else row.name:SetTextColor(0.0, 0.55, 1.0) end
+        -- the player in white, other shamans in the game's shaman class colour
+        local nc = m.isPlayer and C.white or C.shaman
+        row.name:SetTextColor(nc[1], nc[2], nc[3])
         local sub = SubLabel(m, inRaid)
         local vote = prop and prop.lines[m.name] and prop.votes[m.name]
         if vote == "y" then
-            sub = sub .. " - |cff40ff40accepted|r"
+            sub = sub .. " - " .. ns.Paint("green", "accepted")
         elseif vote == "n" then
-            sub = sub .. " - |cffff6060declined|r"
+            sub = sub .. " - " .. ns.Paint("red", "declined")
         elseif prop and prop.lines[m.name] and not prop.doneAt then
-            sub = sub .. " - |cff4d99ffasked|r"
+            sub = sub .. " - " .. ns.Paint("blue", "asked")
         end
         row.sub:SetText(sub)
         local line = prop and not prop.doneAt and prop.lines[m.name]
@@ -358,13 +379,11 @@ function Board.Refresh()
             c.icon:SetDesaturated(G.Fixed(m))
             local conflict = G.conflictMap[m.name] and G.conflictMap[m.name][slot]
             if proposed then
-                c.border:SetColorTexture(BLUE[1], BLUE[2], BLUE[3], 1)
-                c.border:Show()
+                ns.SetBorder(c, "proposed", BLUE, 1)
             elseif conflict then
-                c.border:SetColorTexture(RED[1], RED[2], RED[3], 1)
-                c.border:Show()
+                ns.SetBorder(c, "conflict", RED, 1)
             else
-                c.border:Hide()
+                ns.SetBorder(c, nil)
             end
             local live = m.isPlayer and ns.active[slot] or m.seen[slot]
             if live then
@@ -382,23 +401,25 @@ function Board.Refresh()
     frame.empty:SetShown(alone)
     if alone then
         frame.empty:ClearAllPoints()
-        frame.empty:SetPoint("TOPLEFT", frame, "TOPLEFT", PAD, -(58 + shown * ROW_H))
+        frame.empty:SetPoint("TOPLEFT", frame, "TOPLEFT", PAD, -(ROWS_TOP + 6 + shown * ROW_H))
     end
     local others = G.OtherShamans()
     local status
     if prop and not prop.doneAt then
         local yes, total = G.ProposalProgress()
-        status = ("|cff4d99ffProposal from %s: %d of %d accepted.|r Blue outlines show the proposed changes."):format(prop.from, yes, total)
+        status = ns.Paint("blue", ("Proposal from %s: %d of %d accepted."):format(prop.from, yes, total))
+            .. " Blue borders show the proposed changes."
     elseif others == 0 then
         status = ""
     elseif G.conflictCount > 0 then
-        status = ("|cffff5050%d totem(s) planned twice in one group.|r Red outlines mark them."):format(G.conflictCount)
+        status = ns.Paint("red", ("%d totem(s) planned twice in one group."):format(G.conflictCount))
+            .. " Red borders mark them."
     else
-        status = "|cff40ff40No conflicts.|r Every group gets each totem once."
+        status = ns.Paint("green", "No conflicts.") .. " Every group gets each totem once."
     end
     if #list > MAX_ROWS then status = status .. (" (+%d more shamans not shown)"):format(#list - MAX_ROWS) end
     local blocked = others > 0 and G.CommsProblem()
-    if blocked then status = status .. "\n|cffaaaaaaPlans can't sync: " .. blocked .. ".|r" end
+    if blocked then status = status .. "\n" .. ns.Paint("gray", "Plans can't sync: " .. blocked .. ".") end
     frame.status:SetText(status)
     frame.resolve:SetEnabled(others > 0)
     frame.announce:SetEnabled(others > 0)
@@ -407,5 +428,5 @@ function Board.Refresh()
     if alone then
         body = math.max(body, shown * ROW_H + (frame.empty:GetStringHeight() or 90) + 12)
     end
-    frame:SetHeight(52 + body + 84)
+    frame:SetHeight(ROWS_TOP + body + STATUS_H + BAR_H + 8)
 end
