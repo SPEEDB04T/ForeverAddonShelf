@@ -1,5 +1,9 @@
 # Changelog
 
+## 1.1.1
+
+- Updating from 1.0.0 adds a new file (Ads.lua), so restart the game once: quit and start it again, because /reload is not enough. Until then the ready-made ads stay away and your own ad lines are used.
+
 ## 1.1.0
 
 - Ready-made ads: every piece on the slutmog list (all 166 items Slutmog Scout knows) has five ads written for it, about its name, its cut and where it comes from, with jokes that fit an RP server. Cheeky, never explicit. Your request's ad stays in the Tyrant's Legplates' turns.
