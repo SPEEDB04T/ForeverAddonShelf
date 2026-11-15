@@ -125,11 +125,31 @@ end
 
 -- listedOnly starts on: the Market list shows what can be bought now
 local state = { tab = "market", armor = "all", listedOnly = true, freshOnly = false, sortKey = "value", sortAsc = false, farmItem = nil,
-  reviewShow = "todo", reviewSel = nil, reviewIndex = 1, reviewPage = 1, female = true, wholeBody = false }
+  reviewShow = "todo", reviewSel = nil, reviewIndex = 1, reviewPage = 1, female = true, wholeBody = false, marketPage = 1 }
 local win, marketView, farmView, measuredView, reviewView, statusText, scanButton, farmHeader, farmClear, listedCheck, listedText
 local sellView, sellMoney
 local levelBox
 local ReviewSelected, ReviewMoveView -- the review grid's view helpers, defined further down
+local RefreshMarketGrid -- the Market tab's model grid, defined after the model helpers
+local Refresh
+
+-- The Market tab shows its pieces as models, as the Appearances window does,
+-- or as the auction house's list. Saved; models by default (SuccuDev,
+-- 2026-11-15: "feels like scout woudl be better served with a grid visual preview ui").
+function ns.MarketGrid()
+  return not (ns.db and ns.db.opts and ns.db.opts.marketList)
+end
+
+function ns.SetMarketGrid(on)
+  ns.db.opts.marketList = (not on) or nil
+  state.marketPage = 1
+  Refresh()
+end
+
+-- the grid has no column headers: its sorts are in the filter menu, each in
+-- the direction a player wants first
+local GRID_SORTS = { { "value", "Worth", false }, { "low", "Lowest price", true }, { "rating", "Rating", false },
+  { "farm", "Farm time", true }, { "name", "Name", true } }
 local filterButton, dealsCheck, dealsText, croppedCheck, croppedText, commonCheck, commonText
 local tabButtons, armorButtons, headerText = {}, {}, {}
 
@@ -359,8 +379,6 @@ local function SearchAuctionHouse(name)
     ns.Print("Could not fill in the auction house search box. Search for \"" .. name .. "\" by hand.")
   end
 end
-
-local Refresh
 
 local function OnItemClick(id, button)
   local it = ns.Items()[id]
@@ -643,6 +661,21 @@ local function RefreshMarket()
       end
       lines[#lines + 1] = d
     end
+  end
+  local grid = ns.MarketGrid()
+  if marketView.gridMode ~= grid then
+    marketView.gridMode = grid
+    -- the inset starts under the column headers; the grid has none
+    marketView.inset:ClearAllPoints()
+    marketView.inset:SetPoint("TOPLEFT", 0, grid and 0 or -19)
+    marketView.inset:SetPoint("BOTTOMRIGHT", 0, 0)
+  end
+  marketView.headers:SetShown(not grid)
+  marketView.list.scroll:SetShown(not grid)
+  marketView.grid:SetShown(grid)
+  if grid then
+    lines = {}
+    RefreshMarketGrid(data, nFresh, ahOpen)
   end
   marketView.list:SetCount(#lines)
   for i, d in ipairs(lines) do
@@ -1104,6 +1137,73 @@ local function DressModel(tile, id)
       item:ContinueOnItemLoad(dress)
     end
   end
+end
+
+-------------------------------------------------------------------------------
+-- Market tab, models view: the Appearances window's grid of models
+-- (WardrobeItemsModelTemplate in Blizzard_Collections/Classic/
+-- Blizzard_Wardrobe.xml, branch forever): 78 x 104 models 16 px apart, its
+-- border, hover border and NEW tag, paged with the collections' page arrows
+-- and the wheel. Under each model the lowest price, and Buy while the auction
+-- house is open. The models wear the Review tab's framing.
+-------------------------------------------------------------------------------
+local MARKET_COLS, MARKET_ROWS = 9, 3
+local MARKET_PER_PAGE = MARKET_COLS * MARKET_ROWS
+local TILE_W, TILE_H, TILE_GAP = 78, 104, 16
+local MARKET_TOP, MARKET_PITCH = 22, 134 -- room for the NEW tag above a model and the price under it
+local FRESH_TAG = { new = "NEW", cheaper = "CHEAPER" }
+ns.MARKET_PER_PAGE = MARKET_PER_PAGE
+
+RefreshMarketGrid = function(data, nFresh, ahOpen)
+  local grid = marketView.grid
+  local pages = math.max(1, math.ceil(#data / MARKET_PER_PAGE))
+  local page = math.min(pages, math.max(1, state.marketPage or 1))
+  state.marketPage = page
+  local first = (page - 1) * MARKET_PER_PAGE
+  for i, tile in ipairs(grid.tiles) do
+    local d = data[first + i]
+    tile.id = d and d.id or nil
+    tile:SetShown(d ~= nil)
+    if d then
+      tile.entry = { id = d.id, src = d.it }
+      local tag = d.fresh and FRESH_TAG[d.fresh] or nil
+      tile.newText:SetText(tag or "")
+      tile.newText:SetShown(tag ~= nil)
+      tile.newGlow:SetShown(tag ~= nil and tile.newGlow.smogArt == true)
+      local listed = d.info.low ~= nil
+      tile.price:SetText(listed and ns.Money(d.info.low) or Grey(d.info.qty and "none" or "?"))
+      local buy = listed and ahOpen and true or false
+      tile.buyButton:SetShown(buy)
+      tile.price:ClearAllPoints()
+      if buy then
+        -- price and Buy side by side, together as wide as a model and its gap
+        tile.price:SetPoint("TOPRIGHT", tile, "BOTTOM", 6, -9)
+        tile.price:SetWidth(50)
+        tile.price:SetJustifyH("RIGHT")
+      else
+        tile.price:SetPoint("TOP", tile, "BOTTOM", 0, -9)
+        tile.price:SetWidth(TILE_W + TILE_GAP - 2)
+        tile.price:SetJustifyH("CENTER")
+      end
+      if tile.shownId ~= d.id or tile.shownFemale ~= state.female then
+        tile.shownId, tile.shownFemale = d.id, state.female
+        DressModel(tile, d.id)
+      else
+        FrameModel(tile)
+      end
+    else
+      tile.entry, tile.shownId = nil, nil
+    end
+  end
+  grid.pageText:SetText(("Page %d/%d"):format(page, pages))
+  grid.prev:SetEnabled(page > 1)
+  grid.next:SetEnabled(page < pages)
+  grid.freshText:SetText(nFresh > 0 and not state.freshOnly and ("%d new or cheaper, shown first"):format(nFresh) or "")
+end
+
+local function MarketGridPage(delta)
+  state.marketPage = (state.marketPage or 1) + delta
+  Refresh()
 end
 
 -- the pieces the grid shows now, kept for the page buttons and the keys
@@ -1735,6 +1835,30 @@ local function CreateFilterDropdown()
         state.freshOnly = not state.freshOnly
         Refresh()
       end)
+      root:QueueSpacer()
+      root:CreateTitle("View")
+      root:CreateRadio("Models", function()
+        return ns.MarketGrid()
+      end, function()
+        ns.SetMarketGrid(true)
+      end, "models")
+      root:CreateRadio("List", function()
+        return not ns.MarketGrid()
+      end, function()
+        ns.SetMarketGrid(false)
+      end, "list")
+      if ns.MarketGrid() then
+        root:QueueSpacer()
+        root:CreateTitle("Sort by")
+        for _, def in ipairs(GRID_SORTS) do
+          root:CreateRadio(def[2], function()
+            return state.sortKey == def[1]
+          end, function()
+            state.sortKey, state.sortAsc, state.marketPage = def[1], def[3], 1
+            Refresh()
+          end, def[1])
+        end
+      end
     end
     if state.tab == "review" then
       root:QueueSpacer()
@@ -2235,6 +2359,155 @@ local function CreateReviewView()
   end)
 end
 
+local function CreateMarketGrid()
+  local grid = CreateFrame("Frame", nil, marketView)
+  grid:SetAllPoints()
+  grid:Hide()
+  marketView.grid = grid
+  local left = math.floor((WIN_W - 9 - MARKET_COLS * TILE_W - (MARKET_COLS - 1) * TILE_GAP) / 2)
+  local framed = HasAtlas("transmog-wardrobe-border-collected") and HasAtlas("transmog-wardrobe-border-highlighted")
+  grid.tiles = {}
+  for i = 1, MARKET_PER_PAGE do
+    local col, row = (i - 1) % MARKET_COLS, math.floor((i - 1) / MARKET_COLS)
+    local tile = CreateFrame("Button", nil, grid)
+    tile.smogRow = true -- an open tooltip follows the tile's piece on a redraw
+    tile.smogOwnTooltip = true -- the tooltip gets the list line's full text, once
+    tile:SetSize(TILE_W, TILE_H)
+    tile:SetPoint("TOPLEFT", left + col * (TILE_W + TILE_GAP), -(MARKET_TOP + row * MARKET_PITCH))
+    pcall(tile.RegisterForClicks, tile, "LeftButtonUp", "RightButtonUp")
+    if framed then
+      -- the journal's model has a black background under its border
+      local bg = tile:CreateTexture(nil, "BACKGROUND")
+      bg:SetAllPoints()
+      pcall(bg.SetColorTexture, bg, 0, 0, 0)
+    else
+      MakeInset(tile):SetAllPoints()
+    end
+    local model = TryCreate("DressUpModel", nil, tile)
+    if model then
+      model:SetAllPoints()
+      pcall(model.EnableMouse, model, false) -- clicks go to the tile
+      tile.model = model
+      -- dressed again each time it shows, and once its body has loaded (see
+      -- the Review grid)
+      pcall(model.SetScript, model, "OnShow", function()
+        local p = tile.entry
+        if p then
+          tile.shownId, tile.shownFemale = p.id, state.female
+          DressModel(tile, p.id)
+        end
+      end)
+      pcall(model.SetScript, model, "OnModelLoaded", function()
+        local p = tile.entry
+        if p and tile.wantId == p.id then
+          pcall(model.Undress, model)
+          pcall(model.TryOn, model, "item:" .. p.id)
+          FrameModel(tile)
+        end
+      end)
+    end
+    -- the border, hover border and NEW tag draw over the model, as on the
+    -- journal's model
+    local over = CreateFrame("Frame", nil, tile)
+    over:SetAllPoints()
+    pcall(over.SetFrameLevel, over, (tonumber(tile:GetFrameLevel()) or 1) + 2)
+    tile.hl = false
+    if framed then
+      local border = over:CreateTexture(nil, "OVERLAY", nil, -1)
+      border:SetAtlas("transmog-wardrobe-border-collected", true)
+      border:SetPoint("CENTER", 0, -3)
+      local hl = over:CreateTexture(nil, "OVERLAY", nil, 2)
+      hl:SetAtlas("transmog-wardrobe-border-highlighted", true)
+      hl:SetBlendMode("ADD")
+      hl:SetPoint("CENTER")
+      hl:Hide()
+      tile.hl = hl
+    end
+    tile.newText = over:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
+    tile.newText:SetPoint("TOP", 0, 8)
+    tile.newText:SetJustifyH("CENTER")
+    tile.newText:SetWordWrap(false)
+    if NEW_FEATURE_SHADOW_COLOR and NEW_FEATURE_SHADOW_COLOR.GetRGBA then
+      pcall(function()
+        tile.newText:SetShadowColor(NEW_FEATURE_SHADOW_COLOR:GetRGBA())
+      end)
+    end
+    tile.newText:Hide()
+    tile.newGlow = over:CreateTexture(nil, "OVERLAY", nil, 1)
+    tile.newGlow:SetPoint("TOPLEFT", tile.newText, "TOPLEFT", -20, 10)
+    tile.newGlow:SetPoint("BOTTOMRIGHT", tile.newText, "BOTTOMRIGHT", 20, -10)
+    tile.newGlow.smogArt = HasAtlas("collections-newglow") and true or false
+    if tile.newGlow.smogArt then
+      tile.newGlow:SetAtlas("collections-newglow")
+    end
+    tile.newGlow:Hide()
+    tile.price = tile:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+    tile.price:SetPoint("TOP", tile, "BOTTOM", 0, -9)
+    tile.price:SetWordWrap(false)
+    local buy = CreateFrame("Button", nil, tile, "UIPanelButtonTemplate")
+    buy:SetSize(36, 18)
+    buy:SetPoint("LEFT", tile.price, "RIGHT", 3, 0)
+    buy:SetText("Buy")
+    buy:SetScript("OnClick", function(self)
+      local id = self:GetParent().id
+      if id then
+        ns.StartPurchase(id)
+      end
+    end)
+    buy:SetScript("OnEnter", function(self)
+      GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
+      GameTooltip:SetText("Buy")
+      GameTooltip:AddLine("Finds the cheapest copy. You confirm before anything is bought.", 1, 1, 1, true)
+      GameTooltip:Show()
+    end)
+    buy:SetScript("OnLeave", GameTooltip_Hide)
+    buy:Hide()
+    tile.buyButton = buy
+    tile:SetScript("OnEnter", function(self)
+      if self.hl then
+        self.hl:Show()
+      end
+      if self.id then
+        ShowItemTooltip(self, self.id)
+      end
+    end)
+    tile:SetScript("OnLeave", function(self)
+      if self.hl then
+        self.hl:Hide()
+      end
+      GameTooltip_Hide()
+    end)
+    -- what a list line's click does: the farm guide; right-click searches
+    -- the auction house, ctrl-click the dressing room, shift-click links
+    tile:SetScript("OnClick", function(self, button)
+      if self.id then
+        OnItemClick(self.id, button)
+      end
+    end)
+    tile:Hide()
+    grid.tiles[i] = tile
+  end
+  -- paging as in the journal (CollectionsPagingFrameTemplate): the page text
+  -- 11 px left of the arrows, under the middle of the grid; the wheel pages
+  grid.prev = PageArrow(grid, "Prev", function()
+    MarketGridPage(-1)
+  end)
+  grid.prev:SetPoint("BOTTOMLEFT", grid, "BOTTOM", 6, 8)
+  grid.next = PageArrow(grid, "Next", function()
+    MarketGridPage(1)
+  end)
+  grid.next:SetPoint("LEFT", grid.prev, "RIGHT", 3, 0)
+  grid.pageText = grid:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+  grid.pageText:SetPoint("RIGHT", grid.prev, "LEFT", -11, 0)
+  grid.freshText = grid:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+  grid.freshText:SetPoint("BOTTOMLEFT", 12, 16)
+  grid.freshText:SetJustifyH("LEFT")
+  pcall(grid.EnableMouseWheel, grid, true)
+  grid:SetScript("OnMouseWheel", function(_, delta)
+    MarketGridPage(delta > 0 and -1 or 1)
+  end)
+end
+
 -- The Sell tab's row: the auction house's list line, with a Post or Cancel
 -- button in its last cell.
 local function BuildSellRow(parent)
@@ -2671,6 +2944,7 @@ local function CreateWindow()
   marketView.inset:SetPoint("TOPLEFT", 0, -19)
   marketView.inset:SetPoint("BOTTOMRIGHT", 0, 0)
   local headers = CreateMarketHeaders()
+  marketView.headers = headers
   marketView.list = CreateList(marketView, ROW_H, BuildMarketRow)
   marketView.list.scroll:SetPoint("TOPLEFT", headers, "BOTTOMLEFT", 0, -6)
   marketView.list.scroll:SetPoint("RIGHT", headers, "RIGHT", 0, 0)
@@ -2709,6 +2983,7 @@ local function CreateWindow()
   measuredView.empty:SetText("Nothing measured yet. Loot mobs anywhere and this tab fills in by itself.")
 
   CreateReviewView()
+  CreateMarketGrid()
   CreateSellView()
 
   win:SetScript("OnShow", Refresh)

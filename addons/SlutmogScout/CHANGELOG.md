@@ -1,5 +1,17 @@
 # Changelog
 
+## 1.17.0
+
+- **The Market tab shows models.** Each piece is a model on your body in a grid like the
+  Appearances window's, 27 to a page, with its lowest price under it. Turn the pages with the
+  arrows or the mouse wheel.
+- **Click, hover and Buy work as on the list.** Hover for the tooltip, click for the farm guide,
+  right-click to search the auction house, ctrl-click for the dressing room. Buy shows under a
+  listed piece while the auction house is open.
+- **New and cheaper pieces come first, tagged NEW or CHEAPER.**
+- **Filter > View > List** brings back the auction house list; your choice is kept. While the grid
+  shows, Filter > Sort by sorts it.
+
 ## 1.16.1
 
 - **Slutmog Shop can see when you're undercut.** Other addons can now read the lowest price other
