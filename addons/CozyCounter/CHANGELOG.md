@@ -1,5 +1,10 @@
 # Changelog
 
+## 1.1.1 (2026-11-14)
+
+- Option labels shortened to fit on one line; the rest of each sentence moved into its tip.
+- The options window and the minimap button were redrawn by the shared kit: they now copy the game's own Options rows and its round minimap button.
+
 ## 1.1.0 (2026-11-14)
 
 - The reminder icons are now the game's own buff icon (AuraButtonArtTemplate: 30 px, 5 px apart, buff frame strata), greyed out for a missing buff. Gone: the resized action-button frame, its highlight and pushed art, the "1/3" printed on the icon (the bag shows its stack count only from 2, as the buff does) and the "Lost this session" line under the row (it is in the tooltip, the minimap tooltip and /cozy).

@@ -15,21 +15,22 @@ local function Pct(v) return ("%d%%"):format(v) end
 local function Rows()
     return {
         { kind = "header", text = "Reminders" },
-        { kind = "check", label = "Remind me of Well Fed (cooked food)",
-          tip = "An icon while you are not Well Fed. Cooked food gives more experience from kills.",
+        { kind = "check", label = "Remind me of Well Fed",
+          tip = "Well Fed comes from cooked food. An icon while you are not Well Fed. Cooked food gives more experience from kills.",
           get = GetRemind("food"), set = SetRemind("food") },
-        { kind = "check", label = "Remind me of Well-Rested (sleeping bag)",
-          tip = "An icon while you have fewer Well-Rested stacks than the most there are. Lie down in your "
+        { kind = "check", label = "Remind me of Well-Rested",
+          tip = "Well-Rested comes from the Cozy Sleeping Bag. An icon while you have fewer Well-Rested stacks than the most there are. Lie down in your "
               .. "Cozy Sleeping Bag for a minute a stack.",
           get = GetRemind("bag"), set = SetRemind("bag") },
-        { kind = "check", label = "Only once I carry a Cozy Sleeping Bag",
-          tip = "Without one there is nothing to lie down in, so no icon. What it costs is still counted.",
+        { kind = "check", label = "Only if I carry the bag",
+          tip = "Shows the Well-Rested icon only once you carry a Cozy Sleeping Bag. Without one there is nothing to lie down in, so no icon. What it costs is still counted.",
           get = Get("needBag"), set = Set("needBag") },
-        { kind = "check", label = "Remind me of the Camp Tent's rest (campfire)",
-          tip = "An icon while your rested XP is below what a Camp Tent gives and you have not had the tent's "
+        { kind = "check", label = "Remind me of the Camp Tent",
+          tip = "The Camp Tent at a campfire tops up your rested XP. An icon while your rested XP is below what a Camp Tent gives and you have not had the tent's "
               .. "top-up this hour (no Boosted Rest).",
           get = GetRemind("camp"), set = SetRemind("camp") },
-        { kind = "check", label = "No reminders in an inn or a city",
+        { kind = "check", label = "None in inns or cities",
+          tip = "No reminder icons while you are in an inn or a city.",
           get = Get("hideResting"), set = Set("hideResting") },
         { kind = "check", label = "Lock the icons in place",
           tip = "Unlocked, drag an icon to move them. Same as /cozy lock and /cozy unlock.",
@@ -54,14 +55,15 @@ local function Rows()
           get = Get("bagPct"), set = Set("bagPct") },
         { kind = "slider", label = "Well-Rested: most stacks", min = 1, max = 5, step = 1,
           get = Get("bagStacks"), set = Set("bagStacks") },
-        { kind = "check", label = "Well-Rested raises quest XP too",
+        { kind = "check", label = "Well-Rested counts on quests",
           tip = "The buff says \"experience gains\", so quests and exploration count as well. Untick if the game "
               .. "shows it is kills only.",
           get = Get("bagQuests"), set = Set("bagQuests") },
         { kind = "slider", label = "Camp Tent: rest given", min = 0, max = 25, step = 1,
           format = function(v) return ("%d%% of a level"):format(v) end,
           get = Get("campShare"), set = Set("campShare") },
-        { kind = "check", label = "Say at every level-up what missing buffs cost",
+        { kind = "check", label = "Report at every level-up",
+          tip = "A chat line at every level-up saying how much XP missing buffs cost you on that level.",
           get = Get("levelReport"), set = Set("levelReport") },
         { kind = "buttons", buttons = {
             { label = "Print what I lost", click = function() ns.PrintSummary() end },

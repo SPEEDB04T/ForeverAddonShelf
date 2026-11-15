@@ -31,7 +31,7 @@ How the loss is worked out, per XP gain:
 
 1. The kill line in chat gives the XP and its rested part (`+N exp Rested bonus`). Other XP (quests, exploration) is read from the XP bar.
 2. The part that is not rested is divided by (1 + the percent of the buffs you had) to get the base XP.
-3. Well Fed missing: base x 5% (kills only). Well-Rested short of 3 stacks: base x 1% per missing stack (kills, and quests too unless you untick "Well-Rested raises quest XP too": the buff only says "experience gains"). Buffs are assumed to add up, not multiply.
+3. Well Fed missing: base x 5% (kills only). Well-Rested short of 3 stacks: base x 1% per missing stack (kills, and quests too unless you untick "Well-Rested counts on quests": the buff only says "experience gains"). Buffs are assumed to add up, not multiply.
 4. Camp Tent missing: the counter pretends you sat at a tent the moment you needed it, once an hour: it would have topped your rested XP up to 5% of a level, and rested XP doubles a kill's base XP until it runs out. Whatever part of a kill your own rested XP did not double comes out of that pretend pool, as lost.
 
 Every percent is a slider in the options. The food and bag percents are learned from the buff tooltips when they say a number, unless you set them yourself.
