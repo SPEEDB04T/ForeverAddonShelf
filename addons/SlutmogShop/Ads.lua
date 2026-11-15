@@ -6,43 +6,51 @@ local _, ns = ...
 
 ns.AD_POOLS = {
     general = {
-        "Warlock's succubus keeps drawing all your group's attention? Take it back. {item}, {price} at {shop}.",
-        "Tired of being respected for your personality? {shop} has {item} for {price}.",
-        "Refunds if nobody looks. We have never paid one. ~ {shop} ~ {item}, {price}.",
-        "For the woman who has everything and would like people to see it. {item}, {price} at {shop}.",
+        "You'll be looking at her from behind for 300 hours. Choose the view. {item}, {price} at {shop}.",
+        "Warlock's succubus keeps drawing all your group's attention? Take it back. {shop} has {item} for {price}.",
+        "Tired of being respected for your personality? ~ {shop} ~ {item}, {price}.",
+        "You've already ctrl-clicked {item}. We both know how this ends. {price} at {shop}.",
+        "Refunds if nobody looks. We have never paid one. {shop} has {item} for {price}.",
+        "For the woman who has everything and would like people to see it. ~ {shop} ~ {item}, {price}.",
+        "You didn't roll a female character for the casting animations. {item}, {price} at {shop}.",
         "Keep getting ganked, never getting camped? Give them a reason to stay. {shop} has {item} for {price}.",
         "Are people still making eye contact with you? We can fix that. ~ {shop} ~ {item}, {price}.",
-        "Barely worn. That's how it's worn. {item}, {price} at {shop}.",
-        "You're not paying for the material. Obviously. {shop} has {item} for {price}.",
-        "He says he likes you for your mind. Test that. ~ {shop} ~ {item}, {price}.",
+        "'It's for the collection.' Of course it is. {item}, {price} at {shop}.",
+        "Barely worn. That's how it's worn. {shop} has {item} for {price}.",
+        "You're not paying for the material. Obviously. ~ {shop} ~ {item}, {price}.",
+        "One set for raiding, one for standing around in town. This is the second one. {item}, {price} at {shop}.",
+        "He says he likes you for your mind. Test that. {shop} has {item} for {price}.",
         "Ask your healer if {item} is right for you. {price} at {shop}.",
-        "Selling for a friend. The friend is me. {shop} has {item} for {price}.",
-        "Side effects include whispers, gifts and one very awkward guild meeting. ~ {shop} ~ {item}, {price}.",
-        "Not what you'd wear to meet his mother. What you'd wear to meet his father. {item}, {price} at {shop}.",
+        "If you're still reading this, you're the customer. {item}, {price} at {shop}.",
+        "Side effects include whispers, gifts and one very awkward guild meeting. {shop} has {item} for {price}.",
+        "Not what you'd wear to meet his mother. What you'd wear to meet his father. ~ {shop} ~ {item}, {price}.",
+        "Your main stays respectable. This is for the alt the guild doesn't know about. {item}, {price} at {shop}.",
         "You've tried a personality. Try this. {shop} has {item} for {price}.",
         "Priced by the inch. Very affordable. ~ {shop} ~ {item}, {price}.",
-        "Previous owner got two proposals and a guild kick. Like new. {item}, {price} at {shop}.",
-        "The guards asked us to take it out of the window. {shop} has {item} for {price}.",
-        "Dress for the job you want. We don't ask what job. ~ {shop} ~ {item}, {price}.",
-        "Why be the hero when you can be the reason he's late to the raid? {item}, {price} at {shop}.",
-        "It won't save your life. It'll make it more interesting. {shop} has {item} for {price}.",
+        "Forty minutes on her face at character creation. Don't stop at the neck. {item}, {price} at {shop}.",
+        "Previous owner got two proposals and a guild kick. Like new. {shop} has {item} for {price}.",
+        "The guards asked us to take it out of the window. ~ {shop} ~ {item}, {price}.",
+        "For Goldshire regulars. You know who you are, and so do we. {item}, {price} at {shop}.",
+        "Why be the hero when you can be the reason he's late to the raid? {shop} has {item} for {price}.",
         "Nine out of ten paladins recommend looking away. None of them did. ~ {shop} ~ {item}, {price}.",
-        "We both know there's a guy behind that night elf. You'll look anyway. {item}, {price} at {shop}.",
-        "Tested on our staff. Productivity has not recovered. {shop} has {item} for {price}.",
-        "Nobody ever wrote a song about sensible armor. ~ {shop} ~ {item}, {price}.",
-        "No lowballers. I know what I have, and so will everyone else. {item}, {price} at {shop}.",
+        "You already zoom the camera in. Give it something to look at. {item}, {price} at {shop}.",
+        "We both know there's a guy behind that night elf. You'll look anyway. {shop} has {item} for {price}.",
+        "Tested on our staff. Productivity has not recovered. ~ {shop} ~ {item}, {price}.",
+        "Tell the guild you lost a bet. We'll back you up. {item}, {price} at {shop}.",
         "Perfect for weddings. Not yours. {shop} has {item} for {price}.",
         "His wife thinks he logs on for the raid. ~ {shop} ~ {item}, {price}.",
-        "Covers the essentials. We decided what was essential. {item}, {price} at {shop}.",
-        "Our seamstress went home early that day. {shop} has {item} for {price}.",
-        "Not allowed in the Cathedral. We asked. ~ {shop} ~ {item}, {price}.",
-        "Two officers will gquit over you by Friday. {item}, {price} at {shop}.",
+        "Nobody inspects you for the stats. You don't inspect them for stats either. {item}, {price} at {shop}.",
+        "Covers the essentials. We decided what was essential. {shop} has {item} for {price}.",
+        "Our seamstress went home early that day. ~ {shop} ~ {item}, {price}.",
+        "You'd never wear it. She would, and you're the one who decides. {item}, {price} at {shop}.",
+        "Not allowed in the Cathedral. We asked. {shop} has {item} for {price}.",
+        "Two officers will gquit over you by Friday. ~ {shop} ~ {item}, {price}.",
+        "You see her on the login screen every single day. Make it a good day. {item}, {price} at {shop}.",
         "Has it been a while since anyone walked into a wall on your account? {shop} has {item} for {price}.",
-        "Suitable for every occasion you wouldn't tell your mother about. ~ {shop} ~ {item}, {price}.",
-        "The man who made it blushed. He's a dwarf who's been through two wars. {item}, {price} at {shop}.",
-        "Modesty is a virtue. We don't stock it. {shop} has {item} for {price}.",
+        "The man who made it blushed. He's a dwarf who's been through two wars. ~ {shop} ~ {item}, {price}.",
+        "'For roleplay.' We don't judge. We do sell a lot of it. {item}, {price} at {shop}.",
         "Why learn the fights? In {item} you get carried. {price} at {shop}.",
-        "Satisfaction guaranteed. Yours, theirs, we're not fussy. {item}, {price} at {shop}.",
+        "Satisfaction guaranteed. Yours, theirs, we're not fussy. ~ {shop} ~ {item}, {price}.",
     },
     plate = {
         "Hit 40 and finally allowed to wear plate? Congratulations. Here's hardly any. {shop} has {item} for {price}.",
@@ -133,17 +141,6 @@ ns.AD_POOLS = {
         "Long trousers with both hips cut out. Ankles covered, hips bare. ~ {shop} ~ {item}, {price}.",
         "Covers the ankles, which nobody asked for, and bares the hips, which they did. {item}, {price} at {shop}.",
         "For people who were told to put some pants on and found a loophole. {shop} has {item} for {price}.",
-    },
-    look_strap_harness = {
-        "Two {color} leather straps and a belt. The tooltip calls that a chest piece. {item}, {price} at {shop}.",
-        "We're not sure which way up it goes. Nobody has complained either way. {shop} has {item} for {price}.",
-        "Straps crossed over the chest and nothing at all between them. ~ {shop} ~ {item}, {price}.",
-        "We'd describe it, but there isn't much to describe. {item}, {price} at {shop}.",
-    },
-    look_suspenders = {
-        "Two straps down the front, a studded belt and some rings. That's the chest piece. {shop} has {item} for {price}.",
-        "It has rings on the front. What gets clipped to them is between you and your group. {item}, {price} at {shop}.",
-        "Straps placed just barely where they have to be. Don't sprint. {item}, {price} at {shop}.",
     },
     look_cod_leather = {
         "A studded leather panel on two straps. Front only. Think before you turn around. ~ {shop} ~ {item}, {price}.",
@@ -296,36 +293,10 @@ ns.AD_POOLS = {
 }
 
 ns.ITEM_ADS = {
-    -- Foreman Vest (cloth chest, level 6)
-    [10553] = {
-        "A brown bra top with a slit down it. Level 6 req, so your bank alt can wear it. ~ {shop} ~ {item}, {price}.",
-        "Your bank alt stands at the mailbox all day anyway. Give people a reason to stop. {item}, {price} at {shop}.",
-        pools = { "cloth", "chest", "lvl_low", "general" },
-    },
-    -- Ancestral Woollies (cloth legs, level 8)
-    [3291] = {
-        pools = { "look_bikini", "cloth", "legs", "lvl_low", "general" },
-        color = "grey-green fur",
-    },
-    -- Ancestral Tunic (cloth chest, level 8)
-    [3292] = {
-        pools = { "look_fur_halter", "cloth", "chest", "lvl_low", "general" },
-        color = "grey-green",
-    },
     -- Simple Blouse (cloth chest, level 10)
     [9749] = {
         pools = { "look_one_shoulder", "cloth", "chest", "lvl_low", "general" },
         color = "dark red",
-    },
-    -- Barbaric Loincloth (cloth legs, level 11)
-    [3309] = {
-        pools = { "look_bikini", "cloth", "legs", "lvl_low", "general" },
-        color = "dark fur",
-    },
-    -- Aboriginal Loincloth (cloth legs, level 12)
-    [14119] = {
-        pools = { "look_bikini", "cloth", "legs", "lvl_low", "general" },
-        color = "red-brown fur",
     },
     -- Barbaric Cloth Vest (cloth chest, level 13)
     [3310] = {
@@ -346,11 +317,6 @@ ns.ITEM_ADS = {
     [14120] = {
         pools = { "look_zigzag_robe", "cloth", "chest", "lvl_low", "general" },
         color = "coral",
-    },
-    -- Aboriginal Vest (cloth chest, level 15)
-    [14121] = {
-        pools = { "look_fur_halter", "cloth", "chest", "lvl_low", "general" },
-        color = "rust red",
     },
     -- Buccaneer's Vest (cloth chest, level 18)
     [14175] = {
@@ -411,16 +377,6 @@ ns.ITEM_ADS = {
         pools = { "look_bikini", "leather", "legs", "lvl_low", "general" },
         color = "dark red leather",
     },
-    -- Primal Wraps (leather chest, level 6)
-    [15010] = {
-        pools = { "look_strap_harness", "leather", "chest", "lvl_low", "general" },
-        color = "olive",
-    },
-    -- Gnoll War Harness (leather chest, level 10)
-    [1211] = {
-        pools = { "look_strap_harness", "leather", "chest", "lvl_low", "general" },
-        color = "olive",
-    },
     -- Grizzly Jerkin (leather chest, level 11)
     [15304] = {
         pools = { "look_underbust", "leather", "chest", "lvl_low", "general" },
@@ -431,11 +387,6 @@ ns.ITEM_ADS = {
         "Black fur, a gold chain for a belt and a garter on one thigh. {item}, {price} at {shop}.",
         "The gold chain sits low on the hips. Eyes follow the chain. {shop} has {item} for {price}.",
         pools = { "leather", "legs", "lvl_low", "general" },
-    },
-    -- Ceremonial Leather Harness (leather chest, level 13)
-    [3313] = {
-        pools = { "look_strap_harness", "leather", "chest", "lvl_low", "general" },
-        color = "brown",
     },
     -- Bard's Trousers (leather legs, level 13)
     [6553] = {
@@ -448,50 +399,20 @@ ns.ITEM_ADS = {
         pools = { "look_bikini", "leather", "legs", "lvl_low", "general" },
         color = "black leather",
     },
-    -- Feral Harness (leather chest, level 17)
-    [15311] = {
-        pools = { "look_strap_harness", "leather", "chest", "lvl_low", "general" },
-        color = "red",
-    },
-    -- Cutthroat's Vest (leather chest, level 29)
-    [15130] = {
-        pools = { "look_suspenders", "leather", "chest", "lvl_low", "general" },
-        color = "golden brown",
-    },
     -- Insignia Leggings (leather legs, level 30)
     [4054] = {
         pools = { "look_cod_leather", "leather", "legs", "lvl_low", "general" },
         color = "brown",
-    },
-    -- Spirewind Fetter (leather chest, level 30)
-    [9406] = {
-        pools = { "look_suspenders", "leather", "chest", "lvl_low", "general" },
-        color = "olive",
     },
     -- Insignia Chestguard (leather chest, level 31)
     [4057] = {
         pools = { "look_stud_top", "leather", "chest", "lvl_low", "general" },
         color = "Brown",
     },
-    -- Wolffear Harness (leather chest, level 31)
-    [13110] = {
-        pools = { "look_strap_harness", "leather", "chest", "lvl_low", "general" },
-        color = "red",
-    },
-    -- Headhunter's Armor (leather chest, level 31)
-    [15356] = {
-        pools = { "look_suspenders", "leather", "chest", "lvl_low", "general" },
-        color = "olive",
-    },
     -- Sentinel Trousers (leather legs, level 34)
     [7440] = {
         pools = { "look_bikini", "leather", "legs", "lvl_low", "general" },
         color = "olive fur",
-    },
-    -- Quillward Harness (leather chest, level 34)
-    [10583] = {
-        pools = { "look_suspenders", "leather", "chest", "lvl_low", "general" },
-        color = "golden brown",
     },
     -- Sentinel Breastplate (leather chest, level 35)
     [7439] = {
@@ -512,12 +433,6 @@ ns.ITEM_ADS = {
     [14601] = {
         pools = { "look_underbust", "leather", "chest", "lvl_low", "general" },
         color = "tan",
-    },
-    -- Tracker's Leggings (leather legs, level 41)
-    [9922] = {
-        "Green leggings with ring cutouts down the side, strapped shut where it matters. {shop} has {item} for {price}.",
-        "Skin shows through the rings all the way down the leg. People count them. ~ {shop} ~ {item}, {price}.",
-        pools = { "leather", "legs", "general" },
     },
     -- Scorpashi Leggings (leather legs, level 42)
     [14659] = {
@@ -760,11 +675,6 @@ ns.ITEM_ADS = {
         pools = { "look_garter", "mail", "legs", "mail_low", "lvl_low", "general" },
         color = "grey",
     },
-    -- Large Ogre Chain Armor (mail chest, level 25)
-    [914] = {
-        pools = { "look_padded_scoop", "mail", "chest", "mail_low", "lvl_low", "general" },
-        color = "brown",
-    },
     -- Double Link Tunic (mail chest, level 25)
     [1717] = {
         pools = { "look_fringe_top", "mail", "chest", "mail_low", "lvl_low", "general" },
@@ -823,6 +733,10 @@ ns.ITEM_ADS = {
         "Blue steel, laced tight. Somebody is going to have to help you out of it. {shop} has {item} for {price}.",
         pools = { "mail", "chest", "mail_low", "lvl_low", "general" },
     },
+    -- Chief Brigadier Leggings (mail legs, level 35)
+    [4079] = {
+        pools = { "mail", "legs", "mail_low", "lvl_low", "general" },
+    },
     -- Marauder's Tunic (mail chest, level 35)
     [15567] = {
         "Red and grey plates linked by rings, with a gap between every plate. {item}, {price} at {shop}.",
@@ -854,11 +768,6 @@ ns.ITEM_ADS = {
     [7487] = {
         pools = { "look_scale_bikini_legs", "mail", "legs", "mail_low", "lvl_low", "general" },
         color = "Gold",
-    },
-    -- Ravager's Woolies (mail legs, level 38)
-    [14775] = {
-        pools = { "look_tiles", "mail", "legs", "mail_low", "lvl_low", "general" },
-        color = "brown",
     },
     -- Steadfast Breastplate (mail chest, level 38)
     [15591] = {
@@ -945,12 +854,6 @@ ns.ITEM_ADS = {
     [10230] = {
         pools = { "look_plate_bikini", "mail", "chest", "mail_high", "lvl_high", "general" },
         color = "bronze",
-    },
-    -- Impenetrable Legguards (mail legs, level 55)
-    [15665] = {
-        "They say nothing gets through it. Guildies will ask to test that. ~ {shop} ~ {item}, {price}.",
-        pools = { "look_chastity", "mail", "legs", "mail_high", "lvl_high", "general" },
-        color = "steel",
     },
     -- Hero's Leggings (mail legs, level 56)
     [8309] = {

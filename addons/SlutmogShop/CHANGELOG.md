@@ -1,5 +1,10 @@
 # Changelog
 
+## 1.3.3
+
+- New ads that talk to the person who buys this, the player behind the character: "You'll be looking at her from behind for 300 hours. Choose the view.", "You didn't roll a female character for the casting animations.", "If you're still reading this, you're the customer.", "'It's for the collection.' Of course it is." Fifteen of them, mixed in with the rest; seven weaker lines are gone.
+- The ads follow Slutmog Scout's current list: the 19 pieces it took off have no ads any more, and the 16 it added have them (the shared ones for now). 148 pieces, 16 to 23 ads each.
+
 ## 1.3.2
 
 - The shared ads are rewritten once more, this time in the shop's own voice: a shameless boutique owner writing straight-faced ad copy. No forced game puns. "Tired of being respected for your personality?", "Refunds if nobody looks. We have never paid one.", "Barely worn. That's how it's worn.", "Not what you'd wear to meet his mother. What you'd wear to meet his father."
