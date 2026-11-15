@@ -62,7 +62,7 @@ local db
 local floor, ceil, max, min = math.floor, math.ceil, math.max, math.min
 local issecret = issecretvalue
 
-local VERSION = "1.0.5"
+local VERSION = "1.0.6"
 if C_AddOns and C_AddOns.GetAddOnMetadata then
     local ok, v = pcall(C_AddOns.GetAddOnMetadata, ADDON_NAME, "Version")
     if ok and type(v) == "string" and v ~= "" and not (issecret and issecret(v)) then VERSION = v end
@@ -90,19 +90,25 @@ end
 ---------------------------------------------------------------------------
 -- Names and the group
 ---------------------------------------------------------------------------
--- Names on this realm are two words ("First Last"), and the server spells the
--- realm in a sender ("CAMWOWUS1Realm9RPPvP") unlike GetNormalizedRealmName()
--- ("RPPvP"). So a sender is never compared as a string: it is looked up in the
--- group by name, the realm only breaks a tie (see pitfalls.md, "Who sent an
--- addon message").
+-- Names on this client (pitfalls.md, "Names on this client"): UnitName gives two
+-- values, "Bunglfart", "Dunglode" (first name, then the surname where a realm
+-- would be), while a message's sender is "Bunglfart Dunglode" (a space, no
+-- realm). A server-sent realm, when there is one, follows a "-" and can be
+-- spelled unlike GetNormalizedRealmName(). So a sender is never compared with
+-- one string: each group unit's spellings are tried, the long one first.
 
--- A unit's name as the roster gives it: "First Last", or "First Last-Realm"
--- when the game gives a realm (another realm). The key for everything.
+-- A unit's spellings: "First Last" (when UnitName gives a second value) and "First".
+local function Spellings(unit)
+    local first, second = Ask(UnitName, unit)
+    if type(first) ~= "string" or first == "" then return nil end
+    if type(second) == "string" and second ~= "" then return first .. " " .. second, first, second end
+    return first, nil, nil
+end
+
+-- A unit's name for everything: shown to the player, put in messages, and the
+-- key for answers. "First Last", or the one name the game gives.
 local function Key(unit)
-    local name, realm = Ask(UnitName, unit)
-    if type(name) ~= "string" or name == "" then return nil end
-    if type(realm) == "string" and realm ~= "" then return name .. "-" .. realm end
-    return name
+    return (Spellings(unit))
 end
 
 local function Me() return Key("player") end
@@ -143,28 +149,39 @@ local function GroupUnits()
     return units
 end
 
+-- Does a sender match a spelling: the same, or the spelling and then "-realm".
+-- loose (the short pass only): also the spelling and then a space, for a unit
+-- the game gives only a first name for while the sender says "First Last".
+local function Matches(sender, spelling, loose)
+    if not spelling then return false end
+    local sep = sender:sub(#spelling + 1, #spelling + 1)
+    return sender == spelling or (sender:sub(1, #spelling) == spelling and (sep == "-" or (loose and sep == " ")))
+end
+
 -- A sender or a name out of a message -> the group unit it is, or nil.
--- "First Last-Any Realm": the part before the first "-" is the name (space and
--- all); one group member with that name is the one, whatever the realm says.
-local function UnitOf(full)
-    if type(full) ~= "string" or full == "" then return nil end
-    local who, realm = full:match("^(.-)%-(.*)$")
-    if not who or who == "" then who, realm = full, nil end
+-- Every unit's long spelling ("First Last") is tried before any short one
+-- ("First"); when two units still match, a realm after the "-" decides.
+local function UnitOf(sender)
+    if type(sender) ~= "string" or sender == "" then return nil end
+    local units, spell = GroupUnits(), {}
+    for i, unit in ipairs(units) do
+        local long, short, second = Spellings(unit)
+        spell[i] = { unit = unit, long = short and long or nil, short = short or long, second = second }
+    end
     local hits = {}
-    for _, unit in ipairs(GroupUnits()) do
-        local name, urealm = Ask(UnitName, unit)
-        if name == who then
-            if type(urealm) ~= "string" or urealm == "" then urealm = nil end
-            hits[#hits + 1] = { unit = unit, realm = urealm }
+    for _, s in ipairs(spell) do
+        if Matches(sender, s.long) then hits[#hits + 1] = { unit = s.unit, after = sender:sub(#s.long + 2), second = s.second } end
+    end
+    if #hits == 0 then
+        for _, s in ipairs(spell) do
+            if Matches(sender, s.short, true) then hits[#hits + 1] = { unit = s.unit, after = sender:sub(#s.short + 2), second = s.second } end
         end
     end
     if #hits <= 1 then return hits[1] and hits[1].unit end
     for _, hit in ipairs(hits) do                   -- the same name twice: the realm decides
-        if realm then
-            if hit.realm and RealmAgrees(hit.realm, realm) then return hit.unit end
-            if not hit.realm and MyRealmAgrees(realm) then return hit.unit end
-        elseif not hit.realm then
-            return hit.unit
+        if hit.after ~= "" then
+            if hit.second and RealmAgrees(hit.second, hit.after) then return hit.unit end
+            if not hit.second and MyRealmAgrees(hit.after) then return hit.unit end
         end
     end
     return hits[1].unit
@@ -197,13 +214,13 @@ local function Stamp()
     return ("%.1f"):format(Ask(GetTime) or 0)
 end
 
-local function Log(dir, channel, sender, who, code, msg)
+local function Log(dir, channel, sender, who, code, msg, keep)
     if not (db and type(db.commLog) == "table") then return end
     local log = db.commLog
     log[#log + 1] = {
         at = Stamp(), dir = dir, channel = tostring(channel or "-"), sender = tostring(sender or "-"),
         unit = tostring(who or "-"), code = tostring(code == nil and "-" or code),
-        msg = type(msg) == "string" and msg:sub(1, 40) or "(hidden)",
+        msg = type(msg) == "string" and msg:sub(1, keep or 40) or "(hidden)",
     }
     while #log > LOG_SIZE do table.remove(log, 1) end
 end
@@ -420,7 +437,7 @@ local function Perform(call)
         result = "locked"
     else
         local moving = (Ask(GetUnitSpeed, "player") or 0) > 0
-        result = Emote(move.token, call.toward) and (moving and "moving" or "ok") or "fail"
+        result = Emote(move.token, call.towardUnit or call.toward) and (moving and "moving" or "ok") or "fail"
     end
     Show(move.word .. "!", Sub(call), 2.5)
     if result ~= "ok" and result ~= "moving" then
@@ -487,6 +504,7 @@ local function StartCall(from, id, moveKey, delay, toward, mine, unit)
         -- my own roster's spelling of that player; someone outside the group keeps the name sent
         local towardUnit = UnitOf(toward)
         call.toward = (towardUnit and Key(towardUnit)) or toward
+        call.towardUnit = towardUnit                -- the emote goes to the unit: the game knows it for sure
         call.forMe = towardUnit ~= nil and IsMe(towardUnit)
     end
     call.fireAt = GetTime() + max(0, delay - (delay >= 1 and Lag() or 0))
@@ -635,7 +653,7 @@ function ns.Call(moveKey, delay, before)
         return
     end
 
-    -- sent as UnitName gives it: "First Last", plus the realm only when the game gives one
+    -- sent as "First Last" built from UnitName's two values; every client rebuilds the same
     local toward
     if moveKey == "K" then
         if before == "me" then
@@ -802,6 +820,16 @@ f:SetScript("OnEvent", function(_, event, a, b, c, d)
         end
 
     elseif event == "PLAYER_ENTERING_WORLD" then
+        -- one line in the saved log per loading screen in a group, so the file is never
+        -- empty after a session: how UnitName spells me and party1 / raid1 on this client
+        if InGroup() then
+            local function Raw(unit)
+                local a, b = Ask(UnitName, unit)
+                return unit .. " " .. tostring(a) .. "," .. tostring(b)
+            end
+            local other = Ask(IsInRaid) and "raid1" or "party1"
+            Log("load", Channel(), Raw("player"), Key("player"), nil, Raw(other) .. " = " .. tostring(Key(other)), 80)
+        end
         if not db.welcomed then
             db.welcomed = true
             Print("loaded. /kneelall makes everyone in your group who has the addon kneel on the same beat. "
@@ -831,6 +859,8 @@ local function PrintStatus()
             local e = log[i]
             if e.dir == "out" then
                 print(("  %s out %s: %s (result %s)"):format(e.at, e.channel, Safe(e.msg), e.code))
+            elseif e.dir == "load" then
+                print(("  %s loaded in %s: %s = %s; %s"):format(e.at, e.channel, Safe(e.sender), Safe(e.unit), Safe(e.msg)))
             else
                 print(("  %s in %s from %s = %s: %s"):format(e.at, e.channel, Safe(e.sender), Safe(e.unit), Safe(e.msg)))
             end

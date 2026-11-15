@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.0.6
+
+- Fixed: messages from other players (and your own call coming back) were still not recognised. On this client the game gives a character's first name and surname as two separate pieces, while a message names its sender "First Last". The addon now matches the sender against "First Last" first, then the first name alone.
+- Kneeling before someone in your group now names them to the game directly, instead of by name.
+- The saved message log gets one line each time you enter the world in a group, so it is never empty after a session.
+
 ## 1.0.5
 
 - The countdown tells the developers' screenshot helper (LookShots) where it is, so they can check how it looks in the game. Without that helper nothing changes.
