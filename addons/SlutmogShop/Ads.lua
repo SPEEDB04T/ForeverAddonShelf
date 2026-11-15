@@ -32,36 +32,26 @@ ns.AD_POOLS = {
         "Warriors and paladins: sick of looking like a walking fridge? {item}, {price} at {shop}.",
     },
     mail = {
-        "Revealing mail is hard to find. Here's some. ~ {shop} ~ {item}, {price}.",
+        "Hunters and shamans: revealing mail is hard to find. Here's some. ~ {shop} ~ {item}, {price}.",
         "Mail that shows skin. {item}, {price} at {shop}.",
-    },
-    mail_low = {
-        "Revealing mail you can wear before 40. {item}, {price} at {shop}.",
-        "Warriors and paladins under 40: stop wearing whatever the last quest gave you. {shop} has {item} for {price}.",
-    },
-    mail_high = {
         "Hunters and shamans: show some skin for once. {shop} has {item} for {price}.",
         "Sexy mail for hunters and shamans. ~ {shop} ~ {item}, {price}.",
     },
     leather = {
-        "Rogues and druids: tight leather, lots of skin. ~ {shop} ~ {item}, {price}.",
-        "Tight leather, and not much of it. {item}, {price} at {shop}.",
+        "Rogues and druids: tight leather, lots of skin. {item}, {price} at {shop}.",
+        "Tight leather, and not much of it. {shop} has {item} for {price}.",
     },
     cloth = {
-        "Casters can show skin too. {item}, {price} at {shop}.",
-        "Mages, priests, warlocks: stop dressing like a curtain. {shop} has {item} for {price}.",
+        "Casters can show skin too. {shop} has {item} for {price}.",
+        "Mages, priests, warlocks: stop dressing like a curtain. ~ {shop} ~ {item}, {price}.",
     },
     legs = {
-        "You look at your character from behind all day. Give yourself a view. {shop} has {item} for {price}.",
-        "Shows off her legs. ~ {shop} ~ {item}, {price}.",
+        "You look at your character from behind all day. Give yourself a view. ~ {shop} ~ {item}, {price}.",
+        "Shows off her legs. {item}, {price} at {shop}.",
     },
     chest = {
-        "Shows off her chest. ~ {shop} ~ {item}, {price}.",
-        "A top that actually shows something. {item}, {price} at {shop}.",
-    },
-    lvl_low = {
-        "Only needs level {level}. Good for bank alts and twinks. {item}, {price} at {shop}.",
-        "Wearable at level {level}, so your bank alt can stand at the mailbox in it. {shop} has {item} for {price}.",
+        "Shows off her chest. {item}, {price} at {shop}.",
+        "A top that actually shows something. {shop} has {item} for {price}.",
     },
     lvl_high = {
         "Level 60 and bored? Play dress-up. {shop} has {item} for {price}.",
@@ -188,38 +178,38 @@ ns.AD_POOLS = {
 ns.ITEM_ADS = {
     -- Simple Blouse (cloth chest, level 10)
     [9749] = {
-        pools = { "look_one_shoulder", "cloth", "chest", "lvl_low", "general" },
+        pools = { "look_one_shoulder", "cloth", "chest", "general" },
         color = "dark red",
     },
     -- Barbaric Cloth Vest (cloth chest, level 13)
     [3310] = {
-        pools = { "look_fur_halter", "cloth", "chest", "lvl_low", "general" },
+        pools = { "look_fur_halter", "cloth", "chest", "general" },
         color = "dark purple",
     },
     -- Barbaric Cloth Robe (cloth chest, level 13)
     [6531] = {
-        pools = { "look_zigzag_robe", "cloth", "chest", "lvl_low", "general" },
+        pools = { "look_zigzag_robe", "cloth", "chest", "general" },
         color = "pink and blue",
     },
     -- Willow Vest (cloth chest, level 14)
     [6536] = {
-        pools = { "look_one_shoulder", "cloth", "chest", "lvl_low", "general" },
+        pools = { "look_one_shoulder", "cloth", "chest", "general" },
         color = "green",
     },
     -- Aboriginal Robe (cloth chest, level 15)
     [14120] = {
-        pools = { "look_zigzag_robe", "cloth", "chest", "lvl_low", "general" },
+        pools = { "look_zigzag_robe", "cloth", "chest", "general" },
         color = "coral",
     },
     -- Buccaneer's Vest (cloth chest, level 18)
     [14175] = {
         "A white satin shirt, open and tied up so the belly's out. Pirate on her day off. {item}, {price} at {shop}.",
-        pools = { "cloth", "chest", "lvl_low", "general" },
+        pools = { "cloth", "chest", "general" },
     },
     -- Ritual Shroud (cloth chest, level 19)
     [14127] = {
         "A red cloth triangle held on by chains, open at both sides. {item}, {price} at {shop}.",
-        pools = { "cloth", "chest", "lvl_low", "general" },
+        pools = { "cloth", "chest", "general" },
     },
     -- Robes of Insight (cloth chest, level 42)
     [940] = {
@@ -263,62 +253,62 @@ ns.ITEM_ADS = {
     },
     -- Burnt Leather Breeches (leather legs, level 5)
     [2962] = {
-        pools = { "look_bikini", "leather", "legs", "lvl_low", "general" },
+        pools = { "look_bikini", "leather", "legs", "general" },
         color = "dark red leather",
     },
     -- Grizzly Jerkin (leather chest, level 11)
     [15304] = {
-        pools = { "look_underbust", "leather", "chest", "lvl_low", "general" },
+        pools = { "look_underbust", "leather", "chest", "general" },
         color = "brown",
     },
     -- Ceremonial Leather Loincloth (leather legs, level 12)
     [3315] = {
         "Black fur, a gold chain for a belt and a garter on one thigh. {item}, {price} at {shop}.",
-        pools = { "leather", "legs", "lvl_low", "general" },
+        pools = { "leather", "legs", "general" },
     },
     -- Bard's Trousers (leather legs, level 13)
     [6553] = {
         "Crimson hot pants. Bare thigh down to the knee, then boots. {shop} has {item} for {price}.",
-        pools = { "leather", "legs", "lvl_low", "general" },
+        pools = { "leather", "legs", "general" },
     },
     -- Bandit Pants (leather legs, level 17)
     [9781] = {
-        pools = { "look_bikini", "leather", "legs", "lvl_low", "general" },
+        pools = { "look_bikini", "leather", "legs", "general" },
         color = "black leather",
     },
     -- Insignia Leggings (leather legs, level 30)
     [4054] = {
-        pools = { "look_cod_leather", "leather", "legs", "lvl_low", "general" },
+        pools = { "look_cod_leather", "leather", "legs", "general" },
         color = "brown",
     },
     -- Insignia Chestguard (leather chest, level 31)
     [4057] = {
-        pools = { "look_stud_top", "leather", "chest", "lvl_low", "general" },
+        pools = { "look_stud_top", "leather", "chest", "general" },
         color = "Brown",
     },
     -- Sentinel Trousers (leather legs, level 34)
     [7440] = {
-        pools = { "look_bikini", "leather", "legs", "lvl_low", "general" },
+        pools = { "look_bikini", "leather", "legs", "general" },
         color = "olive fur",
     },
     -- Sentinel Breastplate (leather chest, level 35)
     [7439] = {
-        pools = { "look_underbust", "leather", "chest", "lvl_low", "general" },
+        pools = { "look_underbust", "leather", "chest", "general" },
         color = "tan",
     },
     -- Huntsman's Armor (leather chest, level 38)
     [9887] = {
-        pools = { "look_stud_top", "leather", "chest", "lvl_low", "general" },
+        pools = { "look_stud_top", "leather", "chest", "general" },
         color = "Olive",
     },
     -- Warden's Woolies (leather legs, level 38)
     [14605] = {
-        pools = { "look_bikini", "leather", "legs", "lvl_low", "general" },
+        pools = { "look_bikini", "leather", "legs", "general" },
         color = "olive fur",
     },
     -- Warden's Wraps (leather chest, level 39)
     [14601] = {
-        pools = { "look_underbust", "leather", "chest", "lvl_low", "general" },
+        pools = { "look_underbust", "leather", "chest", "general" },
         color = "tan",
     },
     -- Scorpashi Leggings (leather legs, level 42)
@@ -423,351 +413,351 @@ ns.ITEM_ADS = {
     },
     -- Warrior's Tunic (mail chest, level 6)
     [2965] = {
-        pools = { "look_chain_bra", "mail", "chest", "mail_low", "lvl_low", "general" },
+        pools = { "look_chain_bra", "mail", "chest", "general" },
         color = "purple",
     },
     -- Dargol's Hauberk (mail chest, level 8)
     [3330] = {
-        pools = { "look_fringe_top", "mail", "chest", "mail_low", "lvl_low", "general" },
+        pools = { "look_fringe_top", "mail", "chest", "general" },
         color = "tan",
     },
     -- Infantry Tunic (mail chest, level 8)
     [6336] = {
-        pools = { "look_chain_bra", "mail", "chest", "mail_low", "lvl_low", "general" },
+        pools = { "look_chain_bra", "mail", "chest", "general" },
         color = "silver",
     },
     -- Slarkskin (mail chest, level 10)
     [6180] = {
-        pools = { "look_scale_top", "mail", "chest", "mail_low", "lvl_low", "general" },
+        pools = { "look_scale_top", "mail", "chest", "general" },
         color = "white",
     },
     -- Wax-polished Armor (mail chest, level 10)
     [6195] = {
-        pools = { "look_padded_scoop", "mail", "chest", "mail_low", "lvl_low", "general" },
+        pools = { "look_padded_scoop", "mail", "chest", "general" },
         color = "blue",
     },
     -- Cadet Vest (mail chest, level 10)
     [9765] = {
-        pools = { "look_scale_top", "mail", "chest", "mail_low", "lvl_low", "general" },
+        pools = { "look_scale_top", "mail", "chest", "general" },
         color = "pale green",
     },
     -- Veteran Armor (mail chest, level 11)
     [2977] = {
-        pools = { "look_padded_scoop", "mail", "chest", "mail_low", "lvl_low", "general" },
+        pools = { "look_padded_scoop", "mail", "chest", "general" },
         color = "brown",
     },
     -- Soldier's Armor (mail chest, level 13)
     [6545] = {
-        pools = { "look_padded_scoop", "mail", "chest", "mail_low", "lvl_low", "general" },
+        pools = { "look_padded_scoop", "mail", "chest", "general" },
         color = "green",
     },
     -- Bloodspattered Loincloth (mail legs, level 13)
     [15493] = {
-        pools = { "look_loincloth_mail", "mail", "legs", "mail_low", "lvl_low", "general" },
+        pools = { "look_loincloth_mail", "mail", "legs", "general" },
         color = "silver",
     },
     -- War Paint Legguards (mail legs, level 14)
     [14727] = {
-        pools = { "look_loincloth_mail", "mail", "legs", "mail_low", "lvl_low", "general" },
+        pools = { "look_loincloth_mail", "mail", "legs", "general" },
         color = "green",
     },
     -- Raider's Chestpiece (mail chest, level 15)
     [9783] = {
-        pools = { "look_fringe_top", "mail", "chest", "mail_low", "lvl_low", "general" },
+        pools = { "look_fringe_top", "mail", "chest", "general" },
         color = "tan",
     },
     -- Burnished Tunic (mail chest, level 16)
     [2989] = {
-        pools = { "look_scale_top", "mail", "chest", "mail_low", "lvl_low", "general" },
+        pools = { "look_scale_top", "mail", "chest", "general" },
         color = "gold",
     },
     -- Bloodspattered Surcoat (mail chest, level 16)
     [15488] = {
-        pools = { "look_black_harness", "mail", "chest", "mail_low", "lvl_low", "general" },
+        pools = { "look_black_harness", "mail", "chest", "general" },
         color = "silver",
     },
     -- Outrunner's Legguards (mail legs, level 17)
     [15503] = {
-        pools = { "look_loincloth_mail", "mail", "legs", "mail_low", "lvl_low", "general" },
+        pools = { "look_loincloth_mail", "mail", "legs", "general" },
         color = "purple",
     },
     -- Defender Tunic (mail chest, level 18)
     [6580] = {
-        pools = { "look_scale_top", "mail", "chest", "mail_low", "lvl_low", "general" },
+        pools = { "look_scale_top", "mail", "chest", "general" },
         color = "silver-teal",
     },
     -- War Paint Chestpiece (mail chest, level 18)
     [14730] = {
-        pools = { "look_black_harness", "mail", "chest", "mail_low", "lvl_low", "general" },
+        pools = { "look_black_harness", "mail", "chest", "general" },
         color = "red and green",
     },
     -- Outrunner's Chestguard (mail chest, level 19)
     [15500] = {
-        pools = { "look_black_harness", "mail", "chest", "mail_low", "lvl_low", "general" },
+        pools = { "look_black_harness", "mail", "chest", "general" },
         color = "teal",
     },
     -- Grunt's Legguards (mail legs, level 19)
     [15511] = {
-        pools = { "look_loincloth_mail", "mail", "legs", "mail_low", "lvl_low", "general" },
+        pools = { "look_loincloth_mail", "mail", "legs", "general" },
         color = "gold",
     },
     -- Fortified Chain (mail chest, level 20)
     [9818] = {
-        pools = { "look_fringe_top", "mail", "chest", "mail_low", "lvl_low", "general" },
+        pools = { "look_fringe_top", "mail", "chest", "general" },
         color = "tan",
     },
     -- Dusty Chain Armor (mail chest, level 21)
     [2016] = {
-        pools = { "look_padded_scoop", "mail", "chest", "mail_low", "lvl_low", "general" },
+        pools = { "look_padded_scoop", "mail", "chest", "general" },
         color = "brown",
     },
     -- Martyr's Chain (mail chest, level 21)
     [3416] = {
-        pools = { "look_fringe_top", "mail", "chest", "mail_low", "lvl_low", "general" },
+        pools = { "look_fringe_top", "mail", "chest", "general" },
         color = "orange",
     },
     -- Grunt's Chestpiece (mail chest, level 21)
     [15514] = {
-        pools = { "look_black_harness", "mail", "chest", "mail_low", "lvl_low", "general" },
+        pools = { "look_black_harness", "mail", "chest", "general" },
         color = "gold",
     },
     -- Lambent Scale Breastplate (mail chest, level 22)
     [3049] = {
-        pools = { "look_scale_bikini", "mail", "chest", "mail_low", "lvl_low", "general" },
+        pools = { "look_scale_bikini", "mail", "chest", "general" },
         color = "gold",
     },
     -- Spiked Chain Leggings (mail legs, level 22)
     [15521] = {
-        pools = { "look_loincloth_mail", "mail", "legs", "mail_low", "lvl_low", "general" },
+        pools = { "look_loincloth_mail", "mail", "legs", "general" },
         color = "silver-blue",
     },
     -- Humbert's Chestpiece (mail chest, level 23)
     [3053] = {
-        pools = { "look_chain_bra", "mail", "chest", "mail_low", "lvl_low", "general" },
+        pools = { "look_chain_bra", "mail", "chest", "general" },
         color = "silver",
     },
     -- Battleforge Legguards (mail legs, level 23)
     [6596] = {
-        pools = { "look_dragon_legs", "mail", "legs", "mail_low", "lvl_low", "general" },
+        pools = { "look_dragon_legs", "mail", "legs", "general" },
         color = "black and gold",
     },
     -- Battleforge Armor (mail chest, level 24)
     [6592] = {
-        pools = { "look_dragon_top", "mail", "chest", "mail_low", "lvl_low", "general" },
+        pools = { "look_dragon_top", "mail", "chest", "general" },
         color = "red-orange",
     },
     -- Sentry's Leggings (mail legs, level 24)
     [15529] = {
-        pools = { "look_garter", "mail", "legs", "mail_low", "lvl_low", "general" },
+        pools = { "look_garter", "mail", "legs", "general" },
         color = "grey",
     },
     -- Double Link Tunic (mail chest, level 25)
     [1717] = {
-        pools = { "look_fringe_top", "mail", "chest", "mail_low", "lvl_low", "general" },
+        pools = { "look_fringe_top", "mail", "chest", "general" },
         color = "grey",
     },
     -- Glimmering Mail Legguards (mail legs, level 25)
     [6386] = {
-        pools = { "look_dragon_legs", "mail", "legs", "mail_low", "lvl_low", "general" },
+        pools = { "look_dragon_legs", "mail", "legs", "general" },
         color = "red and gold",
     },
     -- Spiked Chain Breastplate (mail chest, level 25)
     [15518] = {
-        pools = { "look_black_harness", "mail", "chest", "mail_low", "lvl_low", "general" },
+        pools = { "look_black_harness", "mail", "chest", "general" },
         color = "silver",
     },
     -- Avenger's Armor (mail chest, level 26)
     [1488] = {
-        pools = { "look_fringe_top", "mail", "chest", "mail_low", "lvl_low", "general" },
+        pools = { "look_fringe_top", "mail", "chest", "general" },
         color = "grey",
     },
     -- Glimmering Mail Breastplate (mail chest, level 26)
     [4071] = {
-        pools = { "look_dragon_top", "mail", "chest", "mail_low", "lvl_low", "general" },
+        pools = { "look_dragon_top", "mail", "chest", "general" },
         color = "gold",
     },
     -- Sentry's Surcoat (mail chest, level 26)
     [15524] = {
-        pools = { "look_chain_cups", "mail", "chest", "mail_low", "lvl_low", "general" },
+        pools = { "look_chain_cups", "mail", "chest", "general" },
         color = "grey",
     },
     -- Mail Combat Armor (mail chest, level 31)
     [4074] = {
-        pools = { "look_scale_bikini", "mail", "chest", "mail_low", "lvl_low", "general" },
+        pools = { "look_scale_bikini", "mail", "chest", "general" },
         color = "silver",
     },
     -- Mail Combat Leggings (mail legs, level 31)
     [6402] = {
-        pools = { "look_scale_bikini_legs", "mail", "legs", "mail_low", "lvl_low", "general" },
+        pools = { "look_scale_bikini_legs", "mail", "legs", "general" },
         color = "Silver",
     },
     -- Knight's Breastplate (mail chest, level 34)
     [7454] = {
         "Pale steel cups on buckled straps. ~ {shop} ~ {item}, {price}.",
-        pools = { "mail", "chest", "mail_low", "lvl_low", "general" },
+        pools = { "mail", "chest", "general" },
     },
     -- Firemane Leggings (mail legs, level 34)
     [13129] = {
         "Glossy red hip plates, and very little of them. {shop} has {item} for {price}.",
-        pools = { "mail", "legs", "mail_low", "lvl_low", "general" },
+        pools = { "mail", "legs", "general" },
     },
     -- Enduring Breastplate (mail chest, level 34)
     [14760] = {
         "A banded steel corset with a keyhole cut over the cleavage. {item}, {price} at {shop}.",
-        pools = { "mail", "chest", "mail_low", "lvl_low", "general" },
+        pools = { "mail", "chest", "general" },
     },
     -- Chief Brigadier Leggings (mail legs, level 35)
     [4079] = {
-        pools = { "mail", "legs", "mail_low", "lvl_low", "general" },
+        pools = { "mail", "legs", "general" },
     },
     -- Marauder's Tunic (mail chest, level 35)
     [15567] = {
         "Red and grey plates linked by rings, with a gap between every plate. {item}, {price} at {shop}.",
-        pools = { "mail", "chest", "mail_low", "lvl_low", "general" },
+        pools = { "mail", "chest", "general" },
     },
     -- Chief Brigadier Armor (mail chest, level 36)
     [6411] = {
         "Black cups with red flames on them. It's lingerie with an armor value. {item}, {price} at {shop}.",
-        pools = { "mail", "chest", "mail_low", "lvl_low", "general" },
+        pools = { "mail", "chest", "general" },
     },
     -- Sparkleshell Breastplate (mail chest, level 36)
     [15578] = {
-        pools = { "look_shell", "mail", "chest", "mail_low", "lvl_low", "general" },
+        pools = { "look_shell", "mail", "chest", "general" },
         color = "gold",
     },
     -- Steadfast Legplates (mail legs, level 36)
     [15596] = {
-        pools = { "look_garter", "mail", "legs", "mail_low", "lvl_low", "general" },
+        pools = { "look_garter", "mail", "legs", "general" },
         color = "purple",
     },
     -- Jazeraint Chestguard (mail chest, level 37)
     [9897] = {
-        pools = { "look_band_cup", "mail", "chest", "mail_low", "lvl_low", "general" },
+        pools = { "look_band_cup", "mail", "chest", "general" },
         color = "silver",
     },
     -- Captain's Leggings (mail legs, level 38)
     [7487] = {
-        pools = { "look_scale_bikini_legs", "mail", "legs", "mail_low", "lvl_low", "general" },
+        pools = { "look_scale_bikini_legs", "mail", "legs", "general" },
         color = "Gold",
     },
     -- Steadfast Breastplate (mail chest, level 38)
     [15591] = {
-        pools = { "look_chain_cups", "mail", "chest", "mail_low", "lvl_low", "general" },
+        pools = { "look_chain_cups", "mail", "chest", "general" },
         color = "purple",
     },
     -- Captain's Breastplate (mail chest, level 39)
     [7486] = {
-        pools = { "look_scale_bikini", "mail", "chest", "mail_low", "lvl_low", "general" },
+        pools = { "look_scale_bikini", "mail", "chest", "general" },
         color = "gold",
     },
     -- Ravager's Armor (mail chest, level 39)
     [14768] = {
-        pools = { "look_tiles", "mail", "chest", "mail_low", "lvl_low", "general" },
+        pools = { "look_tiles", "mail", "chest", "general" },
         color = "brown",
     },
     -- Brigade Breastplate (mail chest, level 40)
     [9928] = {
-        pools = { "look_single_cup", "mail", "chest", "mail_high", "general" },
+        pools = { "look_single_cup", "mail", "chest", "general" },
         color = "Dark red",
     },
     -- Ancient Chestpiece (mail chest, level 41)
     [15601] = {
-        pools = { "look_shell", "mail", "chest", "mail_high", "general" },
+        pools = { "look_shell", "mail", "chest", "general" },
         color = "jade",
     },
     -- Bonelink Armor (mail chest, level 42)
     [15609] = {
-        pools = { "look_ribs", "mail", "chest", "mail_high", "general" },
+        pools = { "look_ribs", "mail", "chest", "general" },
         color = "white",
     },
     -- Warmonger's Chestpiece (mail chest, level 45)
     [9957] = {
         "Red, black and gold slats with skin showing between them. {item}, {price} at {shop}.",
-        pools = { "mail", "chest", "mail_high", "general" },
+        pools = { "mail", "chest", "general" },
     },
     -- Myrmidon's Breastplate (mail chest, level 46)
     [8126] = {
-        pools = { "look_band_cup", "mail", "chest", "mail_high", "general" },
+        pools = { "look_band_cup", "mail", "chest", "general" },
         color = "white",
     },
     -- Lord's Legguards (mail legs, level 47)
     [10084] = {
-        pools = { "look_plate_thong", "mail", "legs", "mail_high", "general" },
+        pools = { "look_plate_thong", "mail", "legs", "general" },
         color = "steel and gold",
     },
     -- Lord's Breastplate (mail chest, level 48)
     [10077] = {
-        pools = { "look_single_cup", "mail", "chest", "mail_high", "general" },
+        pools = { "look_single_cup", "mail", "chest", "general" },
         color = "Gold",
     },
     -- Protector Legguards (mail legs, level 48)
     [14796] = {
         "Green-bronze plates in a grid over the hips, and legs from there down. {item}, {price} at {shop}.",
-        pools = { "mail", "legs", "mail_high", "general" },
+        pools = { "mail", "legs", "general" },
     },
     -- Protector Breastplate (mail chest, level 49)
     [14789] = {
         "Green-bronze plates in a grid, cut low at the front and short at the waist. ~ {shop} ~ {item}, {price}.",
-        pools = { "mail", "chest", "mail_high", "general" },
+        pools = { "mail", "chest", "general" },
     },
     -- Crusader's Armor (mail chest, level 50)
     [10193] = {
-        pools = { "look_band_cup", "mail", "chest", "mail_high", "general" },
+        pools = { "look_band_cup", "mail", "chest", "general" },
         color = "blue",
     },
     -- Ebonhold Armor (mail chest, level 51)
     [8265] = {
-        pools = { "look_band_cup", "mail", "chest", "mail_high", "general" },
+        pools = { "look_band_cup", "mail", "chest", "general" },
         color = "black",
     },
     -- Merciless Legguards (mail legs, level 51)
     [15655] = {
-        pools = { "look_chastity", "mail", "legs", "mail_high", "general" },
+        pools = { "look_chastity", "mail", "legs", "general" },
         color = "bronze",
     },
     -- Ornate Breastplate (mail chest, level 53)
     [10118] = {
-        pools = { "look_plate_bikini", "mail", "chest", "mail_high", "general" },
+        pools = { "look_plate_bikini", "mail", "chest", "general" },
         color = "steel-blue",
     },
     -- Engraved Breastplate (mail chest, level 55)
     [10230] = {
-        pools = { "look_plate_bikini", "mail", "chest", "mail_high", "lvl_high", "general" },
+        pools = { "look_plate_bikini", "mail", "chest", "lvl_high", "general" },
         color = "bronze",
     },
     -- Hero's Leggings (mail legs, level 56)
     [8309] = {
-        pools = { "look_plate_thong", "mail", "legs", "mail_high", "lvl_high", "general" },
+        pools = { "look_plate_thong", "mail", "legs", "lvl_high", "general" },
         color = "navy and red",
     },
     -- Bonebrace Hauberk (mail chest, level 56)
     [14536] = {
-        pools = { "look_band_cup", "mail", "chest", "mail_high", "lvl_high", "general" },
+        pools = { "look_band_cup", "mail", "chest", "lvl_high", "general" },
         color = "silver",
     },
     -- Hero's Breastplate (mail chest, level 57)
     [8303] = {
-        pools = { "look_single_cup", "mail", "chest", "mail_high", "lvl_high", "general" },
+        pools = { "look_single_cup", "mail", "chest", "lvl_high", "general" },
         color = "Navy and red",
     },
     -- Magnificent Breastplate (mail chest, level 57)
     [15669] = {
-        pools = { "look_ribs", "mail", "chest", "mail_high", "lvl_high", "general" },
+        pools = { "look_ribs", "mail", "chest", "lvl_high", "general" },
         color = "red and gold",
     },
     -- Mercurial Breastplate (mail chest, level 59)
     [10157] = {
-        pools = { "look_band_cup", "mail", "chest", "mail_high", "lvl_high", "general" },
+        pools = { "look_band_cup", "mail", "chest", "lvl_high", "general" },
         color = "white",
     },
     -- Masterwork Breastplate (mail chest, level 60)
     [10266] = {
-        pools = { "look_plate_bikini", "mail", "chest", "mail_high", "lvl_high", "general" },
+        pools = { "look_plate_bikini", "mail", "chest", "lvl_high", "general" },
         color = "gold",
     },
     -- Triumphant Chestpiece (mail chest, level 60)
     [15680] = {
-        pools = { "look_ribs", "mail", "chest", "mail_high", "lvl_high", "general" },
+        pools = { "look_ribs", "mail", "chest", "lvl_high", "general" },
         color = "red and gold",
     },
     -- Jouster's Chestplate (plate chest, level 40)

@@ -1,5 +1,10 @@
 # Changelog
 
+## 1.3.5
+
+- Mail is sold to hunters and shamans only. The ads no longer pitch it to warriors and paladins below 40, who will outgrow it: nobody buys a look for armor they are about to replace.
+- Gone for the same reason: the "good for bank alts and twinks" lines on low level pieces.
+
 ## 1.3.4
 
 - The ads are plain now. Three hostile reviews went over every line (does it fit how the game really works, does it read as trying too hard, would a buyer care) and most of the jokes did not survive. What is left says what the piece shows ("Long trousers with both hips cut out. Ankles covered, hips bare.") or talks straight to the player who wants it ("Want your character to look hot instead of well geared?", "Your tier set is ugly. Mog over it.").
