@@ -1,5 +1,21 @@
 # Changelog
 
+## 1.12.0
+
+The Review grid shows the piece up close, and the whole window can be made bigger.
+
+- **Up close.** Each model in the Review grid is framed on what its piece covers: a chest piece on the
+  torso, a leg piece on the hips and thighs. Filter > View > The whole body shows all of it again.
+- **Zoom and move the view.** The mouse wheel over the grid zooms the pieces of the type under the
+  pointer (every chest piece, or every leg piece, so they stay easy to compare). Drag with the right
+  button to move the view up or down; drag with the left button still turns the model. Your framing is
+  saved; Filter > Reset zoom and position puts it back.
+- **Paging** moved to Shift-wheel, the page arrows and the Page Up and Page Down keys (with the pointer
+  over the grid).
+- **Window size.** Drag the size grabber in the window's bottom-right corner to make the whole window
+  bigger or smaller, from 60% to 200%. Also `/smog scale 150` (`reset` for 100%) and a Window size slider
+  in the options window. The top-left corner stays where it is, and the size is saved.
+
 ## 1.11.1
 
 - When the options window or the minimap button is missing right after an update, the chat line now says

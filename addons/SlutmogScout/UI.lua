@@ -122,9 +122,10 @@ end
 
 -- listedOnly starts on: the Market list shows what can be bought now
 local state = { tab = "market", armor = "all", listedOnly = true, buyOnly = false, sortKey = "value", sortAsc = false, farmItem = nil,
-  reviewShow = "todo", reviewSel = nil, reviewIndex = 1, reviewPage = 1, female = true }
+  reviewShow = "todo", reviewSel = nil, reviewIndex = 1, reviewPage = 1, female = true, wholeBody = false }
 local win, marketView, farmView, measuredView, reviewView, statusText, scanButton, farmHeader, farmClear, listedCheck, listedText
 local levelBox
+local ReviewSelected, ReviewMoveView -- the review grid's view helpers, defined further down
 local filterButton, dealsCheck, dealsText, croppedCheck, croppedText, commonCheck, commonText
 local tabButtons, armorButtons, headerText = {}, {}, {}
 
@@ -895,6 +896,67 @@ local function ReviewItemName(p)
   return ("|c%s%s|r"):format(QualityHex(p.src.q or 2), p.src.name or ("Item " .. p.id))
 end
 
+-- How the grid's models are framed. Up close, a chest piece shows the torso
+-- and a leg piece the hips and thighs; "whole body" shows all of it.
+--   zoom  how far the body comes toward the camera
+--   lift  moves the body up (+) or down (-), so the camera sees lower or higher
+-- Both are in yards of a human-sized body, scaled by the race's height. The
+-- wheel and a right-drag on the grid change the framing of the piece type
+-- under the pointer for every tile, and it is saved.
+local REVIEW_CAM = {
+  chest = { zoom = 2, lift = -0.4 },
+  legs = { zoom = 1.8, lift = 0.25 },
+  body = { zoom = 0, lift = 0 },
+}
+local CAM_ZOOM_MIN, CAM_ZOOM_MAX = -0.5, 3
+local CAM_LIFT_MIN, CAM_LIFT_MAX = -1.3, 1.3
+-- body height against a human's (assumed; the framing can be moved by hand)
+local RACE_SIZE = { Gnome = 0.55, Dwarf = 0.8, Goblin = 0.6, Tauren = 1.2, NightElf = 1.1, Troll = 1.05, Draenei = 1.1 }
+ns.REVIEW_CAM = REVIEW_CAM
+
+local function RaceSize()
+  local ok, _, raceFile = pcall(UnitRace, "player")
+  return ok and RACE_SIZE[raceFile] or 1
+end
+
+-- "chest", "legs" or "body": which framing a piece gets
+local function CamKind(p)
+  if state.wholeBody then
+    return "body"
+  end
+  return p and p.src and p.src.slot == "legs" and "legs" or "chest"
+end
+
+-- the framing in use for that kind: the player's own, else the default
+local function ReviewCam(kind)
+  local saved = ns.db and ns.db.opts and type(ns.db.opts.reviewCam) == "table" and ns.db.opts.reviewCam[kind]
+  local def = REVIEW_CAM[kind] or REVIEW_CAM.body
+  if type(saved) == "table" and type(saved.zoom) == "number" and type(saved.lift) == "number" then
+    return saved
+  end
+  return { zoom = def.zoom, lift = def.lift }
+end
+
+local function SetReviewCam(kind, zoom, lift)
+  local opts = ns.db.opts
+  opts.reviewCam = type(opts.reviewCam) == "table" and opts.reviewCam or {}
+  opts.reviewCam[kind] = {
+    zoom = math.floor(math.max(CAM_ZOOM_MIN, math.min(CAM_ZOOM_MAX, zoom)) * 1000 + 0.5) / 1000,
+    lift = math.floor(math.max(CAM_LIFT_MIN, math.min(CAM_LIFT_MAX, lift)) * 1000 + 0.5) / 1000,
+  }
+end
+ns.ReviewCam = ReviewCam
+
+local function FrameModel(tile)
+  local model = tile and tile.model
+  if not (model and tile.entry) then
+    return
+  end
+  local cam, size = ReviewCam(CamKind(tile.entry)), RaceSize()
+  tile.camZoom, tile.camLift = cam.zoom * size, cam.lift * size
+  pcall(model.SetPosition, model, tile.camZoom, 0, tile.camLift)
+end
+
 -- Dresses a grid tile's model in its piece: the player's own body, or a
 -- female one of the player's race when the player's character is male (the
 -- list measures the female textures).
@@ -922,6 +984,7 @@ local function DressModel(tile, id)
     end
     pcall(model.Undress, model)
     pcall(model.TryOn, model, "item:" .. id)
+    FrameModel(tile)
   end
   if C_Item.GetItemInfo(id) or not (Item and Item.CreateFromItemID) then
     dress()
@@ -971,6 +1034,8 @@ local function RefreshReview()
       if tile.shownId ~= p.id or tile.shownFemale ~= state.female then
         tile.shownId, tile.shownFemale = p.id, state.female
         DressModel(tile, p.id)
+      else
+        FrameModel(tile)
       end
     else
       tile.shownId = nil
@@ -1026,6 +1091,30 @@ local function ReviewPage(delta)
   end
 end
 
+-- the selected piece's entry, or nil
+function ReviewSelected()
+  for _, p in ipairs(reviewData) do
+    if p.id == state.reviewSel then
+      return p
+    end
+  end
+  return nil
+end
+
+-- Zooms (dz) or moves up and down (dy, in tile heights) the framing of p's
+-- piece type, for every tile showing that type.
+function ReviewMoveView(p, dz, dy)
+  local kind = CamKind(p)
+  local cam = ReviewCam(kind)
+  -- a tile height shows about 2 yards at zoom 0, less up close
+  SetReviewCam(kind, cam.zoom + dz, cam.lift + dy * 2 / (1 + math.max(0, cam.zoom) * 0.6))
+  for _, tile in ipairs(reviewView and reviewView.tiles or {}) do
+    if tile:IsShown() and tile.entry and CamKind(tile.entry) == kind then
+      FrameModel(tile)
+    end
+  end
+end
+
 -- Moves the selection by delta pieces (the arrow keys).
 local function ReviewStep(delta)
   local i = math.min(#reviewData, math.max(1, (state.reviewIndex or 1) + delta))
@@ -1070,7 +1159,7 @@ local function UpdateStatus()
     scanButton:SetEnabled(ns.AuctionHouseOpen())
   elseif state.tab == "review" then
     local all, kept, off = ReviewCounts()
-    statusText:SetText(("%d of %d pieces rated: %d kept on the list, %d taken off. 4-10 keeps a piece, 1-3 takes it off. Point at the grid and press 1-9 (0 for 10), arrows to move.")
+    statusText:SetText(("%d of %d pieces rated: %d kept on the list, %d taken off. 4-10 keeps a piece, 1-3 takes it off. Over the grid: 1-9 and 0 rate, arrows move, the wheel zooms, right-drag moves the view, Shift-wheel pages.")
       :format(kept + off, all, kept, off))
     scanButton:SetText("Scan")
     scanButton:SetEnabled(ns.AuctionHouseOpen())
@@ -1286,6 +1375,26 @@ local function CreateFilterDropdown()
           Refresh()
         end, def[1])
       end
+      root:QueueSpacer()
+      root:CreateTitle("View")
+      root:CreateRadio("The piece up close", function()
+        return not state.wholeBody
+      end, function()
+        state.wholeBody = false
+        Refresh()
+      end, "close")
+      root:CreateRadio("The whole body", function()
+        return state.wholeBody
+      end, function()
+        state.wholeBody = true
+        Refresh()
+      end, "body")
+      if root.CreateButton then
+        root:CreateButton("Reset zoom and position", function()
+          ns.db.opts.reviewCam = nil
+          Refresh()
+        end)
+      end
       return
     end
     -- cropped looks: a top that covers the bust, shorts that cover most of the thigh
@@ -1450,6 +1559,7 @@ end
 -- a bar under it.
 local REVIEW_BAR_H = 58
 local REVIEW_KEYS = { NUMPAD0 = 10, ["0"] = 10 }
+local REVIEW_PAGE_KEYS = { PAGEUP = -1, PAGEDOWN = 1 }
 for n = 1, 9 do
   REVIEW_KEYS[tostring(n)], REVIEW_KEYS["NUMPAD" .. n] = n, n
 end
@@ -1526,12 +1636,18 @@ local function CreateReviewView()
     tile.info:SetPoint("BOTTOMRIGHT", -4, 4)
     tile.info:SetJustifyH("CENTER")
     tile.info:SetWordWrap(false)
-    -- drag to turn the model, as in the dressing room
-    tile:SetScript("OnMouseDown", function(self)
-      self.dragX = GetCursorPosition()
+    -- as in the dressing room: drag to turn the model, right-drag to move
+    -- the view up and down (every tile of that piece type follows)
+    tile:SetScript("OnMouseDown", function(self, mouse)
+      local x, y = GetCursorPosition()
+      if mouse == "RightButton" then
+        self.panY = y
+      else
+        self.dragX = x
+      end
     end)
     tile:SetScript("OnMouseUp", function(self)
-      self.dragX = nil
+      self.dragX, self.panY = nil, nil
     end)
     tile:SetScript("OnUpdate", function(self)
       if self.dragX and self.model then
@@ -1541,6 +1657,13 @@ local function CreateReviewView()
           pcall(self.model.SetFacing, self.model, facing + (x - self.dragX) * 0.02)
         end
         self.dragX = x
+      end
+      if self.panY and self.entry then
+        local _, y = GetCursorPosition()
+        if y ~= self.panY then
+          ReviewMoveView(self.entry, 0, (y - self.panY) / math.max(1, self:GetHeight() * self:GetEffectiveScale()))
+          self.panY = y
+        end
       end
     end)
     tile:SetScript("OnClick", function(self, mouse)
@@ -1569,10 +1692,21 @@ local function CreateReviewView()
     tile:Hide()
     view.tiles[i] = tile
   end
-  -- the wheel pages, as in the Appearances window
+  -- the wheel zooms the piece type under the pointer; Shift-wheel pages, as
+  -- the wheel does in the Appearances window
   pcall(grid.EnableMouseWheel, grid, true)
   grid:SetScript("OnMouseWheel", function(_, delta)
-    ReviewPage(delta > 0 and -1 or 1)
+    if IsShiftKeyDown and IsShiftKeyDown() then
+      ReviewPage(delta > 0 and -1 or 1)
+      return
+    end
+    local over
+    for _, tile in ipairs(view.tiles) do
+      if tile:IsShown() and MouseIsOver and MouseIsOver(tile) then
+        over = tile.entry
+      end
+    end
+    ReviewMoveView(over or ReviewSelected(), delta * 0.25, 0)
   end)
 
   -- the bar: the selected piece on the left, the rating on the right
@@ -1685,10 +1819,13 @@ local function CreateReviewView()
     end
     local n = REVIEW_KEYS[key]
     local step = key == "LEFT" and -1 or key == "RIGHT" and 1 or key == "UP" and -REVIEW_COLS or key == "DOWN" and REVIEW_COLS or nil
-    if (n or step) and not (IsModifierKeyDown and IsModifierKeyDown()) then
+    local page = REVIEW_PAGE_KEYS[key]
+    if (n or step or page) and not (IsModifierKeyDown and IsModifierKeyDown()) then
       Propagate(false)
       if n then
         ReviewFlagSelected(n)
+      elseif page then
+        ReviewPage(page)
       else
         ReviewStep(step)
       end
@@ -1826,6 +1963,7 @@ local function CreateWindow()
     win = CreateFrame("Frame", "SlutmogScoutFrame", UIParent, "BasicFrameTemplateWithInset")
   end
   win:SetSize(WIN_W, WIN_H)
+  pcall(win.SetScale, win, ns.WindowScale())
   win:SetFrameStrata("HIGH")
   win:SetMovable(true)
   win:SetClampedToScreen(true)
@@ -1851,6 +1989,42 @@ local function CreateWindow()
   end
   win:Hide()
   tinsert(UISpecialFrames, "SlutmogScoutFrame")
+
+  -- the chat window's size grabber in the bottom-right corner: dragging it
+  -- scales the whole window, the top-left corner stays put
+  local grip = CreateFrame("Button", nil, win)
+  grip:SetSize(16, 16)
+  grip:SetPoint("BOTTOMRIGHT", -4, 4)
+  grip:SetFrameLevel((tonumber(win:GetFrameLevel()) or 1) + 10)
+  pcall(grip.SetNormalTexture, grip, "Interface\\ChatFrame\\UI-ChatIM-SizeGrabber-Up")
+  pcall(grip.SetPushedTexture, grip, "Interface\\ChatFrame\\UI-ChatIM-SizeGrabber-Down")
+  pcall(grip.SetHighlightTexture, grip, "Interface\\ChatFrame\\UI-ChatIM-SizeGrabber-Highlight", "ADD")
+  grip:SetScript("OnMouseDown", function(self)
+    local x = GetCursorPosition()
+    local ok, w = pcall(function() return win:GetWidth() * win:GetEffectiveScale() end)
+    self.sizing = ok and w and w > 0 and { x = x, w = w, scale = win:GetScale() } or nil
+  end)
+  grip:SetScript("OnMouseUp", function(self)
+    if self.sizing then
+      self.sizing = nil
+      ns.SetWindowScale(win:GetScale())
+    end
+  end)
+  grip:SetScript("OnUpdate", function(self)
+    local s = self.sizing
+    if s then
+      local x = GetCursorPosition()
+      ns.SetWindowScale(s.scale * (s.w + (x - s.x)) / s.w, true)
+    end
+  end)
+  grip:SetScript("OnEnter", function(self)
+    GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
+    GameTooltip:AddLine("Window size")
+    GameTooltip:AddLine(("Drag to make the whole window bigger or smaller (now %d%%). Also /smog scale 120, or the options window."):format(math.floor(ns.WindowScale() * 100 + 0.5)), 1, 1, 1, true)
+    GameTooltip:Show()
+  end)
+  grip:SetScript("OnLeave", GameTooltip_Hide)
+  win.grip = grip
 
   if not pcall(win.SetTitle, win, "Slutmog Scout") then
     local title = win.TitleText or (win.TitleContainer and win.TitleContainer.TitleText)
@@ -1934,6 +2108,58 @@ local function CreateWindow()
   CreateReviewView()
 
   win:SetScript("OnShow", Refresh)
+end
+
+-- The window's size as a scale of its normal size, 0.6 to 2.
+local SCALE_MIN, SCALE_MAX = 0.6, 2
+ns.SCALE_MIN, ns.SCALE_MAX = SCALE_MIN, SCALE_MAX
+function ns.WindowScale()
+  local s = ns.db and ns.db.opts and tonumber(ns.db.opts.scale)
+  return s and math.max(SCALE_MIN, math.min(SCALE_MAX, s)) or 1
+end
+
+-- Sets the window's scale; its top-left corner stays where it is on screen.
+-- live: while dragging, the position is saved when the drag ends.
+function ns.SetWindowScale(s, live)
+  s = tonumber(s)
+  if not (s and ns.db) then
+    return nil
+  end
+  s = math.floor(math.max(SCALE_MIN, math.min(SCALE_MAX, s)) * 100 + 0.5) / 100
+  ns.db.opts.scale = s ~= 1 and s or nil
+  if win then
+    local ok, left, top = pcall(function()
+      local eff = win:GetEffectiveScale()
+      return win:GetLeft() * eff, win:GetTop() * eff
+    end)
+    pcall(win.SetScale, win, s)
+    if ok and left and top then
+      local eff = win:GetEffectiveScale()
+      win:ClearAllPoints()
+      win:SetPoint("TOPLEFT", UIParent, "BOTTOMLEFT", left / eff, top / eff)
+      if not live then
+        ns.db.winPos = { p = "TOPLEFT", rp = "BOTTOMLEFT", x = left / eff, y = top / eff }
+      end
+    end
+  end
+  return s
+end
+
+function ns.ScaleCommand(rest)
+  rest = (rest or ""):lower():gsub("%%", ""):match("^%s*(.-)%s*$")
+  local n = tonumber(rest)
+  if rest == "reset" or rest == "off" then
+    n = 100
+  end
+  if not n then
+    ns.Print(("Window size: %d%%. Usage: |cffffff00/smog scale|r 60-200 (percent), or reset."):format(math.floor(ns.WindowScale() * 100 + 0.5)))
+    return
+  end
+  if n <= SCALE_MAX then
+    n = n * 100 -- 1.2 means 120%
+  end
+  local s = ns.SetWindowScale(n / 100)
+  ns.Print(("Window size: %d%%."):format(math.floor(s * 100 + 0.5)))
 end
 
 function ns.Toggle(tab, forceShow)

@@ -2654,6 +2654,8 @@ SlashCmdList.SLUTMOGSCOUT = function(input)
     ns.Toggle("review", true)
   elseif cmd == "level" or cmd == "levels" then
     ns.LevelCommand(rest)
+  elseif cmd == "scale" or cmd == "size" then
+    ns.ScaleCommand(rest)
   elseif cmd == "add" then
     ns.AddCustom(rest)
   elseif cmd == "remove" then
@@ -2721,6 +2723,7 @@ SlashCmdList.SLUTMOGSCOUT = function(input)
     print("  |cffffff00/smog measured|r  open your measured farm results")
     print("  |cffffff00/smog review|r  see every piece, on the list or left off, in a grid and rate it 1-10")
     print("  |cffffff00/smog level|r 20-40  show only pieces of these required levels (|cffffff00off|r clears it)")
+    print("  |cffffff00/smog scale|r 120  make the window bigger or smaller, in percent (|cffffff00reset|r for 100)")
     print("  |cffffff00/smog add <item link or id> [note]|r  add your own piece")
     print("  |cffffff00/smog remove <item link or id>|r  take a piece off the list")
     print("  |cffffff00/smog restore|r  bring back removed built-in pieces")
