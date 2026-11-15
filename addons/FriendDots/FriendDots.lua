@@ -16,7 +16,7 @@
     /fdots hpfull     -> keep the health line visible at full health
     /fdots names off|target|all
     /fdots where all|pvp -> everywhere, or only in battlegrounds and arenas
-    /fdots group      -> highlight your own party (bigger dot, gold ring) on / off
+    /fdots group      -> highlight your own party (bigger dot, drawn on top) on / off
     /fdots npcs       -> also turn friendly NPCs and pets into small green dots
     /fdots click [on|off] -> friendly nameplates click-through
     /fdots combat     -> friendly player nameplates (and so the dots) only in combat
@@ -32,7 +32,17 @@ local WHITE  = "Interface\\Buttons\\WHITE8X8"
 local CIRCLE = "Interface\\Masks\\CircleMaskScalable"
 local PLATES_CVAR = "nameplateShowFriendlyPlayers"
 
-local BAR_TEXTURE = "Interface\\TargetingFrame\\UI-StatusBar"   -- the game's own unit frame bar
+-- The look copies this client's own nameplate (Blizzard_NamePlates on the
+-- "forever" branch): its health bar art, its 1 px border at 80% black, its
+-- white border on your target, its name font. Party members are told apart
+-- the way the world map does it (GroupMembersDataProvider): by size only.
+local BAR_ATLAS    = "UI-HUD-CoolDownManager-Bar"               -- the nameplate's health bar
+local BAR_TEXTURE  = "Interface\\TargetingFrame\\UI-StatusBar"  -- fallback if the atlas is missing
+local NAME_FONT    = "SystemFont_NamePlate_Outlined"            -- the nameplate's name font
+local BORDER_ALPHA = 0.8      -- NamePlateFriendlyFrameOptions.defaultBorderColor (black, 0.8)
+local NAME_GAP     = 4        -- the 2 px target border + the game's 2 px name spacing
+local MARKER_SIZE  = 22       -- the game's RaidTargetFrame size
+local MARKER_GAP   = 10       -- the game's gap between a name and the raid marker above it
 
 -- Colours come from the game's own constants where it has one, so the dots
 -- read like the rest of the UI; the numbers are only fallbacks.
@@ -41,15 +51,11 @@ local function GameColor(c, r, g, b)
     return { r, g, b }
 end
 
-local LOW_HEALTH    = 0.35                 -- health line turns red below this
 local DEAD_ALPHA    = 0.35                 -- dead or offline
 local NPC_COLOR     = GameColor(FACTION_BAR_COLORS and FACTION_BAR_COLORS[5], 0.00, 0.60, 0.10) -- "friendly"
 local UNKNOWN_COLOR = GameColor(GRAY_FONT_COLOR, 0.50, 0.50, 0.50)  -- class not known (yet)
-local HP_GREEN      = { 0.00, 1.00, 0.00 }  -- the game's health bar green
-local HP_RED        = GameColor(RED_FONT_COLOR, 1.00, 0.10, 0.10)
-local GROUP_COLOR   = GameColor(NORMAL_FONT_COLOR, 1.00, 0.82, 0.00) -- the game's gold: your own party
-local TARGET_COLOR  = GameColor(HIGHLIGHT_FONT_COLOR, 1.00, 1.00, 1.00)
-local GROUP_SCALE   = 1.25                 -- their dot is this much bigger
+local TARGET_COLOR  = GameColor(NamePlateConstants and NamePlateConstants.TARGET_BORDER_COLOR, 1.00, 1.00, 1.00)
+local GROUP_SCALE   = 11 / 8.25            -- world map: party pins 11, raid pins 8.25
 local LEVEL_NORMAL, LEVEL_GROUP, LEVEL_TARGET = 5, 10, 15   -- frame level above the plate
 
 local DEFAULTS = {
@@ -111,29 +117,21 @@ end
 -- Health curves (health percent -> alpha), evaluated by the client so the
 -- addon never reads the health itself.
 ---------------------------------------------------------------------------
-local notFullCurve, lowCurve   -- nil = not built yet, false = unavailable
+local notFullCurve   -- nil = not built yet, false = unavailable
 local function Curves()
-    if notFullCurve ~= nil then return notFullCurve, lowCurve end
-    notFullCurve, lowCurve = false, false
+    if notFullCurve ~= nil then return notFullCurve end
+    notFullCurve = false
     if UnitHealthPercent and C_CurveUtil and C_CurveUtil.CreateCurve and Enum and Enum.LuaCurveType then
-        local ok, a, b = pcall(function()
+        local ok, a = pcall(function()
             local notFull = C_CurveUtil.CreateCurve()
             notFull:SetType(Enum.LuaCurveType.Step)
             notFull:AddPoint(0.0, 1)
             notFull:AddPoint(1.0, 0)
-            -- Linear with a very short ramp: the same shape BetterBlizzPlates
-            -- uses for its execute indicator on this client.
-            local low = C_CurveUtil.CreateCurve()
-            low:SetType(Enum.LuaCurveType.Linear)
-            low:AddPoint(0.0, 1)
-            low:AddPoint(LOW_HEALTH, 1)
-            low:AddPoint(LOW_HEALTH + 0.001, 0)
-            low:AddPoint(1.0, 0)
-            return notFull, low
+            return notFull
         end)
-        if ok and a and b then notFullCurve, lowCurve = a, b end
+        if ok and a then notFullCurve = a end
     end
-    return notFullCurve, lowCurve
+    return notFullCurve
 end
 
 ---------------------------------------------------------------------------
@@ -180,9 +178,7 @@ local function ClassColor(classFile)
 end
 
 local atlasChecked = {}
-local function ClassAtlas(classFile)
-    if not classFile then return end
-    local atlas = "classicon-" .. classFile:lower()
+local function AtlasExists(atlas)
     local ok = atlasChecked[atlas]
     if ok == nil then
         ok = true
@@ -191,7 +187,13 @@ local function ClassAtlas(classFile)
         end
         atlasChecked[atlas] = ok
     end
-    if ok then return atlas end
+    return ok
+end
+
+local function ClassAtlas(classFile)
+    if not classFile then return end
+    local atlas = "classicon-" .. classFile:lower()   -- the game's GetClassAtlas()
+    if AtlasExists(atlas) then return atlas end
 end
 
 ---------------------------------------------------------------------------
@@ -234,7 +236,14 @@ local function MoveMarker(uf, w)
         end
         holder:SetIgnoreParentAlpha(true)
         icon:ClearAllPoints()
-        icon:SetPoint("BOTTOM", w, "TOP", 0, (db.names == "off" and 3 or 16) + (w.inParty and 4 or 0))
+        icon:SetSize(MARKER_SIZE, MARKER_SIZE)
+        -- Where the game puts it on a plate that shows only a name: above
+        -- the name; above the dot when names are off.
+        if db.names == "off" then
+            icon:SetPoint("BOTTOM", w, "TOP", 0, NAME_GAP)
+        else
+            icon:SetPoint("BOTTOM", w.name, "TOP", 0, MARKER_GAP)
+        end
     end)
 end
 
@@ -319,21 +328,13 @@ local function CreateWidget(plate)
     w.plate = plate
     w:SetFrameLevel((plate:GetFrameLevel() or 0) + LEVEL_NORMAL)
 
-    -- From the outside in; the first two only show on your target, the next
-    -- two only on members of your own party.
-    w.targetEdge = Circle(w, "BACKGROUND", -5)   -- dark edge so the ring reads on snow
-    w.targetEdge:SetVertexColor(0, 0, 0, 0.9)
-    w.targetEdge:SetAlpha(0)
-    w.targetRing = Circle(w, "BACKGROUND", -4)   -- white ring
+    -- One border, as on the game's nameplate: 1 px black at 80%, and on your
+    -- target a 2 px white one drawn over it (the plate's selected border).
+    w.ring = Circle(w, "BACKGROUND", 1)
+    w.ring:SetVertexColor(0, 0, 0, BORDER_ALPHA)
+    w.targetRing = Circle(w, "BACKGROUND", 2)
     w.targetRing:SetVertexColor(TARGET_COLOR[1], TARGET_COLOR[2], TARGET_COLOR[3], 1)
     w.targetRing:SetAlpha(0)
-    w.groupEdge = Circle(w, "BACKGROUND", -3)    -- dark edge around the gold
-    w.groupEdge:SetVertexColor(0, 0, 0, 0.9)
-    w.groupEdge:SetAlpha(0)
-    w.groupRing = Circle(w, "BACKGROUND", -2)    -- gold: in your own party
-    w.groupRing:SetVertexColor(GROUP_COLOR[1], GROUP_COLOR[2], GROUP_COLOR[3], 1)
-    w.groupRing:SetAlpha(0)
-    w.ring = Circle(w, "BACKGROUND", 1)          -- thin outline
 
     -- The dot itself is a vertical status bar clipped to a circle: full in
     -- "bar" mode, draining from the top in "fill" mode.
@@ -358,31 +359,31 @@ local function CreateWidget(plate)
     icon:Hide()
     w.fill, w.bg, w.icon = fill, bg, icon
 
-    -- Health line: 2 px of the game's health bar inside a 1 px dark edge
-    -- (too thin for any of the game's bar borders, so the edge is plain).
+    -- Health line: the nameplate's own health bar, 2 px high, in the same
+    -- colour as the dot (friendly plates colour health by class), inside the
+    -- plate's 1 px border at 80% black.
     local hp = CreateFrame("Frame", nil, w)
     hp:SetPoint("TOP", w, "BOTTOM", 0, -2)
     local hpBg = hp:CreateTexture(nil, "BACKGROUND")
     hpBg:SetAllPoints(hp)
-    hpBg:SetColorTexture(0, 0, 0, 0.85)
-    local function Bar(level, color)
-        local bar = CreateFrame("StatusBar", nil, hp)
-        bar:SetPoint("TOPLEFT", hp, "TOPLEFT", 1, -1)
-        bar:SetPoint("BOTTOMRIGHT", hp, "BOTTOMRIGHT", -1, 1)
-        bar:SetStatusBarTexture(BAR_TEXTURE)
-        bar:SetStatusBarColor(color[1], color[2], color[3])
-        bar:SetFrameLevel((hp:GetFrameLevel() or 0) + level)
-        return bar
-    end
-    w.hp = hp
-    w.hpBar = Bar(1, HP_GREEN)
-    w.hpLow = Bar(2, HP_RED)     -- same value on top, visible only at low health
-    w.hpLow:SetAlpha(0)
+    hpBg:SetColorTexture(0, 0, 0, BORDER_ALPHA)
+    local bar = CreateFrame("StatusBar", nil, hp)
+    bar:SetPoint("TOPLEFT", hp, "TOPLEFT", 1, -1)
+    bar:SetPoint("BOTTOMRIGHT", hp, "BOTTOMRIGHT", -1, 1)
+    bar:SetStatusBarTexture(BAR_TEXTURE)
+    local barTex = bar:GetStatusBarTexture()
+    if barTex and barTex.SetAtlas and AtlasExists(BAR_ATLAS) then barTex:SetAtlas(BAR_ATLAS) end
+    bar:SetFrameLevel((hp:GetFrameLevel() or 0) + 1)
+    w.hp, w.hpBar = hp, bar
 
-    local name = w:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
-    name:SetPoint("BOTTOM", w, "TOP", 0, 3)
-    local font, fontSize = name:GetFont()
-    if font and fontSize then name:SetFont(font, fontSize, "OUTLINE") end
+    -- The nameplate's own name font (outlined), falling back to a game font.
+    local name = w:CreateFontString(nil, "OVERLAY")
+    if not pcall(name.SetFontObject, name, NAME_FONT) or not name:GetFont() then
+        name:SetFontObject("GameFontHighlightSmall")
+        local font, fontSize = name:GetFont()
+        if font and fontSize then name:SetFont(font, fontSize, "OUTLINE") end
+    end
+    name:SetPoint("BOTTOM", w, "TOP", 0, NAME_GAP)
     name:Hide()
     w.name = name
 
@@ -407,14 +408,7 @@ local function SetHealth(w)
     end
     w.hpBar:SetMinMaxValues(0, hpMax)
     w.hpBar:SetValue(hp)
-    w.hpLow:SetMinMaxValues(0, hpMax)
-    w.hpLow:SetValue(hp)
-    local notFull, low = Curves()
-    if low then
-        w.hpLow:SetAlpha(UnitHealthPercent(unit, true, low))
-    else
-        w.hpLow:SetAlpha(0)
-    end
+    local notFull = Curves()
     if db.hpAlways or not notFull then
         w.hp:SetAlpha(1)
     else
@@ -449,17 +443,14 @@ end
 local function UpdateTarget(w)
     local isTarget = UnitIsUnit(w.unit, "target")
     AlphaFromBool(w.targetRing, isTarget, 1, 0)
-    AlphaFromBool(w.targetEdge, isTarget, 1, 0)
     if db.names == "target" then AlphaFromBool(w.name, isTarget, 1, 0) end
 end
 
--- Is this dot a member of your own party? true / false, or a hidden value
--- that the rings can still display.
-local function PartyState(w)
+-- Is this dot a member of your own party? A hidden answer counts as no:
+-- size and layer can't follow a hidden value.
+local function InParty(w)
     if not (db.groupRing and w.kind == "player" and UnitInParty) then return false end
-    local party = UnitInParty(w.unit)
-    if issecret and issecret(party) then return party end
-    return party and true or false
+    return Known(UnitInParty(w.unit)) == true
 end
 
 -- Party members are drawn above other dots, your target above everything.
@@ -507,12 +498,9 @@ local function Style(w)
     local size = atlas and db.iconSize or db.dotSize
     if w.kind == "npc" then size = max(4, floor(size * 0.7 + 0.5)) end
 
-    -- Your own party stands out: a bigger dot, drawn above the others, inside
-    -- a gold ring with a dark edge. When the game hides who is in your party
-    -- only the ring is used, because that is all a hidden value can drive.
-    local party = PartyState(w)
-    local partyKnown = Known(party)               -- true / false / nil (hidden)
-    w.inParty = (partyKnown == true)
+    -- Your own party stands out the way the world map shows it: a bigger
+    -- dot (party pins 11 against raid pins 8.25), drawn above the others.
+    w.inParty = InParty(w)
     if w.inParty then size = floor(size * GROUP_SCALE + 0.5) end
     if raised ~= w then w:SetFrameLevel(BaseLevel(w)) end
 
@@ -520,24 +508,12 @@ local function Style(w)
     w:ClearAllPoints()
     w:SetPoint("CENTER", w.plate, "CENTER", 0, db.yOffset)
 
-    local pad = atlas and 1.5 or 1
-    local outer = pad
-    SetPad(w.ring, w, pad)
-    if partyKnown ~= false then
-        SetPad(w.groupRing, w, pad + 2)
-        SetPad(w.groupEdge, w, pad + 3)
-        outer = pad + 3                           -- the target ring goes around it
-    end
-    SetPad(w.targetRing, w, outer + 1.5)
-    SetPad(w.targetEdge, w, outer + 2.5)
-    AlphaFromBool(w.groupRing, party, 1, 0)
-    AlphaFromBool(w.groupEdge, party, 1, 0)
+    SetPad(w.ring, w, 1)
+    SetPad(w.targetRing, w, 2)
     if atlas then
-        w.ring:SetVertexColor(r, g, b, 1)         -- class-coloured rim around the icon
         w.icon:SetAtlas(atlas)
         w.icon:Show()
     else
-        w.ring:SetVertexColor(0, 0, 0, 0.9)
         w.icon:Hide()
     end
     -- The drained part in fill mode: dark, but never as dark as the outline.
@@ -554,6 +530,7 @@ local function Style(w)
     end
     if mode == "bar" then
         w.hp:SetSize(max(size, 12) + 2, 4)
+        w.hpBar:SetStatusBarColor(r, g, b)
         w.hp:Show()
     else
         w.hp:Hide()
@@ -562,8 +539,8 @@ local function Style(w)
     if db.names == "off" then
         w.name:Hide()
     else
-        w.name:ClearAllPoints()                   -- clear of the gold ring
-        w.name:SetPoint("BOTTOM", w, "TOP", 0, w.inParty and 7 or 3)
+        w.name:ClearAllPoints()
+        w.name:SetPoint("BOTTOM", w, "TOP", 0, NAME_GAP)
         w.name:SetText(UnitName(unit))            -- may be secret: fine for a widget
         w.name:SetTextColor(r, g, b)
         w.name:SetAlpha(1)
@@ -945,7 +922,7 @@ local function PrintHelp()
     print("  /fdots style dot|icon   -  /fdots size <4-64>   -  /fdots y <-100..100>")
     print("  /fdots hp bar|fill|off   -  /fdots hpfull (show the health line at full health)")
     print("  /fdots names off|target|all   -  /fdots where all|pvp (pvp = only battlegrounds and arenas)")
-    print("  /fdots group (your own party: bigger dot, gold ring)   -  /fdots npcs   -  /fdots click [on|off]")
+    print("  /fdots group (your own party: bigger dot, drawn on top)   -  /fdots npcs   -  /fdots click [on|off]")
     print("  /fdots plates (friendly player nameplates on/off)   -  /fdots combat (friendly nameplates only in combat)")
     print("  /fdots on|off   -  /fdots reset   -  /fdots debug")
     print("  /fdots config (options window)   -  /fdots minimap (minimap button on/off)")

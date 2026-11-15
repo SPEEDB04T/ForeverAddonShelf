@@ -8,10 +8,10 @@ For WoW Forever (Interface 16001).
 
 ## What you see
 
-- **Dot**: 12 px circle in the player's class colour, thin dark outline.
-- **Health**: a 2 px line under the dot. It only appears when the player is missing health and turns red below 35%. Dead and offline players are dimmed.
-- **Target**: a white ring with a dark edge around the dot of your current target. That dot is also drawn on top of its neighbours.
-- **Your party**: members of your own party get a bigger dot inside a gold ring with a dark edge, and are drawn on top of other dots, so you can pick them out of the rest of the team.
+- **Dot**: 12 px circle in the player's class colour with the nameplate's thin dark border.
+- **Health**: a 2 px line under the dot, drawn with the nameplate's own health bar in the player's class colour (friendly nameplates colour health by class). It only appears when the player is missing health. Dead and offline players are dimmed.
+- **Target**: the border of your target's dot turns white, as the game's nameplate border does. That dot is also drawn on top of its neighbours.
+- **Your party**: members of your own party get a bigger dot (by the same ratio the world map uses for party members) and are drawn on top of other dots, so you can pick them out of the rest of the team.
 - **Raid markers** (skull, star...) stay visible and sit above the dot.
 - Blizzard's own friendly plate (bar, name, cast bar, buffs) is hidden while the dot is shown and comes back when the addon is off.
 
@@ -28,13 +28,13 @@ For WoW Forever (Interface 16001).
 | `/fdots` | Current settings and the command list |
 | `/fdots config` | The options window (also: left-click the minimap button, or Options > AddOns) |
 | `/fdots minimap` | Minimap button on / off. Right-clicking the button turns the dots on / off |
-| `/fdots style dot` / `icon` | Dots, or round class icons with a class-coloured rim |
+| `/fdots style dot` / `icon` | Dots, or round class icons with the same thin border |
 | `/fdots size <4-64>` | Size of the current style (dot 12, icon 22 by default) |
 | `/fdots hp bar` / `fill` / `off` | Health as a line under the dot, as the dot itself draining, or not at all |
 | `/fdots hpfull` | Keep the health line visible at full health |
 | `/fdots names off` / `target` / `all` | Name above the dot: never, only your target, or always |
 | `/fdots where all` / `pvp` | Dots everywhere, or only inside battlegrounds and arenas |
-| `/fdots group` | Highlight on members of your own party (bigger dot, gold ring) on / off |
+| `/fdots group` | Highlight on members of your own party (bigger dot, drawn on top) on / off |
 | `/fdots npcs` | Also turn friendly NPCs and pets into smaller green dots |
 | `/fdots click on` / `off` | Friendly nameplates click-through (on by default). On means you can't click a teammate's plate to target them |
 | `/fdots y <n>` | Move the dot up or down |

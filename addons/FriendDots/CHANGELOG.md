@@ -1,5 +1,16 @@
 # Changelog
 
+## 1.4.0
+
+The dots are built like the game's own nameplate.
+
+- One border: the nameplate's thin black border, which turns white on your target, as the game's plate does. The separate white ring and its dark edge are gone.
+- Your own party: a bigger dot (by the ratio the world map uses for party members, so 12 px becomes 16 px), drawn on top. The gold ring is gone; the game marks no one with a coloured ring.
+- Health line: the nameplate's own health bar art, in the player's class colour as friendly nameplates show it. It no longer turns red at low health; the game's plate doesn't either.
+- Names: the nameplate's own outlined name font, 4 px above the dot.
+- Class icons: no class-coloured rim, the same thin border as the dots.
+- Raid markers: the game's 22 px, 10 px above the name when names are shown, as on a plate that shows only a name.
+
 ## 1.3.0
 
 Friendly nameplates only in fights, and colours that match the game.

@@ -39,7 +39,7 @@ local function Rows()
           },
           get = Get("where"), set = Set("where") },
         { kind = "check", label = "Highlight your own party",
-          tip = "Members of your own party get a bigger dot inside a gold ring and are drawn on top of other dots.",
+          tip = "Members of your own party get a bigger dot, as on the world map, and are drawn on top of other dots.",
           get = Get("groupRing"), set = Set("groupRing") },
         { kind = "check", label = "Dots on friendly NPCs too",
           get = Get("npcs"), set = Set("npcs") },
