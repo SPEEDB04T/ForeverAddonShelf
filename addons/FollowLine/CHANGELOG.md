@@ -1,5 +1,10 @@
 # Changelog
 
+## 1.1.3
+
+- The options window and the minimap button were redrawn by the shared kit: they now copy the game's own Options rows and its round minimap button.
+- Four option names are shorter, so each fits on one line and the rows stay evenly spaced: "Follow without a click", "Sound on call and drop-off", "Say when others drop off", "Lock window and Follow button". The rest of each sentence is in its tooltip.
+
 ## 1.1.2
 
 - Fixed: players' copies of the addon probably never heard each other, so a called line never arrived and nobody got a Follow button. The server writes the realm in a message's sender differently from how the game names it ("First Last-CAMWOWUS1Realm9RPPvP" against "RPPvP"), and every message whose sender didn't match was thrown away without a word. Players are now found by their name as the group shows it, space included; the realm only decides between two players with the same name.

@@ -11,7 +11,7 @@ Puts your party or raid into a follow line: one player leads, and everyone else 
 
 The game starts a follow only from the player's own click or key press, so the addon gives you one button and one key for it instead of doing it for you. Set the key under **Key Bindings > AddOns > Follow Line**.
 
-There is an option, "Follow without a click, where the game allows it" (`/line auto`), for clients that do let addons start a follow. It is off to begin with, and if the game refuses it turns itself off again.
+There is an option, "Follow without a click" (`/line auto`), for clients that do let addons start a follow. It is off to begin with, and if the game refuses it turns itself off again.
 
 During a fight the game does not let an addon change the Follow button. If the line changes then, chat tells you who to `/follow`, and the button catches up when the fight ends.
 
