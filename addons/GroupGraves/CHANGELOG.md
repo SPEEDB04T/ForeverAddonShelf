@@ -1,5 +1,9 @@
 # Changelog
 
+## 1.3.2
+
+- The map markers and their tooltip are listed for LookShots, the developer's screenshot helper, so they can be checked against the game's own look. Without LookShots installed nothing changes.
+
 ## 1.3.1
 
 - The options window and the minimap button are redrawn by the shared kit: they now copy the game's own Options rows and its round minimap button.

@@ -9,7 +9,7 @@
 -- A marker takes the mouse for its tooltip only; presses go on to the map, so it can still
 -- be dragged from on top of a marker. A left-click (press and release on the same marker) is
 -- seen through the game-wide mouse events and puts a waypoint on the corpse.
-local _, ns = ...
+local ADDON_NAME, ns = ...
 local Map = {}
 ns.Map = Map
 
@@ -390,3 +390,50 @@ clicks:SetScript("OnEvent", function(_, event, button)
         if hovered == pin then PinEnter(pin) end      -- the click hint changed
     end
 end)
+
+---------------------------------------------------------------------------
+-- LookShots, a screenshot helper on the developer's machine only (never on the
+-- shelf): the frames this addon draws itself, so it can take one shot of each the
+-- first time it shows. Nothing happens when LookShots isn't installed.
+---------------------------------------------------------------------------
+local function Version()
+    local read = (C_AddOns and C_AddOns.GetAddOnMetadata) or GetAddOnMetadata
+    if not read then return "unknown" end
+    local ok, v = pcall(read, ADDON_NAME, "Version")
+    v = ok and Known(v) or nil
+    return type(v) == "string" and v or "unknown"
+end
+
+local function Showing(frame)
+    local ok, v = pcall(frame.IsVisible, frame)
+    return ok and Known(v) and true or false
+end
+
+-- A marker on the open map, one with its name under it when there is one.
+local function ShownMarker()
+    local any
+    for _, pin in ipairs(active) do
+        if Showing(pin) then
+            if Showing(pin.label) then return pin end
+            any = any or pin
+        end
+    end
+    return any
+end
+
+-- The game's tooltip while it shows what this addon wrote in it for a marker.
+local function MarkerTooltip()
+    local tip = GameTooltip
+    if not (hovered and tip and tip.GetOwner and Showing(hovered) and Showing(tip)) then return nil end
+    local ok, owner = pcall(tip.GetOwner, tip)
+    if ok and owner == hovered then return tip end
+end
+
+LookShotsTargets = LookShotsTargets or {}
+LookShotsTargets[ADDON_NAME] = {
+    version = Version(),
+    frames = {
+        { label = "map marker", frame = ShownMarker, pad = 60 },   -- small: the map around it too
+        { label = "marker tooltip", frame = MarkerTooltip },
+    },
+}
