@@ -1,7 +1,7 @@
 ## Interface: 16001
 ## Title: Slutmog Scout
 ## Notes: Scans the auction house (open it first) for revealing BoE armor that is not crafted and shows where to farm the most valuable pieces. Type /smog to open.
-## Version: 1.3.1
+## Version: 1.3.2
 ## Category-enUS: Auctions
 ## SavedVariables: SlutmogScoutDB
 ## OptionalDeps: Auctionator, TradeSkillMaster

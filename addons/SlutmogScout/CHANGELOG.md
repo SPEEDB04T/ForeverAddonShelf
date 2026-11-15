@@ -1,5 +1,12 @@
 # Changelog
 
+## 1.3.2
+
+- The options window and the minimap button are redrawn by the shared kit: they now copy the game's own
+  Options rows and its round minimap button.
+- The auto-scan option is now called "Scan at the auction house", so it fits on one line; the rest of the
+  sentence is in its tooltip.
+
 ## 1.3.1
 
 The window is now built like the auction house itself, piece by piece, not only with its art.

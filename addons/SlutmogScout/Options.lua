@@ -19,8 +19,8 @@ end
 local function Rows()
   return {
     { kind = "header", text = "Scanning" },
-    { kind = "check", label = "Scan when the auction house opens",
-      tip = "At most once every 30 minutes. Same as /smog auto.",
+    { kind = "check", label = "Scan at the auction house",
+      tip = "Scans when you open the auction house, at most once every 30 minutes. Same as /smog auto.",
       get = GetOpt("autoScan"), set = SetOpt("autoScan") },
     { kind = "check", label = "Show prices on item tooltips",
       tip = "Adds the last scanned price and where to farm it to the tooltip of a tracked piece. Same as /smog tooltip.",
