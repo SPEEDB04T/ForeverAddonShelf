@@ -15,7 +15,7 @@
 -- works too). A reminder in your own chat says when it is time for the next one.
 local ADDON, ns = ...
 
-ns.VERSION = "1.2.0"
+ns.VERSION = "1.2.1"
 ns.TITLE = "Slutmog Shop"
 ns.ICON = "Interface\\Icons\\INV_Misc_Coin_02"
 ns.ACCENT = { 0.96, 0.55, 0.78 }
@@ -1108,13 +1108,13 @@ local function ToggleWindow()
     if ns.UI and ns.UI.Toggle then
         ns.UI.Toggle()
     else
-        Print("the shop window did not load. Restart the game once so it finds the addon's files.")
+        Print("the shop window did not load. Type /reload once so the game finds the addon's files.")
     end
 end
 ns.ToggleWindow = ToggleWindow
 
 local function OpenOptions()
-    if ns.Kit and ns.Kit.Open then ns.Kit.Open() else Print("the options did not load. Restart the game once.") end
+    if ns.Kit and ns.Kit.Open then ns.Kit.Open() else Print("the options did not load. Type /reload once.") end
 end
 ns.OpenOptions = OpenOptions
 

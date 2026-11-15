@@ -1,5 +1,9 @@
 # Changelog
 
+## 1.2.1
+
+- The chat lines that told you to restart the game now say /reload, which is all this client needs. 1.2.0's download went out a moment before that fix; everything else is the same as 1.2.0.
+
 ## 1.2.0
 
 - All ready-made ads are new. They no longer pun on the item's name. They describe how the piece looks (written from its textures: the strap harnesses, the plate bikinis, the chastity-belt legguards, the spider-web sleeves) or speak to the buyer as a player: plate at 40, repair bills, the healer watching your health bar, getting inspected at the mailbox, "Keep getting ganked, never getting camped?". Transmog as a way to show off gold is in there too. Suggestive, never explicit.
@@ -9,7 +13,7 @@
 
 ## 1.1.1
 
-- Updating from 1.0.0 adds a new file (Ads.lua), so restart the game once: quit and start it again, because /reload is not enough. Until then the ready-made ads stay away and your own ad lines are used.
+- Updating from 1.0.0 adds a new file (Ads.lua): type /reload once after updating. Until then the ready-made ads stay away and your own ad lines are used.
 
 ## 1.1.0
 
