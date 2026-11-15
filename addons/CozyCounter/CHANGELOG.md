@@ -1,5 +1,9 @@
 # Changelog
 
+## 1.1.2 (2026-11-14)
+
+- Lists the reminder icons for LookShots, the author's screenshot helper, so they can be checked against the game's buff icons. Does nothing without it.
+
 ## 1.1.1 (2026-11-14)
 
 - Option labels shortened to fit on one line; the rest of each sentence moved into its tip.

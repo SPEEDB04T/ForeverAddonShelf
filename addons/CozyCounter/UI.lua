@@ -150,6 +150,17 @@ function UI.Place()
     holder:SetScale(ns.db.scale or 1)
 end
 
+-- LookShots (a helper only on the author's machine) shoots each listed frame the first time it
+-- shows. Harmless without it. Keep VERSION equal to the TOC's.
+UI.VERSION = "1.1.2"
+LookShotsTargets = type(LookShotsTargets) == "table" and LookShotsTargets or {}
+LookShotsTargets["CozyCounter"] = {
+    version = UI.VERSION,
+    frames = {
+        { label = "reminder icons", frame = function() return holder end },
+    },
+}
+
 function UI.Init()
     if holder then return end
     holder = CreateFrame("Frame", "CozyCounterReminder", UIParent)
