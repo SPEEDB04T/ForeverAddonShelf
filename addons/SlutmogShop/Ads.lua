@@ -12,7 +12,7 @@ ns.AD_POOLS = {
         "Tank keeps losing aggro to you and you haven't cast anything yet? That'll be the {item}. {price} at {shop}.",
         "Nobody inspects you at the mailbox anymore? {shop} has {item} for {price}.",
         "Got your epic mount and they still only look at the horse? ~ {shop} ~ {item}, {price}.",
-        "Anyone can farm an epic. Getting inspected by the whole bank line takes {item}. {price} at {shop}.",
+        "Anyone can farm an epic. Getting inspected by everyone at the Ironforge bank takes {item}. {price} at {shop}.",
         "Any fresh 60 has a full set by now. How many have the nerve to wear {item}? {price} at {shop}.",
         "Wearing whatever dropped? People can tell. Wear something you picked on purpose: {item}, {price} at {shop}.",
         "Anyone can buy an epic mount. Paying {price} to wear this little is how they know you're rich. {item} at {shop}.",
@@ -24,7 +24,7 @@ ns.AD_POOLS = {
         "Goldshire regulars walking straight past you? {shop} fixes that. {item}, {price}.",
         "Group disbanded and nobody added you as a friend? They will next time. {shop} has {item} for {price}.",
         "Want the rogue to drop stealth just to get a better look? ~ {shop} ~ {item}, {price}.",
-        "Hunter's pet gets more petting than you do? {item}, {price} at {shop}.",
+        "Hunter's pet gets more /love than you do? {item}, {price} at {shop}.",
         "When did someone last whisper 'nice gear' and mean it that way? {shop} has {item} for {price}.",
         "Sick of being kicked for low dps? Nobody kicks the one wearing {item}. {price} at {shop}.",
         "Guildies ask for screenshots of your damage meter and never of you? {item}, {price} at {shop}.",
@@ -33,7 +33,9 @@ ns.AD_POOLS = {
         "The other faction can't talk to you. In {item} they'll /kneel anyway. {price} at {shop}.",
         "Get followed around Ironforge for once. {shop} has {item} for {price}.",
         "Only whispers you get are 'LF healer'? {item} from {shop} gets you the other kind. {price}.",
-        "Raid leader keeps putting you at the back? In {item} you get moved up front. {price} at {shop}.",
+        "Always the last one summoned? In {item} the warlock clicks your name first. {price} at {shop}.",
+        "Standing on the Ironforge bridge in full tier and nobody stops? Try less. {shop} has {item} for {price}.",
+        "Whole raid buffed and nobody looks at you twice? Mark of the Wild doesn't fix that. {item}, {price} at {shop}.",
         "Somebody will ctrl-click this link to see it on. Then they'll want to see it on you. {item}, {price} at {shop}.",
     },
     plate = {
@@ -48,8 +50,8 @@ ns.AD_POOLS = {
     },
     mail = {
         "Yes, it has an armor value. No, that's not why anyone buys it. ~ {shop} ~ {item}, {price}.",
-        "It jingles when you walk, so they hear you coming and look up in time. {item}, {price} at {shop}.",
-        "Chainmail on bare skin is cold. You get used to it, and so does everyone watching. {shop} has {item} for {price}.",
+        "Durability 100 out of 100. Coverage, maybe 15. {item}, {price} at {shop}.",
+        "You'll get a /drool before you get a buff. {shop} has {item} for {price}.",
         "Lowest repair bill you'll ever pay. Count the links, it won't take long. ~ {shop} ~ {item}, {price}.",
     },
     mail_low = {
@@ -60,7 +62,8 @@ ns.AD_POOLS = {
     mail_high = {
         "Hunters: you learned mail at 40 and the first thing you want is less of it? Good instinct. {item}, {price} at {shop}.",
         "Shamans: 40 levels in leather, and now mail that shows more than the leather did. ~ {shop} ~ {item}, {price}.",
-        "Hunters, stop standing at max range. In {item} you'll want them closer. {price} at {shop}.",
+        "Hunters have a dead zone. In {item} everyone wants to stand in yours. {price} at {shop}.",
+        "Every item is a hunter item. This one really should be. {shop} has {item} for {price}.",
     },
     leather = {
         "Rogues, you spend half your life invisible. Make the other half count. ~ {shop} ~ {item}, {price}.",
@@ -78,10 +81,11 @@ ns.AD_POOLS = {
     },
     legs = {
         "Riding skill cost you a fortune. Show off what's doing the riding. {shop} has {item} for {price}.",
-        "Mount up in {item} and watch the people behind you stop overtaking. {price} at {shop}.",
+        "Ride out of Ironforge in {item} and count how many people /follow you. {price} at {shop}.",
+        "Nobody ever inspects your legs slot? Give them a reason. {item}, {price} at {shop}.",
         "Sitting down to drink after every pull? In {item} the group won't mind the wait. {price} at {shop}.",
-        "For the ones who dance on the mailbox and mean it. {shop} has {item} for {price}.",
-        "Everyone runs behind the tank anyway. Give them a view. ~ {shop} ~ {item}, {price}.",
+        "For the ones who dance on the mailbox and mean it. ~ {shop} ~ {item}, {price}.",
+        "Everyone runs behind the tank anyway. Give them a view. {item}, {price} at {shop}.",
         "You jump everywhere like the rest of us. In {item} people will thank you for it. {price} at {shop}.",
     },
     chest = {
@@ -130,7 +134,7 @@ ns.AD_POOLS = {
     look_web_robe = {
         "The sleeves are spider web. See-through, sticky-looking, and you're the one doing the catching. {item}, {price} at {shop}.",
         "A teal robe with web for sleeves and silver leaves over exactly two places. ~ {shop} ~ {item}, {price}.",
-        "People walk into webs without looking. In this one they look first and walk in anyway. {item}, {price} at {shop}.",
+        "Every spider in Duskwood has webbed you at some point. Your turn. {item}, {price} at {shop}.",
     },
     look_hip_window = {
         "Long trousers with both hips cut out. Ankles covered, hips bare. ~ {shop} ~ {item}, {price}.",
@@ -164,19 +168,19 @@ ns.AD_POOLS = {
         "All the leather sits underneath. What sits on top of it is yours. {item}, {price} at {shop}.",
     },
     look_loincloth = {
-        "A {color} flap front and back on a studded belt, open at the sides. Mind the wind in the Barrens. {item}, {price} at {shop}.",
+        "A {color} flap front and back on a studded belt, open at the sides. Careful on the gryphon. {item}, {price} at {shop}.",
         "Covers you from the front and from behind. From the side, not so much. {item}, {price} at {shop}.",
         "It's a loincloth. Don't /sit facing the group. Or do. {shop} has {item} for {price}.",
         "A studded belt, a strip of cloth and a lot of thigh. ~ {shop} ~ {item}, {price}.",
     },
     look_loincloth_mail = {
-        "A flap of {color} scales front and back on a studded belt. It jingles when you walk. {item}, {price} at {shop}.",
+        "{color} scale flaps front and back on a studded belt. Don't ask a mage for Slow Fall. {item}, {price} at {shop}.",
         "Covers you from the front and from behind. From the side, not so much. {shop} has {item} for {price}.",
         "It's a loincloth made of chain. Don't /sit facing the group. Or do. ~ {shop} ~ {item}, {price}.",
         "A studded belt, a strip of scales and a lot of thigh. {item}, {price} at {shop}.",
     },
     look_black_harness = {
-        "Black studded straps and a wide belt, {color} trim. Looks like you charge by the hour. {item}, {price} at {shop}.",
+        "Black studded straps, wide belt, {color} trim. Looks like you work nights in Goldshire. {item}, {price} at {shop}.",
         "Black leather and pyramid studs. The warlock's succubus asked where you got it. ~ {shop} ~ {item}, {price}.",
         "A studded harness. People will assume things about your weekends, and they'll be right. {item}, {price} at {shop}.",
         "The sort of outfit where the guards say 'move along' and then don't move. {shop} has {item} for {price}.",
@@ -194,12 +198,12 @@ ns.AD_POOLS = {
     look_scale_top = {
         "A short {color} scale top that stops well above the belt. {shop} has {item} for {price}.",
         "Tight scales on top, bare stomach under them. Level {level} and already dressed better than the 60s. {item}, {price} at {shop}.",
-        "Scales the size of coins and about as many as you'd carry in one pocket. {item}, {price} at {shop}.",
+        "About as many scales as a murloc loses in one fight. {item}, {price} at {shop}.",
     },
     look_padded_scoop = {
         "Looks like normal padded armor until you see how low the front scoops. ~ {shop} ~ {item}, {price}.",
         "Standard-issue armor with a neckline no quartermaster signed off on. {item}, {price} at {shop}.",
-        "Regulation armor from behind. Then you turn round and the recruiter loses his place. {item}, {price} at {shop}.",
+        "From behind it passes for Stormwind guard issue. Then you turn round. {shop} has {item} for {price}.",
     },
     look_dragon_top = {
         "A {color} scale sash over one shoulder and the rest left out in the open. {item}, {price} at {shop}.",
@@ -216,7 +220,7 @@ ns.AD_POOLS = {
     },
     look_chain_cups = {
         "Two {color} steel cups hanging from chains. If the chains hold, it's a chest piece. {item}, {price} at {shop}.",
-        "Steel cups on chains. Cold in Winterspring, popular everywhere. {shop} has {item} for {price}.",
+        "Steel cups on chains. Don't wear it to Winterspring. Wear it everywhere else. {shop} has {item} for {price}.",
         "The whole thing hangs off two chains round the neck. Nobody stands behind you for the loot. {item}, {price} at {shop}.",
     },
     look_scale_bikini = {
@@ -262,7 +266,7 @@ ns.AD_POOLS = {
         "Steel bottoms with a lock ring on the front, like a chastity belt. Key not included. {item}, {price} at {shop}.",
         "Looks like someone locked you into it for a reason. Guildies will ask what you did. {item}, {price} at {shop}.",
         "A locked steel belt and bare legs under it. Tell them who holds the key or let them guess. {item}, {price} at {shop}.",
-        "Somebody in your guild is going to offer to pick that lock. Rogues especially. {item}, {price} at {shop}.",
+        "There's a lock on the front. Every rogue in Ironforge will offer to level lockpicking on it. {item}, {price} at {shop}.",
     },
     look_plate_bikini = {
         "Bikini armor, the real thing, the reason half of us rolled a female character. {shop} has {item} for {price}.",
@@ -272,7 +276,7 @@ ns.AD_POOLS = {
         "The most expensive way to wear almost nothing at level {level}. ~ {shop} ~ {item}, {price}.",
     },
     look_barred_window = {
-        "Full plate with a barred window over the cleavage. A cell door with visiting hours all day. {item}, {price} at {shop}.",
+        "Full plate, barred window over the cleavage. Same bars as the Stockade, better view. {item}, {price} at {shop}.",
         "Solid {color} plate except for one window with bars across it, right where you'd guess. {item}, {price} at {shop}.",
         "From the back of the raid it looks like proper armor. Then you turn around. {shop} has {item} for {price}.",
     },
@@ -390,7 +394,6 @@ ns.ITEM_ADS = {
     },
     -- Arachnidian Robes (cloth chest, level 52)
     [14297] = {
-        "Spent all week killing spiders and still nobody wants to get tangled up with you? ~ {shop} ~ {item}, {price}.",
         pools = { "look_web_robe", "cloth", "chest", "general" },
         color = "teal",
     },
@@ -621,7 +624,7 @@ ns.ITEM_ADS = {
     -- Nightshade Tunic (leather chest, level 58)
     [10220] = {
         "A black studded corset laced open down the front. The collar ring is for what you think it is. {item}, {price} at {shop}.",
-        "Black leather, laced, with a collar ring. The warlock's succubus is going to file a complaint. {item}, {price} at {shop}.",
+        "Black leather, laced, with a collar ring. The warlock's succubus keeps trying to trade you for it. {item}, {price} at {shop}.",
         pools = { "leather", "chest", "lvl_high", "general" },
     },
     -- Warrior's Tunic (mail chest, level 6)
@@ -824,7 +827,7 @@ ns.ITEM_ADS = {
     -- Enduring Breastplate (mail chest, level 34)
     [14760] = {
         "A banded steel corset with a keyhole cut over the cleavage. People look through keyholes. {item}, {price} at {shop}.",
-        "Blue steel, laced tight, one slit down the front. Breathing is optional at level 34. {item}, {price} at {shop}.",
+        "Blue steel, laced so tight your breath bar starts ticking on dry land. {shop} has {item} for {price}.",
         pools = { "mail", "chest", "mail_low", "lvl_low", "general" },
     },
     -- Marauder's Tunic (mail chest, level 35)
@@ -896,7 +899,7 @@ ns.ITEM_ADS = {
     },
     -- Warmonger's Chestpiece (mail chest, level 45)
     [9957] = {
-        "Slatted red, black and gold lacquer, like a samurai's armor if she'd skipped most of it. {item}, {price} at {shop}.",
+        "Slatted red, black and gold lacquer with most of the slats left off. {item}, {price} at {shop}.",
         "Red and gold slats with skin showing between them when you move. Move a lot. {shop} has {item} for {price}.",
         pools = { "mail", "chest", "mail_high", "general" },
     },

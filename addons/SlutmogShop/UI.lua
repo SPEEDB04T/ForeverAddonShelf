@@ -403,13 +403,14 @@ local function SyncPreview()
     if p then
         text:SetText(p.text)
         text:SetTextColor(Color(HIGHLIGHT_FONT_COLOR, 1, 1, 1))
-        frame.count:SetText(("%d/%d"):format(#p.text, ns.CHAT_LIMIT))
+        frame.count:SetText(("%s%d/%d"):format(p.vote == "yes" and "You voted yes  " or "", #p.text, ns.CHAT_LIMIT))
     else
         text:SetText("Nothing to post: " .. tostring(why))
         text:SetTextColor(Color(GRAY_FONT_COLOR, 0.5, 0.5, 0.5))
         frame.count:SetText("")
     end
-    frame.skip:SetEnabled(p ~= nil)
+    frame.yes:SetEnabled(p ~= nil)
+    frame.no:SetEnabled(p ~= nil)
 end
 
 local function Ago(seconds)
@@ -668,8 +669,8 @@ local function BuildPreview(host)
     frame.preview:SetJustifyV("TOP")
     if frame.preview.SetWordWrap then frame.preview:SetWordWrap(true) end
     box:EnableMouse(true)
-    OnHover(box, "The next ad", "This is what goes out on your next click, exactly as people will read it. "
-        .. "Skip passes over it for the next one.")
+    OnHover(box, "The next ad", "This is what goes out when you click Post ad, exactly as people will read it. "
+        .. "Yes and No move on to the next one without posting, and remember what you thought of this line.")
 end
 
 local function SelectTab(i)
@@ -757,14 +758,28 @@ local function Build()
     OnHover(f.post, "Post ad", "Posts the ad shown above. The minimap button, your key (Key Bindings > AddOns) "
         .. "and /slutshop post do the same.")
 
-    f.skip = Button(f, "Skip")
-    f.skip:SetPoint("BOTTOMRIGHT", f, "BOTTOMRIGHT", -82, 4)
-    f.skip:SetScript("OnClick", function() ns.Skip() end)
-    OnHover(f.skip, "Skip", "Passes over this ad and shows the next one, without posting.")
+    -- Post, Yes, No: your verdict on the line shown above
+    f.yes = Button(f, "Yes", 52)
+    f.yes:SetPoint("RIGHT", f.post, "LEFT", 0, 0)
+    f.yes:SetScript("OnClick", function()
+        Sound(SOUNDKIT and SOUNDKIT.IG_MAINMENU_OPTION_CHECKBOX_ON)
+        ns.Vote(true)
+    end)
+    OnHover(f.yes, "Yes, good line", "Keeps this line and shows the next one, without posting.",
+        "Your votes are saved, so the good and the bad lines can be told apart later (/slutshop votes lists them).")
+    f.no = Button(f, "No", 52)
+    f.no:SetPoint("RIGHT", f.yes, "LEFT", 0, 0)
+    f.no:SetScript("OnClick", function()
+        Sound(SOUNDKIT and SOUNDKIT.IG_MAINMENU_OPTION_CHECKBOX_OFF)
+        ns.Vote(false)
+    end)
+    OnHover(f.no, "No, bad line", "Drops this line from your ads for good, for every piece that shares it, and shows the next one.",
+        "One of your own ad lines is only skipped: edit those on the Lines tab. /slutshop votes reset brings every line back.")
+    f.skip = f.yes     -- the old Skip button's place
 
     f.status = Text(f, "GameFontHighlightSmall")
     f.status:SetPoint("LEFT", options, "RIGHT", 8, 0)
-    f.status:SetPoint("RIGHT", f.skip, "LEFT", -8, 0)
+    f.status:SetPoint("RIGHT", f.no, "LEFT", -8, 0)
     f.status:SetJustifyH("CENTER")
     local statusHover = CreateFrame("Frame", nil, f)
     statusHover:SetAllPoints(f.status)

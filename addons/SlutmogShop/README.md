@@ -6,7 +6,7 @@ Advertise your slutmog wares with one click. Each ad names your shop and the nex
 
 ## Ready-made ads
 
-Every piece on the slutmog list (the 166 items Slutmog Scout knows) comes with 17 to 28 ready-made ads. Some describe how the piece looks, some speak to the buyer as a player (plate at 40, repair bills, the healer, the mailbox, showing off gold). Suggestive, never explicit. For example:
+Every piece on the slutmog list (the 166 items Slutmog Scout knows) comes with 17 to 29 ready-made ads. Some describe how the piece looks, some speak to the buyer as a player (plate at 40, repair bills, the healer, the mailbox, showing off gold). Suggestive, never explicit. For example:
 
 > Keep getting ganked, never getting camped? Give them a reason to stay. [Tyrant's Legplates], 10 gold pieces at Smuttanie's Necessities.
 
@@ -40,7 +40,7 @@ The game only lets an addon send a line to Trade or General from a click or a ke
   - `{items}`: as many wares with prices as fit ("[A] 10g, [B] 25g")
   - `{level}`: the ware's required level (openers can use it too)
 - **Post to**: Trade, General, any channel you have joined, Say, Yell or Guild. Trade only works in a capital city.
-- At the bottom: the next ad exactly as people will read it, and its length (a chat line holds 255; an item link counts about 60 more than its name). **Skip** picks another one.
+- At the bottom: the next ad exactly as people will read it, and its length (a chat line holds 255; an item link counts about 60 more than its name). **Post ad** posts it. **Yes** and **No** move on to the next one without posting and save what you thought of the line; No drops a ready-made line from your ads for good.
 
 Openers and ad lines take turns, each used once before any repeats. If an ad is too long for one chat message, a shorter opener is used, or none.
 
@@ -51,6 +51,8 @@ Openers and ad lines take turns, each used once before any repeats. If an ad is 
 | `/slutshop` | open or close the shop window |
 | `/slutshop post` | post the next ad |
 | `/slutshop skip` | pick another ad without posting |
+| `/slutshop yes`, `/slutshop no` | say whether the next ad is a good line; no drops it from your ads for good |
+| `/slutshop votes` | the lines you voted on; `/slutshop votes reset` forgets them |
 | `/slutshop preview` | show the next ad in your own chat |
 | `/slutshop add [item] 10g` | add a ware or change its price (shift-click the item into the line) |
 | `/slutshop remove [item]` | stop selling it |

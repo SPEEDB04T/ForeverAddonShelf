@@ -15,7 +15,7 @@
 -- works too). A reminder in your own chat says when it is time for the next one.
 local ADDON, ns = ...
 
-ns.VERSION = "1.2.1"
+ns.VERSION = "1.3.0"
 ns.TITLE = "Slutmog Shop"
 ns.ICON = "Interface\\Icons\\INV_Misc_Coin_02"
 ns.ACCENT = { 0.96, 0.55, 0.78 }
@@ -298,6 +298,11 @@ local function InitDB()
     db.wares = kept
     if type(db.decks) ~= "table" then db.decks = {} end
     if type(db.passed) ~= "table" then db.passed = {} end
+    if type(db.votes) ~= "table" then db.votes = {} end       -- ad as written in Ads.lua -> "yes" or "no"
+    if type(db.sent) ~= "table" then db.sent = {} end         -- ad as written in Ads.lua -> times posted
+    for ad, v in pairs(db.votes) do
+        if type(ad) ~= "string" or (v ~= "yes" and v ~= "no") then db.votes[ad] = nil end
+    end
     if type(db.log) ~= "table" then db.log = {} end
     if type(db.minimap) ~= "table" then db.minimap = {} end
     if type(db.posts) ~= "number" then db.posts = 0 end
@@ -572,6 +577,16 @@ local function DeckTake(key, n, index)
             return
         end
     end
+    -- Not among the ones left this round: those could not be used (too long, or voted out), and
+    -- the ad came from further back. That ends the round; the next one starts after this ad.
+    d.order = Shuffled(n, d.order[n])
+    for k = 1, n do
+        if d.order[k] == index then
+            d.order[k], d.order[1] = d.order[1], d.order[k]
+            break
+        end
+    end
+    d.pos = 2
 end
 
 -- The wares that may go into an ad, the one due next first.
@@ -679,10 +694,11 @@ local GENERAL_SHARE = 6
 local flat = setmetatable({}, { __mode = "k" })     -- a piece's entry -> its ads, built once
 
 local function BuildAds(id, entry)
-    local list, seen = {}, {}
+    local list, seen = { src = {} }, {}
     local color = type(entry.color) == "string" and entry.color or nil
     local function Add(ad)
         if type(ad) ~= "string" then return end
+        local raw = ad
         if ad:find("{color}", 1, true) then
             if not color then return end
             ad = ad:gsub("{color}", function() return color end)
@@ -690,6 +706,7 @@ local function BuildAds(id, entry)
         if not seen[ad] then
             seen[ad] = true
             list[#list + 1] = ad
+            list.src[#list] = raw
         end
     end
     for _, ad in ipairs(entry) do Add(ad) end
@@ -741,9 +758,13 @@ local function ComposeItemAd(offer, shop)
     WareFields(fields, w)
     local key = "item:" .. w.id
     for _, ai in ipairs(DeckOrder(key, #ads)) do
-        local text, miss = Fill(ads[ai], fields)
-        if not miss and #text <= CHAT_LIMIT then
-            return { text = text, kind = "item", deck = key, decks = #ads, ad = ai, ware = wi, last = wi, wares = 1 }
+        local src = ads.src and ads.src[ai] or ads[ai]
+        if db.votes[src] ~= "no" then
+            local text, miss = Fill(ads[ai], fields)
+            if not miss and #text <= CHAT_LIMIT then
+                return { text = text, kind = "item", deck = key, decks = #ads, ad = ai, ware = wi, last = wi, wares = 1,
+                         src = src, vote = db.votes[src] }
+            end
         end
     end
     return nil
@@ -865,6 +886,32 @@ function ns.Skip()
     if p then Commit(p) end
     Changed()
     return p ~= nil
+end
+
+-- Your verdict on the ad that is up next, then on to the one after it. "No" takes a ready-made ad
+-- out of your ads for good (for every piece that shares it). Your own ad lines are yours to edit,
+-- so for them this is only a skip. Returns whether there was an ad, and whether the vote counted.
+function ns.Vote(good)
+    local p = ns.Next()
+    if not p then return false, false end
+    local counted = p.src ~= nil
+    if counted then db.votes[p.src] = good and "yes" or "no" end
+    Commit(p)
+    Changed()
+    return true, counted
+end
+
+function ns.VoteCounts()
+    local yes, no = 0, 0
+    for _, v in pairs(db.votes) do
+        if v == "yes" then yes = yes + 1 else no = no + 1 end
+    end
+    return yes, no
+end
+
+function ns.ClearVotes()
+    db.votes = {}
+    Changed()
 end
 
 ---------------------------------------------------------------------------
@@ -1018,6 +1065,7 @@ function ns.Post()
     end
     ns.lastPostAt = Now()
     db.posts = (db.posts or 0) + 1
+    if p.src then db.sent[p.src] = (tonumber(db.sent[p.src]) or 0) + 1 end
     sent.entry = Log(label, p.text, awaiting == sent and "sent" or "seen")
     Commit(p)
     ScheduleReminder()
@@ -1124,6 +1172,8 @@ local function PrintHelp()
         "/slutshop - open or close the shop window",
         "/slutshop post - post the next ad (works in a macro and from a key: Key Bindings > AddOns)",
         "/slutshop skip - pick another ad without posting",
+        "/slutshop yes, /slutshop no - say whether the next ad is a good line; no drops it from your ads for good",
+        "/slutshop votes - the lines you voted on (/slutshop votes reset forgets them)",
         "/slutshop preview - show the next ad in your own chat",
         "/slutshop add [item link] 10g - add a ware or change its price (shift-click the item to link it)",
         "/slutshop remove [item link] - stop selling it",
@@ -1210,6 +1260,32 @@ local function Slash(msg)
         if ns.Skip() then ns.Preview() else Print("nothing to post: " .. tostring(select(2, ns.Next()))) end
     elseif cmd == "preview" or cmd == "test" then
         ns.Preview()
+    elseif cmd == "yes" or cmd == "no" then
+        local p = ns.Next()
+        local had, counted = ns.Vote(cmd == "yes")
+        if not had then
+            Print("nothing to vote on: " .. tostring(select(2, ns.Next())))
+        elseif not counted then
+            Print("that one is your own ad line (edit it on the Lines tab). Skipped.")
+        elseif cmd == "yes" then
+            Print("kept as a good line: " .. p.src)
+        else
+            Print("dropped from your ads: " .. p.src)
+        end
+    elseif cmd == "votes" then
+        if rest:lower() == "reset" then
+            ns.ClearVotes()
+            Print("votes forgotten; every ready-made ad is back.")
+            return
+        end
+        local yes, no = ns.VoteCounts()
+        Print(("%d good, %d dropped."):format(yes, no))
+        for _, want in ipairs({ "yes", "no" }) do
+            local list = {}
+            for ad, v in pairs(db.votes) do if v == want then list[#list + 1] = ad end end
+            table.sort(list)
+            for _, ad in ipairs(list) do Say(("  %s: %s"):format(want == "yes" and "good" or "dropped", ad)) end
+        end
     elseif cmd == "add" or cmd == "price" then
         local link, left = LinkIn(rest)
         if not link then

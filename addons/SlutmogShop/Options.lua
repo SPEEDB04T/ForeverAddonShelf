@@ -76,6 +76,9 @@ local function Rows()
               tip = "Puts the shop name, the openers and the ad lines back to how they started. Your wares stay. "
                   .. "The ready-made ads never change.",
               click = function() ns.ResetLines() end },
+            { label = "Forget my votes", confirm = true,
+              tip = "Brings back every ready-made ad you answered No to in the shop window, and forgets the Yes votes too.",
+              click = function() ns.ClearVotes() end },
             { label = "Reset settings", confirm = true,
               tip = "Puts every setting on this page back to how it started. Your wares, openers and ad lines stay.",
               click = function() ns.Reset() end },

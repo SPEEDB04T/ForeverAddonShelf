@@ -1,5 +1,12 @@
 # Changelog
 
+## 1.3.0
+
+- Yes and No buttons next to Post ad, in place of Skip. Yes keeps the line shown and moves to the next one. No drops that ready-made line from your ads for good, for every piece that shares it. Post ad posts it as before, and the addon counts how often each line went out. Your votes are saved, so the good and bad lines can be told apart and the next rewrite can follow them.
+- `/slutshop yes` and `/slutshop no` do the same from chat. `/slutshop votes` lists the lines you voted on, `/slutshop votes reset` (or Options > "Forget my votes") brings every line back. One of your own lines on the Lines tab is only skipped by No: those are yours to edit.
+- Ads: every line that didn't rest on something in the game is gone or rewritten. The mount line is now "Ride out of Ironforge in [piece] and count how many people /follow you." New ones use the hunter dead zone, warlock summons, /follow and /drool, lockpicking, the breath bar, the Stockade, Goldshire, durability and Slow Fall.
+- Fixed: when the lines left in a round could not be used, the same ad could come up again and again.
+
 ## 1.2.1
 
 - The chat lines that told you to restart the game now say /reload, which is all this client needs. 1.2.0's download went out a moment before that fix; everything else is the same as 1.2.0.
