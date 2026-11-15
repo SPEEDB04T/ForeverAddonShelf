@@ -1,5 +1,12 @@
 # Changelog
 
+## 1.4.3
+
+- Fixed: the shop never saw your auctions. It was reading the old auction house, and this client has the new one. Open the auction house (after posting, or any time) and wares that are up for sale show "On the auction house", stay in the rotation and are advertised at their buyout.
+- Ads reworked from the third round of Yes/No votes: the 14 lines voted No are gone.
+- 13 new general lines, rhymes among them ("Don't be shy, show some thigh.", "Put the booty back in Booty Bay.").
+- 15 new lines for a shop with "Smuttanie" in its name: more in the "Smuttanie keeps you ready!" pattern, plus rhymes and slogans ("Smuttanie's legendary goods: for the ones who would.").
+
 ## 1.4.2
 
 - Seven more name lines for a shop with "Smuttanie" in its name, in the pattern of "Long night of grinding with the boys? Smuttanie keeps you ready!": a thing players really say that also reads dirty, then Smuttanie to the rescue.

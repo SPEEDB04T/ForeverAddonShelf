@@ -15,7 +15,7 @@
 -- works too). A reminder in your own chat says when it is time for the next one.
 local ADDON, ns = ...
 
-ns.VERSION = "1.4.2"
+ns.VERSION = "1.4.3"
 ns.TITLE = "Slutmog Shop"
 ns.ICON = "Interface\\Icons\\INV_Misc_Coin_02"
 ns.ACCENT = { 0.96, 0.55, 0.78 }
@@ -544,27 +544,70 @@ function ns.ScanBags(all)
     return #added
 end
 
--- Reads your own auctions (the auction house must be open). A piece from the slutmog list that is
--- up for sale goes on the shelf by itself, priced at its buyout. Returns how many it put there.
-function ns.ScanAuctions()
-    if not db or type(GetNumAuctionItems) ~= "function" or type(GetAuctionItemInfo) ~= "function" then return 0 end
+-- Your own auctions as rows { id, link, buyout, count, sold }, from whichever auction house this
+-- client has: the new one (C_AuctionHouse, what Forever uses) or the old one. nil: neither answers.
+local function OwnedAuctions()
+    local rows = {}
+    local AH = C_AuctionHouse
+    if type(AH) == "table" and type(AH.GetNumOwnedAuctions) == "function" and type(AH.GetOwnedAuctionInfo) == "function" then
+        local ok, n = pcall(AH.GetNumOwnedAuctions)
+        if not ok or not Readable(n) or type(n) ~= "number" then return nil end
+        local soldStatus = type(Enum) == "table" and type(Enum.AuctionStatus) == "table" and Enum.AuctionStatus.Sold or 1
+        for i = 1, n do
+            local iok, a = pcall(AH.GetOwnedAuctionInfo, i)
+            if iok and type(a) == "table" then
+                local key = a.itemKey
+                local id = type(key) == "table" and key.itemID or nil
+                if Readable(id) and type(id) == "number" then
+                    local link, buyout, count, status = a.itemLink, a.buyoutAmount, a.quantity, a.status
+                    rows[#rows + 1] = {
+                        id = id,
+                        link = Readable(link) and type(link) == "string" and link or nil,
+                        buyout = Readable(buyout) and type(buyout) == "number" and buyout or 0,
+                        count = Readable(count) and type(count) == "number" and count > 0 and count or 1,
+                        sold = Readable(status) and status == soldStatus,
+                    }
+                end
+            end
+        end
+        return rows
+    end
+    if type(GetNumAuctionItems) ~= "function" or type(GetAuctionItemInfo) ~= "function" then return nil end
     local ok, n = pcall(GetNumAuctionItems, "owner")
-    if not ok or not Readable(n) or type(n) ~= "number" then return 0 end
-    local found, added, now = {}, {}, time()
+    if not ok or not Readable(n) or type(n) ~= "number" then return nil end
     for i = 1, n do
         local r = { pcall(GetAuctionItemInfo, "owner", i) }
         local count, buyout, sold, id = r[4], r[11], r[17], r[18]
-        if r[1] and Readable(id) and type(id) == "number" and not (Readable(sold) and sold == 1) then
-            if not (Readable(count) and type(count) == "number" and count > 0) then count = 1 end
-            if not (Readable(buyout) and type(buyout) == "number") then buyout = 0 end
-            local each = math.floor(buyout / count)
-            local old = found[id]
-            if not old or (each > 0 and (old.price == 0 or each < old.price)) then found[id] = { price = each, at = now } end
+        if r[1] and Readable(id) and type(id) == "number" then
             local link
             if type(GetAuctionItemLink) == "function" then
                 local lok, v = pcall(GetAuctionItemLink, "owner", i)
                 if lok and Readable(v) and type(v) == "string" then link = v end
             end
+            rows[#rows + 1] = {
+                id = id, link = link,
+                buyout = Readable(buyout) and type(buyout) == "number" and buyout or 0,
+                count = Readable(count) and type(count) == "number" and count > 0 and count or 1,
+                sold = Readable(sold) and sold == 1,
+            }
+        end
+    end
+    return rows
+end
+
+-- Reads your own auctions (the auction house must be open). A piece from the slutmog list that is
+-- up for sale goes on the shelf by itself, priced at its buyout. Returns how many it put there.
+function ns.ScanAuctions()
+    if not db then return 0 end
+    local rows = OwnedAuctions()
+    if not rows then return 0 end
+    local found, added, now = {}, {}, time()
+    for _, r in ipairs(rows) do
+        if not r.sold then
+            local id, link = r.id, r.link
+            local each = math.floor(r.buyout / r.count)
+            local old = found[id]
+            if not old or (each > 0 and (old.price == 0 or each < old.price)) then found[id] = { price = each, at = now } end
             local key = link and WareKey(link)
             if db.autoAdd and key and ns.ItemAds(id) and not ns.FindWare(link) and not db.passed[key] then
                 db.wares[#db.wares + 1] = { id = id, link = link, price = each, unpriced = each <= 0 or nil }
@@ -579,6 +622,19 @@ function ns.ScanAuctions()
     end
     Changed()
     return #added
+end
+
+-- Asks the auction house for your auctions; the answer comes as an event. Only the new auction
+-- house needs asking, and only when it is not busy (another addon's query must not be cut short).
+function ns.AskAuctions()
+    local AH = C_AuctionHouse
+    if type(AH) ~= "table" or type(AH.QueryOwnedAuctions) ~= "function" then return false end
+    if type(AH.IsThrottledMessageSystemReady) == "function" then
+        local ok, ready = pcall(AH.IsThrottledMessageSystemReady)
+        if not ok or not Readable(ready) or ready == false then return false end
+    end
+    local order = type(Enum) == "table" and type(Enum.AuctionHouseSortOrder) == "table" and Enum.AuctionHouseSortOrder.Price or 4
+    return (pcall(AH.QueryOwnedAuctions, { { sortOrder = order, reverseSort = false } }))
 end
 
 function ns.Unpriced()
@@ -1464,6 +1520,7 @@ local events = CreateFrame("Frame")
 ns.events = events
 -- One event this client does not know must not stop the rest from registering.
 for _, ev in ipairs({ "ADDON_LOADED", "PLAYER_LOGIN", "GET_ITEM_INFO_RECEIVED", "BAG_UPDATE_DELAYED", "AUCTION_OWNED_LIST_UPDATE",
+                      "OWNED_AUCTIONS_UPDATED", "AUCTION_HOUSE_SHOW", "AUCTION_HOUSE_AUCTION_CREATED",
                       "CHANNEL_UI_UPDATE", "CHAT_MSG_CHANNEL", "CHAT_MSG_SAY", "CHAT_MSG_YELL", "CHAT_MSG_GUILD" }) do
     pcall(events.RegisterEvent, events, ev)
 end
@@ -1496,9 +1553,11 @@ events:SetScript("OnEvent", function(_, event, ...)
         elseif ns.UI and ns.UI.RefreshStock then
             pcall(ns.UI.RefreshStock)
         end
-    elseif event == "AUCTION_OWNED_LIST_UPDATE" then
+    elseif event == "AUCTION_OWNED_LIST_UPDATE" or event == "OWNED_AUCTIONS_UPDATED" then
         ns.ScanAuctions()
         stockSeen = StockKey()
+    elseif event == "AUCTION_HOUSE_SHOW" or event == "AUCTION_HOUSE_AUCTION_CREATED" then
+        ns.AskAuctions()
     elseif event == "CHANNEL_UI_UPDATE" then
         Changed()
     else
