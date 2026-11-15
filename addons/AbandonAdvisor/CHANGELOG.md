@@ -1,3 +1,7 @@
+## 1.6.0
+- Better advice when your log has room. The summary no longer just says there is no need to drop anything: it names the quests not worth keeping anyway (marked Abandon), or when none are, the weakest ones, now marked Maybe in the list. Their tooltips say so, and `/abandon list` names the weakest three when nothing is worth abandoning.
+- Two new reasons to drop a quest: it is one level from going grey for you, or it is on another continent.
+
 ## 1.5.1
 - The list order is unchanged and now pinned by a test: quests marked to drop first, then drop, maybe and keep, each from the strongest reason to drop down. Finished quests moved to Turn-in Route in 1.5.0, which is why they no longer lead the list.
 - After an update that adds files, the message now says a `/reload` loads the options window and the minimap button (no game restart needed).

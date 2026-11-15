@@ -26,6 +26,9 @@ local function levelRules(row, q, player)
     row.trivial = trivial
     if trivial then
         add(row, 35, "grey", ("Grey for you (level %d): next to no XP"):format(q.level))
+    elseif (player.greenRange or 0) >= 3 and diff <= 1 - player.greenRange then
+        -- One level more and it goes grey: little XP now, less by the time you get there.
+        add(row, 12, "almost grey", ("Almost grey for you (level %d): little XP, and grey within a level"):format(q.level))
     elseif diff >= 5 then
         add(row, 30, ("%d levels above you"):format(diff),
             ("%d levels above you: not doable for a while"):format(diff))
@@ -93,7 +96,12 @@ end
 local function placeRules(row, q, ctx)
     if q.sameZone then
         add(row, -20, "in this zone", "In the zone you are in now")
-    elseif q.zone then
+        return
+    end
+    if q.otherContinent then
+        add(row, 10, "other continent", "On another continent: a long trip from here")
+    end
+    if q.zone then
         local siblings = ctx.zoneCount[q.zone] or 1
         if siblings <= 1 then
             add(row, 10, "only quest there", ("Your only quest in %s: a trip for one quest"):format(q.zone))
@@ -249,6 +257,14 @@ function Score.RateAll(quests, player, meta, opts)
         order[i].pick = true
         picks = picks + 1
     end
+    -- With room to spare the advice still counts: quests worth dropping anyway, and the weak ones.
+    local worth, weak = 0, 0
+    for _, row in ipairs(order) do
+        if not row.pick then
+            if row.verdict == "abandon" then worth = worth + 1
+            elseif row.verdict == "maybe" then weak = weak + 1 end
+        end
+    end
 
     table.sort(rows, function(a, b)
         if (a.pick or false) ~= (b.pick or false) then return a.pick == true end
@@ -260,7 +276,7 @@ function Score.RateAll(quests, player, meta, opts)
 
     return {
         rows = rows, player = player, count = count, max = cap, free = free, target = target,
-        needed = needed, picks = picks, ready = ready,
+        needed = needed, picks = picks, ready = ready, worth = worth, weak = weak,
         hiddenByCollapse = meta.hiddenByCollapse, error = meta.error,
     }
 end
@@ -287,8 +303,18 @@ end
 function Score.Summary(res)
     if res.error then return res.error end
     local parts = {}
+    local function quests(n) return n == 1 and "1 quest" or (n .. " quests") end
     if res.needed == 0 then
-        parts[1] = ("No need to drop anything: you have %d free (target %d)."):format(res.free, res.target)
+        local room = ("You have room (%d free, target %d)"):format(res.free, res.target)
+        if (res.worth or 0) > 0 then
+            parts[1] = ("%s, but %s %s not worth keeping: drop the %s marked Abandon at the top."):format(
+                room, quests(res.worth), res.worth == 1 and "is" or "are", res.worth == 1 and "one" or "ones")
+        elseif (res.weak or 0) > 0 then
+            parts[1] = ("%s. Nothing is clearly worth dropping; the %s marked Maybe at the top %s the weakest."):format(
+                room, quests(res.weak), res.weak == 1 and "is" or "are")
+        else
+            parts[1] = room .. ", and every quest in your log is worth keeping."
+        end
     elseif res.picks < res.needed then
         parts[1] = ("To reach %d free you need %d more, but only %d can be dropped."):format(
             res.target, res.needed, res.picks)

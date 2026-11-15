@@ -193,6 +193,10 @@ local function ShowTooltip(self)
     GameTooltip:AddDoubleLine(label, ("score %d"):format(row.score), gr, gg, gb, wr, wg, wb)
     if row.pick then
         GameTooltip:AddLine("One of the first to drop to reach your free-slot target.", wr, wg, wb, true)
+    elseif not row.locked and row.verdict == "abandon" then
+        GameTooltip:AddLine("Worth dropping even with room in your log.", wr, wg, wb, true)
+    elseif not row.locked and row.verdict == "maybe" then
+        GameTooltip:AddLine("Weak: drop it when you want the slot.", wr, wg, wb, true)
     end
     if #row.reasons > 0 then GameTooltip:AddLine(" ") end
     for _, reason in ipairs(row.reasons) do
@@ -321,6 +325,7 @@ end
 local function TagFor(data)
     if data.pinned then return "Pinned" end
     if data.pick or data.verdict == "abandon" then return "Abandon" end
+    if data.verdict == "maybe" and not data.locked then return "Maybe" end
 end
 
 -- What the line under the title says: its zone and the top reasons.

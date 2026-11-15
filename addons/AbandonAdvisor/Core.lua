@@ -2,7 +2,7 @@
 local ADDON, ns = ...
 
 ns.ADDON = ADDON
-ns.VERSION = "1.5.1"
+ns.VERSION = "1.6.0"
 
 local defaults = {
     point = nil,
@@ -485,6 +485,18 @@ function ns.Report()
                 row.pick and ns.ColorCode("RED_FONT_COLOR", 1, 0.125, 0.125) .. "\194\187 "
                     or ns.ColorCode("HIGHLIGHT_FONT_COLOR", 1, 1, 1), row.level and tostring(row.level) or "?",
                 row.title, VERDICT_TEXT[row.verdict], table.concat(why, ", ")))
+        end
+    end
+    if shown == 0 then
+        -- Nothing to abandon: name the weakest few, so the list still says something.
+        for _, row in ipairs(res.rows) do
+            if shown < 3 and row.verdict == "maybe" and not row.locked then
+                shown = shown + 1
+                local why = {}
+                for i = 1, math.min(3, #row.reasons) do why[#why + 1] = row.reasons[i].short end
+                ns.Print(("  %s[%s] %s|r: maybe (%s)"):format(ns.ColorCode("HIGHLIGHT_FONT_COLOR", 1, 1, 1),
+                    row.level and tostring(row.level) or "?", row.title, table.concat(why, ", ")))
+            end
         end
     end
     if shown == 0 then ns.Print("  Nothing stands out as worth abandoning.") end

@@ -227,6 +227,8 @@ local function ReadQuest(C, id, index, info, header, player, questie)
     local distanceSq, onContinent = Call(C.GetDistanceSqToQuest, id)
     distanceSq = Num(distanceSq)
     if distanceSq and distanceSq > 0 and onContinent ~= false then quest.distance = sqrt(distanceSq) end
+    -- The game answers "not on this continent" only for quests it can place on the map.
+    if distanceSq and onContinent == false then quest.otherContinent = true end
 
     quest.sameZone = quest.onMap or (header ~= nil and player.zone ~= nil and header == player.zone)
     if header and player.className and header == player.className then quest.classQuest = true end

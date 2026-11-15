@@ -1,6 +1,6 @@
 # Abandon Advisor
 
-A WoW Forever addon (Interface 16001) that rates every quest in your log and tells you which ones to abandon when you need room.
+A WoW Forever addon (Interface 16001) that rates every quest in your log and tells you which ones to abandon: the ones to drop when you need room, and the ones not worth keeping even when you have it.
 
 It sits in the game's quest log: open the map / quest log and click the Abandon Advisor side tab (the book icon). The tab needs the ForeverCore addon, which the other Forever addons already use; without it the quest log gets a side button that opens the Abandon Advisor window instead.
 
@@ -8,7 +8,7 @@ The window also opens with `/abandon` (or `/aa`), and by itself when the game re
 
 ## What it tells you
 
-The list looks like the quest log. Finished quests are left out. At the top are the quests to drop to reach your free-slot target (3 by default; set it in the options or with `/abandon free <n>`). An "Abandon" at the end of the title means drop it. Each quest has a score from the rules below; hover it to see every reason and its points.
+The list looks like the quest log. Finished quests are left out. At the top are the quests to drop to reach your free-slot target (3 by default; set it in the options or with `/abandon free <n>`). An "Abandon" at the end of the title means drop it, room or not; "Maybe" marks a weak quest to drop when you want the slot. With room to spare the summary still names them. Each quest has a score from the rules below; hover it to see every reason and its points.
 
 Click a quest to show it in the quest log. Right-click for the same menu as the quest log: Abandon Quest (it always asks first) and Pin as Keep, so a pinned quest is never suggested.
 
@@ -18,7 +18,7 @@ Finished quests are not listed: you hand those in, you don't drop them. The summ
 
 ## The rules
 
-Points toward abandoning: grey quest, far above your level, tiny XP, not started, group/dungeon/raid quest while you are solo, the only quest you have in another zone, repeatable, failed, a low drop rate, a group member abandoned it.
+Points toward abandoning: grey quest, a quest one level from going grey, far above your level, tiny XP, not started, group/dungeon/raid quest while you are solo, the only quest you have in another zone, a quest on another continent, repeatable, failed, a low drop rate, a group member abandoned it.
 
 Drop rates need Questie. For each item a quest still needs from kills, the addon takes the best drop rate Questie lists and works out the kills left (5 more at 10% is about 50 kills). Up to a dozen kills costs nothing; beyond that the quest gains a point per 2.5 kills, up to 25. Items you can also pick up from an object or buy are left out.
 
