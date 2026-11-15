@@ -1,5 +1,20 @@
 # Changelog
 
+## 1.17.1
+
+Fixes the Market tab's models, which 1.17.0 shipped unusable.
+
+- **Fixed: models showed a patch of neck, or nothing.** Each model is now framed on its piece by the
+  game's own camera for it, as in the Appearances window: a chest piece on the torso, a leg piece on
+  the hips and legs.
+- **Each tile says what it is.** Under the model: the piece's name, its lowest price in full (no more
+  cut-off prices) with Buy beside it, and its worth. Your rating is in the top-right corner, "new" or
+  "cheaper" in the top-left. The tiles are bigger, 14 to a page.
+- **A List button** beside the level range switches between the models and the list (it reads Models
+  while the list shows). Filter > View still does the same.
+- Ctrl-wheel zooms the models and Alt-wheel moves them up and down; Filter > Reset zoom undoes it.
+  The wheel alone still turns the page.
+
 ## 1.17.0
 
 - **The Market tab shows models.** Each piece is a model on your body in a grid like the
