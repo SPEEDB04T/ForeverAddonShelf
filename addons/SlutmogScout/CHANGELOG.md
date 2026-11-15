@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.13.1
+
+- **Rating column in the Market list.** Click its header to rank pieces by how good they look. It shows
+  your own rating (or SuccuDev's) in colour, or the list's estimate in grey (~7). Click again to put the
+  lowest first.
+
 ## 1.13.0
 
 The list now knows how often each piece drops and how good each one looks.

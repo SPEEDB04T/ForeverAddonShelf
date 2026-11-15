@@ -86,10 +86,12 @@ local COLS = {
     tip = "Lowest price on the auction house in your last scan." },
   { key = "name", label = "Item", fill = true, padL = 10, align = "LEFT" },
   { key = "type", label = "Type", width = 102, padL = 10, align = "LEFT" },
-  { key = "look", label = "Look", width = 190, padL = 10, align = "LEFT",
+  { key = "look", label = "Look", width = 160, padL = 10, align = "LEFT",
     tip = "Measured from the item's texture: how much of the torso or legs it leaves bare." },
+  { key = "rating", label = "Rating", width = 62, padL = 10, align = "RIGHT", numeric = true,
+    tip = "How good it looks, 1-10: your own rating (or SuccuDev's) in colour, else the estimate the list ships with in grey (~7). Rate a piece in the Review tab. Click to sort the best looks first." },
   { key = "value", label = "Worth", width = 94, padL = 10, align = "RIGHT", numeric = true,
-    tip = "What the piece should fetch as a slutmog: its vendor price times its look (your rating, else SuccuDev's, else its measured grade), its quality and its rarity. Auction prices are left out on purpose: at a launch they climb as players make gold. Grey when it is not listed right now." },
+    tip = "What the piece should fetch as a slutmog: its vendor price times its look (your rating, else SuccuDev's, else the list's estimate, else its measured grade), its quality and its rarity. Auction prices are left out on purpose: at a launch they climb as players make gold. Grey when it is not listed right now." },
   { key = "seen", label = "Seen %", width = 62, padL = 10, align = "RIGHT", numeric = true,
     tip = "Share of your scans in which the piece was listed at all." },
   { key = "mob", label = "Mob lvl", width = 66, padL = 10, align = "RIGHT", numeric = true,
@@ -525,7 +527,10 @@ local function MarketData()
       local buy = info.low and ns.Buy(id, info) or nil
       if (not state.listedOnly or info.low) and (not state.buyOnly or (buy and buy.buy)) then
         local lo, hi = ns.MobRange(it)
+        local look, lookFrom = ns.LookScore(id, it)
+        local rated = lookFrom == "rating" or lookFrom == "estimate"
         rows[#rows + 1] = {
+          rating = rated and look or -1, ratingFrom = lookFrom,
           id = id, it = it, info = info, lo = lo, hi = hi, buy = buy,
           name = it.name or "", type = TypeLabel(it), look = (it.grade and (it.grade .. ": ") or "") .. (it.look or ""),
           low = info.low or -1, qty = (info.qty and info.qty > 0) and info.qty or -1, value = info.value or -1,
@@ -592,6 +597,14 @@ local function RefreshMarket()
       .. BuyNote(d.buy))
     c.type:SetText(d.type)
     c.look:SetText(d.look)
+    if d.rating < 0 then
+      c.rating:SetText("")
+    elseif d.ratingFrom == "estimate" then
+      c.rating:SetText(Grey(("~%d"):format(d.rating)))
+    else
+      -- as in the Review tab: green 7+, gold on the list, red off it
+      c.rating:SetText(("|cff%s%d/10|r"):format(d.rating >= 7 and "40ff40" or d.rating >= ns.RATING_KEEP and "ffd100" or "ff4040", d.rating))
+    end
     if d.info.low then
       c.low:SetText(ns.Money(d.info.low))
     elseif d.info.qty then
