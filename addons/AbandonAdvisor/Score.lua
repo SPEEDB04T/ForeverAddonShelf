@@ -4,7 +4,7 @@ local _, ns = ...
 local Score = {}
 ns.Score = Score
 
-local floor, max = math.floor, math.max
+local floor, max, min = math.floor, math.max, math.min
 
 Score.ABANDON_AT = 40   -- score from which the verdict is "abandon"
 Score.MAYBE_AT = 15     -- score from which the verdict is "maybe"
@@ -113,6 +113,38 @@ local function otherRules(row, q, ctx)
     if q.tracked and ctx.trackingMeans then add(row, -8, "tracked", "You are tracking it") end
 end
 
+-- "12" for 12.4, "4.5" for 4.52: a drop rate in percent
+local function rateText(rate)
+    if rate >= 10 then return ("%d"):format(round(rate)) end
+    return ("%.1f"):format(rate)
+end
+
+-- For the tooltip: "Gnoll Paw 12%, about 58 kills for the 7 left"
+function Score.DropText(drop)
+    return ("%s %s%%, about %d kills for the %d left"):format(drop.item or "Quest item", rateText(drop.rate),
+        min(999, max(1, round(drop.kills))), drop.left)
+end
+
+-- A quest whose items rarely drop costs many kills. Up to a dozen kills is what any kill quest
+-- asks; past that every 2.5 kills still to go is a point, up to 25.
+local function dropRules(row, q, ctx)
+    local drop = q.drop
+    if not drop or not ctx.drops then return end
+    local pts = min(25, round((drop.kills - 12) / 2.5))
+    if pts < 3 then return end
+    local kills = min(999, round(drop.kills))
+    add(row, pts, ("~%d kills for drops"):format(kills),
+        ("%s drops %s%% of the time: about %d kills for the %d you still need"):format(
+            drop.item or "Its quest item", rateText(drop.rate), kills, drop.left))
+end
+
+local function partnerRules(row, q, ctx)
+    local who = ctx.partner[q.id]
+    if who then
+        add(row, 30, who .. " abandoned it", ("%s abandoned it: you would be doing it without your group"):format(who))
+    end
+end
+
 function Score.Rate(q, player, ctx)
     local row = { score = 0, reasons = {} }
     for key, value in pairs(q) do row[key] = value end
@@ -135,6 +167,8 @@ function Score.Rate(q, player, ctx)
     groupRules(row, q, player)
     placeRules(row, q, ctx)
     otherRules(row, q, ctx)
+    dropRules(row, q, ctx)
+    partnerRules(row, q, ctx)
     table.sort(row.reasons, function(a, b)
         local pa, pb = math.abs(a.pts), math.abs(b.pts)
         if pa ~= pb then return pa > pb end
@@ -165,10 +199,11 @@ local function median(values)
     return (values[mid] + values[mid + 1]) / 2
 end
 
--- quests, player, meta come from Scan; opts = { target = n, keep = { [questID] = true } }
+-- quests, player, meta come from Scan; opts = { target = n, keep = { [questID] = true },
+-- drops = false to ignore drop rates, partner = { [questID] = "who in your group abandoned it" } }
 function Score.RateAll(quests, player, meta, opts)
     opts = opts or {}
-    local ctx = { zoneCount = {}, keep = opts.keep or {} }
+    local ctx = { zoneCount = {}, keep = opts.keep or {}, drops = opts.drops ~= false, partner = opts.partner or {} }
     local xps, tracked = {}, 0
     for _, q in ipairs(quests) do
         if not q.ready then

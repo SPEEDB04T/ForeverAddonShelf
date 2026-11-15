@@ -13,7 +13,7 @@ local TAG_KIND = {
 }
 
 ----------------------------------------------------------------------
--- Questie (optional): chain, class and item-start facts per quest
+-- Questie (optional): chain, class, item-start and drop-rate facts per quest
 ----------------------------------------------------------------------
 function Scan.Questie()
     if type(QuestieLoader) ~= "table" or type(QuestieLoader.ImportModule) ~= "function" then return nil end
@@ -32,6 +32,91 @@ local function QuestieFacts(db, id, quest)
     if type(startedBy) == "table" and type(startedBy[3]) == "table" and #startedBy[3] > 0 then
         quest.itemStarted = true
     end
+end
+
+----------------------------------------------------------------------
+-- Drop rates (Questie): the quest items that only come from killing things.
+-- quest.drop = the item that needs the most kills: { item, rate (percent), left, kills }
+----------------------------------------------------------------------
+local dropCache = {}   -- [questID] = { total = item objectives in Questie, { pos, name, rate }, ... }
+
+function Scan.HasDropRates(db)
+    return db ~= nil and type(db.QueryItemSingle) == "function" and type(db.GetItemDroprate) == "function"
+end
+
+local function NotEmpty(value)
+    return type(value) == "table" and next(value) ~= nil
+end
+
+-- The best drop rate among the creatures that drop the item: the one you would farm.
+local function BestRate(db, itemId)
+    local npcs = Call(db.QueryItemSingle, itemId, "npcDrops")
+    if type(npcs) ~= "table" then return nil end
+    local best
+    for _, npcId in pairs(npcs) do
+        local data = Call(db.GetItemDroprate, itemId, npcId)
+        local rate = type(data) == "table" and Num(data[1]) or nil
+        if rate and rate > 0 and (not best or rate > best) then best = rate end
+    end
+    return best
+end
+
+local function QuestDropItems(db, id)
+    if dropCache[id] then return dropCache[id] end
+    local objectives = Call(db.QueryQuestSingle, id, "objectives")
+    local list = type(objectives) == "table" and objectives[3] or nil   -- [3] = items to collect
+    if type(list) ~= "table" then return nil end
+    local items = { total = 0 }
+    for pos, entry in ipairs(list) do
+        items.total = pos
+        local itemId = type(entry) == "table" and Num(entry[1]) or nil
+        -- An item you can also pick up from an object or buy does not hang on a drop rate.
+        if itemId and not NotEmpty(Call(db.QueryItemSingle, itemId, "objectDrops"))
+            and not NotEmpty(Call(db.QueryItemSingle, itemId, "vendors")) then
+            local rate = BestRate(db, itemId)
+            if rate then
+                items[#items + 1] = { pos = pos, rate = min(rate, 100),
+                    name = Str(Call(db.QueryItemSingle, itemId, "name")) }
+            end
+        end
+    end
+    if #items == 0 then return nil end   -- not cached: Questie may still be loading its drop tables
+    dropCache[id] = items
+    return items
+end
+
+local function ReadDrops(db, id, quest)
+    if quest.ready or not Scan.HasDropRates(db) then return end
+    local items = QuestDropItems(db, id)
+    if not items then return end
+    local itemObjectives = {}
+    for _, objective in ipairs(quest.objectives) do
+        if objective.kind == "item" then itemObjectives[#itemObjectives + 1] = objective end
+    end
+    local worst
+    for _, item in ipairs(items) do
+        -- Find the game's objective for this item: by its name, else by its place among the item objectives.
+        local objective
+        if item.name then
+            for _, candidate in ipairs(quest.objectives) do
+                if candidate.text and candidate.text:find(item.name, 1, true) then
+                    objective = candidate
+                    break
+                end
+            end
+        end
+        if not objective and #itemObjectives == items.total then objective = itemObjectives[item.pos] end
+        if objective and not objective.done then
+            local left = (objective.need or 1) - (objective.have or 0)
+            if left > 0 then
+                local kills = left / (item.rate / 100)
+                if not worst or kills > worst.kills then
+                    worst = { item = item.name, rate = item.rate, left = left, kills = kills }
+                end
+            end
+        end
+    end
+    quest.drop = worst
 end
 
 ----------------------------------------------------------------------
@@ -87,6 +172,7 @@ local function ReadObjectives(C, id, quest)
             sum = sum + fraction
             quest.objectives[#quest.objectives + 1] = {
                 text = Str(Field(objective, "text")), have = have, need = need, done = done,
+                kind = Str(Field(objective, "type")),
             }
         end
     end
@@ -146,6 +232,7 @@ local function ReadQuest(C, id, index, info, header, player, questie)
     if header and player.className and header == player.className then quest.classQuest = true end
     if quest.tag == "class" then quest.classQuest = true end
     QuestieFacts(questie, id, quest)
+    ReadDrops(questie, id, quest)
     return quest
 end
 

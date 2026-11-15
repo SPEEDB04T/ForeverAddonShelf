@@ -1,3 +1,8 @@
+## 1.3.0
+- Drop rates count: with Questie installed, a quest whose items rarely drop scores higher for abandoning, by how many kills the items you still need should take. Hover a quest to see the item, its drop rate and the kills left. `/abandon drops` or the options turn it off.
+- Group: when a group member abandons a quest you also have, you are asked whether to abandon it too, and the quest scores higher. Your own abandons are sent to your group the same way (an addon message, nothing in chat). Both sides need Abandon Advisor. `/abandon group` and `/abandon share`, or the options, turn each half off.
+- Looks like the game: the Abandon Advisor window is now the game's own framed window (book portrait, title bar, inset list on the quest log's parchment, buttons along the bottom) instead of a dark box. Each quest shows the game's ready-check tick, cross or question mark (or the turn-in mark) instead of a coloured stripe, the quest log's own highlight under the mouse, and the game's red, yellow, green and blue text colours. Tooltips use the game's gold labels, white values and grey hints.
+
 ## 1.2.0
 - Options window: `/abandon config`, a right-click on the minimap button, or Options > AddOns. Every setting is a tick, a choice or a slider there.
 - Minimap button: left-click opens or closes the window, right-click opens the options, drag moves it. `/abandon minimap` hides it.

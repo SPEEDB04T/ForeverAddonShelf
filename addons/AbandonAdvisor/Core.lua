@@ -2,13 +2,16 @@
 local ADDON, ns = ...
 
 ns.ADDON = ADDON
-ns.VERSION = "1.2.0"
+ns.VERSION = "1.3.0"
 
 local defaults = {
     point = nil,
     scale = 1,
-    autoOpen = true,   -- open the window when the game says the quest log is full
-    target = 3,        -- how many free slots the advice aims for
+    autoOpen = true,      -- open the window when the game says the quest log is full
+    target = 3,           -- how many free slots the advice aims for
+    dropRates = true,     -- count a low drop rate (from Questie) against a quest
+    groupSuggest = true,  -- suggest a quest when a group member abandons it
+    groupShare = true,    -- tell the group's Abandon Advisors when you abandon a quest
 }
 
 ----------------------------------------------------------------------
@@ -44,6 +47,18 @@ function ns.Field(tbl, key)
     return ns.Val(tbl[key])
 end
 
+-- The game's own text colours (RED_FONT_COLOR and the like); the numbers are only for a client without them.
+function ns.GameColor(name, r, g, b)
+    local color = _G[name]
+    if type(color) == "table" and type(color.r) == "number" then return color.r, color.g, color.b end
+    return r, g, b
+end
+
+function ns.ColorCode(name, r, g, b)
+    r, g, b = ns.GameColor(name, r, g, b)
+    return ("|cff%02x%02x%02x"):format(math.floor(r * 255 + 0.5), math.floor(g * 255 + 0.5), math.floor(b * 255 + 0.5))
+end
+
 function ns.Print(msg)
     local text = "|cffff7d0aAbandon Advisor|r: " .. tostring(msg)
     if DEFAULT_CHAT_FRAME and DEFAULT_CHAT_FRAME.AddMessage then
@@ -76,7 +91,10 @@ end
 function ns.Compute()
     local player = ns.Scan.Player()
     local quests, meta = ns.Scan.Log(player)
-    ns.result = ns.Score.RateAll(quests, player, meta, { target = ns.db.target, keep = ns.cdb.keep })
+    ns.result = ns.Score.RateAll(quests, player, meta, {
+        target = ns.db.target, keep = ns.cdb.keep, drops = ns.db.dropRates,
+        partner = ns.db.groupSuggest and ns.partner or nil,
+    })
     return ns.result
 end
 
@@ -144,6 +162,173 @@ function ns.Abandon(questID, title)
 end
 
 ----------------------------------------------------------------------
+-- Group. When you abandon a quest, the group members' Abandon Advisors
+-- are told (an addon message, nothing in chat). When one of them
+-- abandons a quest you also have, yours suggests dropping it too.
+-- The game does not report another player's abandon by itself, so this
+-- only works between players who both run the addon.
+----------------------------------------------------------------------
+local PREFIX = "AbandonAdv"                      -- addon message prefix (16 characters at most)
+local SUGGEST_POPUP = "ABANDONADVISOR_GROUP"
+local GROUP_CHANNELS = { PARTY = true, RAID = true, INSTANCE_CHAT = true }
+
+ns.partner = {}                -- [questID] = who in the group abandoned it; this session only
+local turnedIn = {}            -- [questID] = when QUEST_TURNED_IN came
+local reward                   -- the quest whose reward panel was last open: { id, closed = time }
+local suggestions, suggesting = {}, false
+
+local function Now()
+    return ns.Num(ns.Call(GetTime)) or 0
+end
+
+local function GroupChannel()
+    -- Only a group made by the dungeon finder, with no group of your own, talks on INSTANCE_CHAT.
+    if LE_PARTY_CATEGORY_INSTANCE and LE_PARTY_CATEGORY_HOME
+        and ns.Call(IsInGroup, LE_PARTY_CATEGORY_INSTANCE) == true
+        and ns.Call(IsInGroup, LE_PARTY_CATEGORY_HOME) ~= true then
+        return "INSTANCE_CHAT"
+    end
+    if ns.Call(IsInRaid) == true then return "RAID" end
+    if ns.Call(IsInGroup) == true then return "PARTY" end
+    return nil
+end
+
+function ns.GroupMessages()
+    return C_ChatInfo ~= nil and type(C_ChatInfo.SendAddonMessage) == "function"
+end
+
+local function ShareAbandon(questID)
+    if not ns.db.groupShare or not ns.GroupMessages() then return end
+    local channel = GroupChannel()
+    if not channel then return end
+    -- The realm's AreOutgoingAddonChatMessagesRestricted flag is true on ordinary realms and is
+    -- not a reason to stay silent: send, and keep what the game answered for /abandon debug.
+    local ok, result = pcall(C_ChatInfo.SendAddonMessage, PREFIX, "A:" .. questID, channel)
+    result = ns.Val(result)
+    local sent = ok and (result == nil or result == 0 or result == true)
+    ns.lastSend = ("quest %d to %s: %s"):format(questID, channel,
+        sent and "sent" or ok and ("the game refused it (code " .. tostring(result) .. ")") or "the call failed")
+end
+
+-- QUEST_REMOVED also fires for a hand-in. Forever can send QUEST_TURNED_IN late or not at all,
+-- but it flags a handed-in quest completed by the time the quest leaves the log, so the check
+-- waits a moment. A repeatable quest is never flagged: for those the open reward panel tells.
+local function OnQuestRemoved(questID)
+    questID = ns.Num(questID)
+    if not questID then return end
+    ns.partner[questID] = nil
+    local now = Now()
+    if reward and reward.id == questID and (not reward.closed or now - reward.closed < 3) then return end
+    ns.After(1, function()
+        local handedIn = turnedIn[questID]
+        turnedIn[questID] = nil
+        if handedIn and Now() - handedIn < 120 then return end
+        if C_QuestLog and ns.Call(C_QuestLog.IsQuestFlaggedCompleted, questID) == true then return end
+        ShareAbandon(questID)
+    end)
+end
+
+local function FindRow(questID)
+    for _, row in ipairs(ns.Compute().rows) do
+        if row.id == questID then return row end
+    end
+end
+
+local ShowSuggestion
+
+local function EnsureSuggestPopup()
+    if StaticPopupDialogs[SUGGEST_POPUP] then return end
+    StaticPopupDialogs[SUGGEST_POPUP] = {
+        text = "%s",
+        button1 = "Abandon",
+        button2 = "Keep",
+        OnAccept = function(self, data)
+            data = data or (self and self.data)
+            if data then ns.Abandon(data.id, data.title) end
+        end,
+        OnCancel = function(self, data, reason)
+            data = data or (self and self.data)
+            if data and reason ~= "override" then      -- Keep or Escape: stop suggesting this quest
+                ns.partner[data.id] = nil
+                ns.Refresh()
+            end
+        end,
+        OnHide = function()
+            suggesting = false
+            ns.After(0.2, function() ShowSuggestion() end)
+        end,
+        timeout = 0,
+        whileDead = true,
+        hideOnEscape = true,
+        preferredIndex = 3,
+    }
+end
+
+-- One question at a time, and none during a fight (PLAYER_REGEN_ENABLED asks again).
+function ShowSuggestion()
+    while not suggesting and #suggestions > 0 do
+        if ns.Call(InCombatLockdown) == true then return end
+        if not (StaticPopup_Show and StaticPopupDialogs) then
+            suggestions = {}
+            return
+        end
+        local id = table.remove(suggestions, 1)
+        local who = ns.partner[id]
+        local row = who and FindRow(id)
+        if row and not row.locked then            -- still in the log, not finished, not pinned meanwhile
+            local text = ("%s abandoned \"%s\".\n\nAbandon it too?"):format(who, row.title)
+            if row.progress and row.progress > 0 then
+                text = text .. ("\n\nYou are %d%% done with it. Progress and its quest items are lost."):format(
+                    math.floor(row.progress * 100 + 0.5))
+            end
+            EnsureSuggestPopup()
+            suggesting = StaticPopup_Show(SUGGEST_POPUP, text, nil, { id = row.id, title = row.title }) ~= nil
+        end
+    end
+end
+
+function ns.ClearSuggestions()
+    for id in pairs(ns.partner) do ns.partner[id] = nil end
+    suggestions = {}
+    if suggesting and StaticPopup_Hide then pcall(StaticPopup_Hide, SUGGEST_POPUP) end
+    suggesting = false
+end
+
+local function ShortName(sender)
+    local short = Ambiguate and ns.Str(ns.Call(Ambiguate, sender, "short"))
+    return short or sender:match("^([^-]+)") or sender
+end
+
+local function IsSelf(sender)
+    local name, realm = ns.Call(UnitFullName, "player")
+    name = ns.Str(name) or ns.Str(ns.Call(UnitName, "player"))
+    if not name then return false end
+    if sender == name then return true end
+    realm = ns.Str(realm) or ns.Str(ns.Call(GetNormalizedRealmName))
+    return realm ~= nil and sender == name .. "-" .. realm
+end
+
+local function OnAddonMessage(prefix, text, channel, sender)
+    if ns.Str(prefix) ~= PREFIX or not ns.db.groupSuggest then return end
+    text, channel, sender = ns.Str(text), ns.Str(channel), ns.Str(sender)
+    if not (text and channel and sender) or not GROUP_CHANNELS[channel] then return end
+    local questID = tonumber(text:match("^A:(%d+)$"))
+    if not questID or IsSelf(sender) then return end
+    local row = FindRow(questID)
+    if not row or row.locked then return end       -- not in your log, finished, pinned or not abandonable
+    local who = ShortName(sender)
+    local known = ns.partner[questID]
+    if known and (", " .. known .. ", "):find(", " .. who .. ", ", 1, true) then return end
+    ns.partner[questID] = known and (known .. ", " .. who) or who
+    ns.Print(("%s abandoned \"%s\", which is in your quest log too."):format(who, row.title))
+    local queued = false
+    for _, id in ipairs(suggestions) do queued = queued or id == questID end
+    if not queued then suggestions[#suggestions + 1] = questID end
+    ShowSuggestion()
+    ns.Refresh()
+end
+
+----------------------------------------------------------------------
 -- Chat report
 ----------------------------------------------------------------------
 local VERDICT_TEXT = { turnin = "hand in", abandon = "abandon", maybe = "maybe", keep = "keep" }
@@ -159,7 +344,8 @@ function ns.Report()
             local why = {}
             for i = 1, math.min(3, #row.reasons) do why[#why + 1] = row.reasons[i].short end
             ns.Print(("  %s[%s] %s|r: %s (%s)"):format(
-                row.pick and "|cffff5555» " or "|cffdddddd", row.level and tostring(row.level) or "?",
+                row.pick and ns.ColorCode("RED_FONT_COLOR", 1, 0.125, 0.125) .. "» "
+                    or ns.ColorCode("HIGHLIGHT_FONT_COLOR", 1, 1, 1), row.level and tostring(row.level) or "?",
                 row.title, VERDICT_TEXT[row.verdict], table.concat(why, ", ")))
         end
     end
@@ -178,7 +364,16 @@ local function Debug()
     end
     ns.Print("C_QuestLog has: " .. table.concat(have, ", "))
     ns.Print("C_QuestLog missing: " .. (#missing > 0 and table.concat(missing, ", ") or "nothing"))
-    ns.Print("Questie data: " .. (ns.Scan.Questie() and "yes" or "no"))
+    local questie = ns.Scan.Questie()
+    ns.Print("Questie data: " .. (questie and "yes" or "no") .. ", drop rates: "
+        .. (ns.Scan.HasDropRates(questie) and "yes" or "no") .. (ns.db.dropRates and "" or " (turned off)"))
+    local marks = {}
+    for id, who in pairs(ns.partner) do marks[#marks + 1] = ("%d by %s"):format(id, who) end
+    ns.Print(("Group: messages %s, channel %s, suggest %s, share %s, abandoned by others: %s"):format(
+        ns.GroupMessages() and "available" or "not available", tostring(GroupChannel()),
+        ns.db.groupSuggest and "on" or "off", ns.db.groupShare and "on" or "off",
+        #marks > 0 and table.concat(marks, "; ") or "none"))
+    ns.Print("Last abandon told to the group: " .. (ns.lastSend or "none this session"))
     ns.Print("Quest log: " .. (ns.QuestLog and ns.QuestLog.Status() or "module missing"))
     local res = ns.Compute()
     local p = res.player
@@ -188,6 +383,7 @@ local function Debug()
     for _, row in ipairs(res.rows) do
         local parts = {}
         for _, reason in ipairs(row.reasons) do parts[#parts + 1] = ("%+d %s"):format(reason.pts, reason.short) end
+        if row.drop then parts[#parts + 1] = "drops: " .. ns.Score.DropText(row.drop) end
         ns.Print(("%d [%s] %s: %s %d | xp %s, prog %s, tag %s, zone %s | %s"):format(
             row.id, tostring(row.level), row.title, row.verdict, row.score, tostring(row.xp),
             row.progress and ("%.2f"):format(row.progress) or "-", tostring(row.tag), tostring(row.zone),
@@ -254,6 +450,17 @@ local function Slash(msg)
     elseif cmd == "auto" then
         ns.db.autoOpen = not ns.db.autoOpen
         ns.Print("Opening when the quest log is full: " .. (ns.db.autoOpen and "on" or "off"))
+    elseif cmd == "drops" then
+        ns.db.dropRates = not ns.db.dropRates
+        ns.Print("Counting low drop rates against a quest: " .. (ns.db.dropRates and "on" or "off"))
+        ns.Refresh()
+    elseif cmd == "group" then
+        ns.db.groupSuggest = not ns.db.groupSuggest
+        ns.Print("Suggesting a quest when a group member abandons it: " .. (ns.db.groupSuggest and "on" or "off"))
+        ns.Refresh()
+    elseif cmd == "share" then
+        ns.db.groupShare = not ns.db.groupShare
+        ns.Print("Telling your group when you abandon a quest: " .. (ns.db.groupShare and "on" or "off"))
     elseif cmd == "unpin" then
         ns.Unpin()
     elseif cmd == "scale" then
@@ -272,8 +479,8 @@ local function Slash(msg)
     elseif cmd == "debug" then
         Debug()
     else
-        ns.Print("Commands: /abandon (window), config (options), log (quest log tab), list, free <n>, auto, unpin, "
-            .. "scale <n>, minimap, reset, debug")
+        ns.Print("Commands: /abandon (window), config (options), log (quest log tab), list, free <n>, auto, drops, "
+            .. "group, share, unpin, scale <n>, minimap, reset, debug")
     end
     if ns.Kit then ns.Kit.Sync() end      -- an open options window follows what was typed
 end
@@ -316,12 +523,16 @@ end
 local frame = CreateFrame("Frame")
 ns.eventFrame = frame
 local EVENTS = { "PLAYER_LOGIN", "QUEST_LOG_UPDATE", "QUEST_ACCEPTED", "QUEST_REMOVED", "QUEST_TURNED_IN",
-    "ZONE_CHANGED_NEW_AREA", "PLAYER_LEVEL_UP", "GROUP_ROSTER_UPDATE", "UI_ERROR_MESSAGE" }
+    "ZONE_CHANGED_NEW_AREA", "PLAYER_LEVEL_UP", "GROUP_ROSTER_UPDATE", "UI_ERROR_MESSAGE", "CHAT_MSG_ADDON",
+    "PLAYER_REGEN_ENABLED", "QUEST_COMPLETE", "QUEST_FINISHED" }
 for _, event in ipairs(EVENTS) do pcall(frame.RegisterEvent, frame, event) end
 
-frame:SetScript("OnEvent", function(_, event, a, b)
+frame:SetScript("OnEvent", function(_, event, a, b, c, d)
     if event == "PLAYER_LOGIN" then
         InitDB()
+        if C_ChatInfo and C_ChatInfo.RegisterAddonMessagePrefix then
+            pcall(C_ChatInfo.RegisterAddonMessagePrefix, PREFIX)
+        end
         ns.UI.Create()
         if ns.QuestLog then ns.QuestLog.Init() end
         if ns.Kit and ns.Options then      -- missing until the first full restart after the update
@@ -332,7 +543,23 @@ frame:SetScript("OnEvent", function(_, event, a, b)
         return
     elseif event == "UI_ERROR_MESSAGE" then
         if IsLogFullError(a, b) then OnLogFull() end
+    elseif event == "CHAT_MSG_ADDON" then
+        OnAddonMessage(a, b, c, d)
+    elseif event == "PLAYER_REGEN_ENABLED" then
+        ShowSuggestion()
+    elseif event == "QUEST_COMPLETE" then           -- the reward panel of a quest being handed in
+        reward = { id = ns.Num(ns.Call(GetQuestID)) }
+    elseif event == "QUEST_FINISHED" then           -- a quest panel closed
+        if reward and not reward.closed then reward.closed = Now() end
     else
+        if event == "QUEST_REMOVED" then
+            OnQuestRemoved(a)
+        elseif event == "QUEST_TURNED_IN" then
+            local id = ns.Num(a)
+            if id then turnedIn[id] = Now() end
+        elseif event == "GROUP_ROSTER_UPDATE" then
+            if not GroupChannel() then ns.ClearSuggestions() end
+        end
         ns.Refresh()
     end
 end)

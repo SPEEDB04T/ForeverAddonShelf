@@ -39,33 +39,7 @@ end
 ----------------------------------------------------------------------
 -- Art
 ----------------------------------------------------------------------
-local function AtlasInfo(atlas)
-    if not (C_Texture and C_Texture.GetAtlasInfo) then return nil end
-    local info = ns.Call(C_Texture.GetAtlasInfo, atlas)
-    if type(info) == "table" then return info end
-end
-
--- The quest log's own parchment over the whole box, cropped rather than squashed.
-local function CoverWithAtlas(texture, atlas, width, height)
-    local info = AtlasInfo(atlas)
-    local iw, ih = info and ns.Num(info.width), info and ns.Num(info.height)
-    local left, right = info and ns.Num(info.leftTexCoord), info and ns.Num(info.rightTexCoord)
-    local top, bottom = info and ns.Num(info.topTexCoord), info and ns.Num(info.bottomTexCoord)
-    if not (iw and ih and left and right and top and bottom) or iw <= 0 or ih <= 0 then return false end
-    texture:SetAtlas(atlas)
-    if not (width and height) or width <= 0 or height <= 0 then return true end
-    local box, native = width / height, iw / ih
-    if native > box then
-        local cut = (right - left) * (1 - box / native) / 2
-        left, right = left + cut, right - cut
-    else
-        local cut = (bottom - top) * (1 - native / box) / 2
-        top, bottom = top + cut, bottom - cut
-    end
-    texture:SetTexCoord(left, right, top, bottom)
-    return true
-end
-
+-- The panel's background is the quest log's own parchment (ns.UI.LayParchment).
 local function SetTabIcon(tab)
     local icon = tab and tab.Icon
     if type(icon) ~= "table" or not icon.SetTexture then return end
@@ -147,11 +121,7 @@ local function BuildBody()
 
     local background = body:CreateTexture(nil, "BACKGROUND")
     background:SetAllPoints(body)
-    local function LayBackground(width, height)
-        if not CoverWithAtlas(background, "QuestLog-main-background", width, height) then
-            background:SetColorTexture(0.06, 0.05, 0.04, 0.95)
-        end
-    end
+    local function LayBackground(width, height) ns.UI.LayParchment(background, ns.Num(width), ns.Num(height)) end
     LayBackground(ns.Num(body:GetWidth()), ns.Num(body:GetHeight()))
     body:SetScript("OnSizeChanged", function(_, width, height) LayBackground(width, height) end)
 
