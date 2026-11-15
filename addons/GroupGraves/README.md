@@ -9,7 +9,7 @@ For WoW Forever (Interface 16001).
 ## Setup
 
 1. Copy the `GroupGraves` folder into `World of Warcraft\_forever_\Interface\AddOns`, so that the file ends up at `AddOns\GroupGraves\GroupGraves.toc` (not `AddOns\GroupGraves\GroupGraves\...`).
-2. Restart the game. A new addon needs a full restart; after an update `/reload` is enough.
+2. Type `/reload` in the game (or log in). On WoW Forever a `/reload` also loads a newly added addon.
 3. `/graves test` puts three test markers around you on the world map, so you can see what they look like without anyone dying.
 
 ## Where the positions come from

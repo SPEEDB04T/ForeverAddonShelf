@@ -1074,11 +1074,11 @@ local function PrintHelp()
     print("  /graves config (options window)   -  /graves minimap (minimap button on/off)")
 end
 
--- Kit.lua and Options.lua only load after a full game restart when the addon was copied in
+-- Kit.lua and Options.lua are missing when their files were not there as the addon loaded (copied in
 -- while the game ran: say so instead of erroring.
 local function HasKit()
     if ns.Kit and ns.Options then return true end
-    Print("the options window and the minimap button appear after you restart the game once.")
+    Print("the options window and the minimap button appear after a /reload.")
     return false
 end
 
