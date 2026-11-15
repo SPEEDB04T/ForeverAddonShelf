@@ -197,13 +197,13 @@ function events.PLAYER_REGEN_ENABLED()
     ns.dirty = true
 end
 
--- a toy learned, or the toy box read for the first time: the rod and torch buttons look again
+-- a toy learned or an item in the bags changed: the rod and torch buttons look again
 local function ToysChanged()
-    ns.UI.ToysChanged()
     ns.UI.ApplySecure()
 end
 events.TOYS_UPDATED = ToysChanged
 events.NEW_TOY_ADDED = ToysChanged
+events.BAG_UPDATE_DELAYED = ToysChanged
 
 function events.PLAYER_REGEN_DISABLED()
     ns.dirty = true
@@ -292,7 +292,7 @@ local function Help()
     ns.Print("  /line who auto | leader | anyone  - whose line calls you take (now: " .. ns.db.who .. ")")
     ns.Print("  /line auto  - try to follow without a click, where the game allows it (" .. OnOff(ns.db.auto) .. ")")
     ns.Print("  /line sound | alerts  - sound (" .. OnOff(ns.db.sound) .. "), chat line when someone drops off (" .. OnOff(ns.db.alerts) .. ")")
-    ns.Print("  /line items  - furbolg rod and torch buttons beside the Follow button (" .. OnOff(ns.db.items) .. ")")
+    ns.Print("  /line items  - furbolg rod and torch buttons beside the Follow button (" .. OnOff(ns.db.items) .. "); /line items debug says what the game reports about them")
     ns.Print("  /line config | minimap | lock | unlock | scale <0.5-2> | status | demo | reset")
     ns.Print("  Key: Key Bindings > AddOns > Follow Line.")
 end
@@ -345,6 +345,8 @@ SlashCmdList.FOLLOWLINE = function(msg)
     elseif cmd == "alerts" then
         db.alerts = not db.alerts
         ns.Print("chat line when someone drops off: " .. OnOff(db.alerts) .. ".")
+    elseif (cmd == "items" or cmd == "torch" or cmd == "rod") and arg:lower() == "debug" then
+        ns.UI.ItemsDebug()
     elseif cmd == "items" or cmd == "torch" or cmd == "rod" then
         db.items = not db.items
         ns.UI.ApplySecure()

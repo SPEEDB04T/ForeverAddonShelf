@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.2.1
+
+- Fixed: the torch button never used the Night Watchman's Torch. It looked the torch up by name in the toy box's list, which doesn't have it on this client. It now uses the torch's own id (item 280612) and finds it as a toy you have collected, as an item in your bags, or as the spell it teaches. The furbolg rod is found the same way. When the game won't say whether you have it, the button tries `/use` with its name, and stays in colour.
+- The buttons show the game's own icons, and light up as soon as the item lands in your bags.
+- `/line items debug` lists what the game says about the rod and the torch (whether you have the toy, how many are in your bags) and what each button does.
+
 ## 1.2.0
 
 - The line no longer breaks when some of the group are not there. When the player ahead of you is away (offline, out of sight, or out of the group's range), your Follow button points at the nearest player ahead of them who is near, and back at them when they return. The window shows them as "away".

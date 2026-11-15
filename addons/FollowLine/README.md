@@ -37,7 +37,7 @@ Not everyone in the group has to be there. When the player ahead of you is away 
 
 ## The furbolg rod and the torch
 
-While you are in a line (leading too), two buttons sit under the Follow button: the **furbolg rod** (Replica Dartol's Rod of Transformation, or the old Dartol's Rod of Transformation from your bags) and the **torch** (the Night Watchman's Torch from Duskwood). Click them to walk the line as furbolgs with torches. A button is greyed out while you don't have that toy. They can have keys too (Key Bindings > AddOns), and `/line items` or the option "Furbolg rod and torch buttons" hides them.
+While you are in a line (leading too), two buttons sit under the Follow button: the **furbolg rod** (Replica Dartol's Rod of Transformation, or the old Dartol's Rod of Transformation from your bags) and the **torch** (the Night Watchman's Torch from Duskwood). Click them to walk the line as furbolgs with torches. A button finds the toy in your collection or the item in your bags, and is greyed out while you have neither. They can have keys too (Key Bindings > AddOns), and `/line items` or the option "Furbolg rod and torch buttons" hides them. If a button doesn't do what it should, `/line items debug` lists what the game says about each one.
 
 ## Commands
 
@@ -60,6 +60,7 @@ While you are in a line (leading too), two buttons sit under the Follow button: 
 | `/line auto` | follow without a click, where the game allows it |
 | `/line sound`, `/line alerts` | sounds, and chat lines when someone drops off |
 | `/line items` | show or hide the furbolg rod and torch buttons |
+| `/line items debug` | what the game says about the rod and the torch, and what each button does |
 | `/line config` | the options window |
 | `/line minimap` | show or hide the minimap button |
 | `/line lock`, `/line scale 1.2` | lock the window and button in place, set their size |

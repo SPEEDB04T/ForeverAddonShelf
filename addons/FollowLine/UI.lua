@@ -191,28 +191,33 @@ end
 ----------------------------------------------------------------------
 -- The furbolg rod and the torch
 ----------------------------------------------------------------------
--- Two toys of this client that make a line look the part (SuccuDev, 2026-11-14:
+-- Two things of this client that make a line look the part (SuccuDev, 2026-11-14:
 -- "add furbolg rod and torch to follow line"): the Replica Dartol's Rod of
--- Transformation (item 276242 in the client's toy table) turns you into a furbolg,
--- and the Night Watchman's Torch (a quest in Duskwood) puts a lit torch in your
--- hand. The torch is not in the datamined tables, so it is used by name
--- (UseToyByName) and found by name in the toy box. Both are secure buttons of
--- the game's "toy" type: used from the player's own click or key, beside the
--- Follow button, while the player is in a line (the leader too).
+-- Transformation (item 276242, in the client's toy table) turns you into a
+-- furbolg, and the Night Watchman's Torch (item 280612, spell 1309410) puts a lit
+-- torch in your hand. The torch came by hotfix, so it is not in the datamined toy
+-- table, and 1.2.0 looked it up by name in the toy box's filtered list, which
+-- never found it ("watchmans torch isnt working on the line addon").
+-- Now every choice has its id and is tried every way the game can hold it: a toy
+-- in the collection (PlayerHasToy, the "toy" action), an item in the bags
+-- (GetItemCount, the "item" action), or a spell the player knows (the "spell"
+-- action). When the game can't tell, the button types "/use <name>", which takes
+-- toys and bag items alike. `/line items debug` prints what was found.
+-- Both are secure buttons beside the Follow button, used from the player's own
+-- click or key, while the player is in a line (the leader too).
 local ITEM_SIZE = 30
 local ITEMS = {
     { global = "FollowLineRodButton", label = "Furbolg rod", icon = 135463,
-      choices = { { id = 276242, name = "Replica Dartol's Rod of Transformation", toy = true },
+      choices = { { id = 276242, name = "Replica Dartol's Rod of Transformation" },
                   { id = 5462, name = "Dartol's Rod of Transformation" } },     -- the old quest item, in bags
       what = "Turns you into a furbolg." },
     { global = "FollowLineTorchButton", label = "Torch", icon = 135432,
-      choices = { { name = "Night Watchman's Torch", toy = true } },
+      choices = { { id = 280612, name = "Night Watchman's Torch", spell = 1309410 } },
       what = "A lit torch in your hand. It goes out in water, in cities and when you fight." },
 }
 UI.ITEMS = ITEMS
 local itemButtons = {}
 UI.itemButtons = itemButtons
-local toyIDs                    -- [toy name] = item id, read from the toy box
 
 local function Call(f, ...)
     if type(f) ~= "function" then return nil end
@@ -224,59 +229,49 @@ local function Call(f, ...)
     return unpack(res, 2)
 end
 
--- The toy box's list, by name (it lists toys not collected yet too).
-local function ReadToyBox()
-    local tb = C_ToyBox
-    if not tb then return end
-    local n = Call(tb.GetNumFilteredToys)
-    if type(n) ~= "number" or n <= 0 then return end
-    local found = {}
-    for i = 1, math.min(n, 3000) do
-        local id = Call(tb.GetToyFromIndex, i)
-        if type(id) == "number" and id > 0 then
-            local _, name = Call(tb.GetToyInfo, id)
-            if type(name) == "string" then found[name] = id end
-        end
-    end
-    toyIDs = found
-end
-function UI.ToysChanged() toyIDs = nil end
-
--- Does the player have it? true, false, or nil when the game can't tell yet.
-local function Owned(c)
-    if not toyIDs then ReadToyBox() end
-    local id = c.id or (toyIDs and toyIDs[c.name])
-    if not id then return nil end
-    if c.toy and Call(PlayerHasToy, id) == true then return true end
-    local n = Call((C_Item and C_Item.GetItemCount) or GetItemCount, id)
-    if type(n) == "number" and n > 0 then return true end
-    if c.toy and PlayerHasToy == nil then return nil end
-    return false
+local function BagCount(id)
+    return Call((C_Item and C_Item.GetItemCount) or GetItemCount, id)
 end
 
--- The first choice the player has, else one the game can't tell about, else the first.
+local function KnowsSpell(id)
+    return Call(IsPlayerSpell or (C_SpellBook and C_SpellBook.IsSpellKnown) or IsSpellKnown, id)
+end
+
+-- How the player holds a choice: "toy", "item" or "spell"; false when the game
+-- says they have none of it; nil when it can't tell.
+local function Held(c)
+    local toy = Call(PlayerHasToy, c.id)
+    if toy == true then return "toy" end
+    local n = BagCount(c.id)
+    if type(n) == "number" and n > 0 then return "item" end
+    if c.spell and KnowsSpell(c.spell) == true then return "spell" end
+    if toy == false or type(n) == "number" then return false end
+    return nil
+end
+
+-- The first choice the player holds, else one the game can't tell about, else the first.
 local function Choose(item)
     local unknown
     for _, c in ipairs(item.choices) do
-        local o = Owned(c)
-        if o then return c, true end
-        if o == nil and not unknown then unknown = c end
+        local how = Held(c)
+        if how then return c, how end
+        if how == nil and not unknown then unknown = c end
     end
     if unknown then return unknown, nil end
     return item.choices[1], false
 end
 
 local function ItemName(c)
-    local name = c.id and Call(C_Item and C_Item.GetItemNameByID, c.id)
-    return type(name) == "string" and name ~= "" and name or c.name
+    local name = Call(C_Item and C_Item.GetItemNameByID, c.id)
+    return type(name) == "string" and name ~= "" and name or c.name, type(name) == "string" and name ~= ""
 end
 
 local function ItemTooltip(self)
     if not GameTooltip then return end
     local item, c = self.item, self.choice or self.item.choices[1]
     GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
-    local shown = c.id and c.toy and GameTooltip.SetToyByItemID and pcall(GameTooltip.SetToyByItemID, GameTooltip, c.id)
-    if not shown and c.id and GameTooltip.SetItemByID then shown = pcall(GameTooltip.SetItemByID, GameTooltip, c.id) end
+    local shown = self.how == "toy" and GameTooltip.SetToyByItemID and pcall(GameTooltip.SetToyByItemID, GameTooltip, c.id)
+    if not shown and GameTooltip.SetItemByID then shown = pcall(GameTooltip.SetItemByID, GameTooltip, c.id) end
     if not shown then
         GameTooltip:AddLine(ItemName(c), WHITE[1], WHITE[2], WHITE[3])
         GameTooltip:AddLine(item.what, GOLD[1], GOLD[2], GOLD[3], true)
@@ -328,22 +323,34 @@ local function CreateItemButton(item)
     return b
 end
 
+-- The secure action for how the player holds it. Only outside a fight.
+local function SetAction(b, c, how)
+    for _, k in ipairs({ "toy", "item", "spell", "macrotext" }) do b:SetAttribute(k, nil) end
+    if how == "toy" then
+        b:SetAttribute("type", "toy")
+        b:SetAttribute("toy", c.id)
+    elseif how == "item" then
+        b:SetAttribute("type", "item")
+        b:SetAttribute("item", "item:" .. c.id)
+    elseif how == "spell" then
+        b:SetAttribute("type", "spell")
+        b:SetAttribute("spell", c.spell)
+    else
+        b:SetAttribute("type", "macro")
+        b:SetAttribute("macrotext", "/use " .. ItemName(c))
+    end
+end
+
 -- Shown while the player is in a line. Secure: only changed outside a fight (ApplySecure).
 local function ApplyItems()
     local show = ns.db.items and Line.place ~= nil and (Line.grouped or Line.demo)
     for _, b in ipairs(itemButtons) do
         if show then
-            local c, owned = Choose(b.item)
-            b.choice, b.owned = c, owned
-            if c.toy then
-                b:SetAttribute("type", "toy")
-                b:SetAttribute("toy", c.id or (toyIDs and toyIDs[c.name]) or ItemName(c))
-                b:SetAttribute("item", nil)
-            else
-                b:SetAttribute("type", "item")
-                b:SetAttribute("item", "item:" .. c.id)
-                b:SetAttribute("toy", nil)
-            end
+            local c, how = Choose(b.item)
+            b.choice, b.how, b.owned = c, how, how and true or how
+            SetAction(b, c, how)
+            local icon = Call(C_Item and C_Item.GetItemIconByID, c.id)
+            b.icon:SetTexture((type(icon) == "number" or type(icon) == "string") and icon or b.item.icon)
             b:Show()
         else
             b:Hide()
@@ -354,11 +361,38 @@ end
 local function RefreshItems()
     for _, b in ipairs(itemButtons) do
         if b:IsShown() then
-            b.owned = select(2, Choose(b.item))
+            local how = select(2, Choose(b.item))
+            b.owned = how and true or how
             if b.icon.SetDesaturated then b.icon:SetDesaturated(b.owned == false) end
             local key = GetBindingKey and Call(GetBindingKey, "CLICK " .. b.item.global .. ":LeftButton")
             b.hotkey:SetText(type(key) == "string" and ShortKey(key) or "")
         end
+    end
+end
+
+-- `/line items debug`: what the game says about each choice, and what each button does.
+function UI.ItemsDebug()
+    local P = ns.Print
+    P(("rod and torch buttons: %s; you are %s."):format(ns.db.items and "on" or "off (/line items)",
+        Line.place and ("place " .. Line.place .. " in a line") or "not in a line, so they are hidden"))
+    if #itemButtons == 0 then P("  the buttons are not made yet.") end
+    for _, b in ipairs(itemButtons) do
+        local label = b.item.label
+        for _, c in ipairs(b.item.choices) do
+            local name, known = ItemName(c)
+            local toyName = select(2, Call(C_ToyBox and C_ToyBox.GetToyInfo, c.id))
+            local usable = Call(C_ToyBox and C_ToyBox.IsToyUsable, c.id)
+            local spell = c.spell and (" spell " .. c.spell .. " known " .. tostring(KnowsSpell(c.spell)) .. ";") or ""
+            P(("  %s, item %d %s (%s): PlayerHasToy %s; in bags %s; toy box %s; toy usable %s;%s held as %s."):format(
+                label, c.id, name, known and "the game knows it" or "name not loaded",
+                tostring(Call(PlayerHasToy, c.id)), tostring(BagCount(c.id)),
+                type(toyName) == "string" and ("lists it as " .. toyName) or "doesn't list it",
+                tostring(usable), spell, tostring(Held(c))))
+        end
+        local t = b:GetAttribute("type")
+        local v = t and b:GetAttribute(t == "macro" and "macrotext" or t)
+        P(("  %s button: %s, action %s %s, %s."):format(label, b:IsShown() and "shown" or "hidden",
+            tostring(t), tostring(v), b.owned == false and "greyed" or (b.owned and "lit" or "lit (the game can't tell)")))
     end
 end
 
