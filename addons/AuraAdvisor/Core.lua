@@ -9,7 +9,7 @@ local defaults = {
     show = "always",            -- the frame: always | combat | never
     locked = false,
     scale = 1,
-    idleAlpha = 0.6,            -- how solid the frame is while there is nothing to suggest
+    idleAlpha = 1,              -- how solid the bar is while there is nothing to suggest (solid, like the stance bar)
     style = "auto",             -- auto | damage | tank | healer
     idle = "auto",              -- the aura between fights: auto | devotion | retribution | concentration
     sensitivity = "normal",     -- low | normal | high
@@ -60,6 +60,12 @@ local function Repair(db)
     if db.point ~= nil and (type(db.point) ~= "table" or type(db.point[1]) ~= "string"
         or type(db.point[3]) ~= "number" or type(db.point[4]) ~= "number") then
         db.point = nil
+    end
+    -- 1.0.0 faded the bar to 0.6 by default; 1.1.0 keeps it solid like the stance bar. Only an
+    -- untouched 1.0.0 default moves; a value someone picked stays.
+    if not db.v110 then
+        if db.idleAlpha == 0.6 then db.idleAlpha = 1 end
+        db.v110 = true
     end
 end
 
@@ -616,7 +622,7 @@ SlashCmdList.AURAADVISOR = function(msg)
         if not ns.Test(arg) then ns.Print("usage: /aura test fire|frost|shadow|melee|push|off") end
     elseif cmd == "lock" or cmd == "unlock" then
         ns.Set("locked", cmd == "lock")
-        ns.Print(ns.db.locked and "frame locked" or "frame unlocked (drag it by its edge)")
+        ns.Print(ns.db.locked and "frame locked" or "bar unlocked (drag it by any of its buttons, outside a fight)")
     elseif cmd == "scale" then
         local n = tonumber(arg)
         if n and n >= 0.5 and n <= 2 and not InCombatLockdown() then

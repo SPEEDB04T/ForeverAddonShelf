@@ -19,16 +19,16 @@ If another paladin in your party already has an aura up (seen on your buffs, or 
 
 The play style comes from your group role, or Righteous Fury (tank), or is damage otherwise. You can set it yourself.
 
-## The frame
+## The bar
 
-The buttons look like the game's stance-bar buttons, in a panel with the game's tooltip border.
+A second stance bar: the game's own small action buttons, one per aura you know, nothing else.
 
-- The game's spell-alert glow (like a proc) and "Switch to ...": the suggestion, with the reason under it.
-- Pressed in (lit like a checked action button): the aura that is on.
-- Greyed: another paladin already has it up.
-- Hover a button for the game's spell tooltip, with the advice under it.
+- Glowing like a proc: the aura to switch to. Hover it for the reason.
+- Checked, as on the stance bar: the aura that is on.
+- Greyed: another paladin already has it up. Dimmed: you can't cast it right now.
+- Hover a button for the game's own aura tooltip, with the advice under it.
 - Left-click a button: switch to that aura. Right-click: every aura's points in chat.
-- Drag the frame by the text under the buttons. In a fight a sound plays and a line appears in the middle of the screen when a switch is suggested (both can be turned off).
+- Unlocked, drag the bar by any button (outside a fight). In a fight a sound plays and a line appears in the middle of the screen when a switch is suggested, with the reason (both can be turned off).
 
 ## Setup
 
@@ -53,7 +53,7 @@ The buttons look like the game's stance-bar buttons, in a panel with the game's 
 ## Notes
 
 - **What the game lets an addon see.** WoW Forever hides the combat log from addons and hides damage numbers in fights. The damage school of each hit on you and your party is still shown, and so are pushed-back casts; those are what the advice mostly rests on. Enemy spell names are often hidden too: then a cast counts as "an enemy is casting something" and is shared out among the schools that have hit you so far. `/aura debug` shows how much of each the game let through.
-- **Buttons in fights.** The game doesn't let addons add, remove or move click-to-cast buttons in a fight, so there is a button for every aura you know and only the glow and colours change. Settings that change the frame (hide it, size) wait for the fight to end.
+- **Buttons in fights.** The game doesn't let addons add, remove or move click-to-cast buttons in a fight, so there is a button for every aura you know and only the glow and checked state change. Settings that change the bar (hide it, size) wait for the fight to end.
 - **Learned a new aura in the middle of a fight?** Its button appears when the fight is over.
 - Clicking the aura that is already on does nothing (so it can't switch your aura off by accident).
 - This version has been checked with an offline test only, not yet in the game.

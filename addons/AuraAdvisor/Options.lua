@@ -21,7 +21,7 @@ local function Rows()
     return {
         { kind = "header", text = "Frame" },
         { kind = "choice", label = "Show the frame",
-          tip = "The row of aura buttons. The aura that is on has a green edge, the one to switch to glows. "
+          tip = "The row of aura buttons. The aura that is on is checked, like on the stance bar; the one to switch to glows. "
               .. "Same as /aura show. In a fight a change waits until the fight is over.",
           options = {
               { "always", "Always", "The frame is always on screen." },
@@ -30,7 +30,7 @@ local function Rows()
           },
           get = Get("show"), set = Set("show") },
         { kind = "check", label = "Lock the frame in place",
-          tip = "Unticked, you can drag the frame by the text under the buttons (outside a fight).",
+          tip = "Unticked, you can drag the bar by any of its buttons (outside a fight).",
           get = Get("locked"), set = Set("locked") },
         { kind = "slider", label = "Frame size", min = 0.5, max = 2, step = 0.05, format = "%.2f",
           get = Get("scale"),
@@ -39,7 +39,7 @@ local function Rows()
               ns.Set("scale", value)
           end },
         { kind = "slider", label = "Faded when it has nothing to say", min = 0.2, max = 1, step = 0.05, format = Percent,
-          tip = "How solid the frame is while your aura is the right one. It turns fully solid when it suggests a switch.",
+          tip = "How solid the bar is while your aura is the right one (100%: like the stance bar). It turns fully solid when it suggests a switch.",
           get = Get("idleAlpha"), set = Set("idleAlpha") },
 
         { kind = "header", text = "Advice" },
