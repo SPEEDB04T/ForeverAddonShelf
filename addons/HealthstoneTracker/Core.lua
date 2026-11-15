@@ -2,7 +2,7 @@
 local ADDON, ns = ...
 local issecret = ns.issecret
 
-ns.VERSION = "1.3.4"
+ns.VERSION = "1.3.5"
 do
     local get = C_AddOns and C_AddOns.GetAddOnMetadata
     if get then
@@ -277,7 +277,8 @@ local function Init()
     local _, class = UnitClass("player")
     ns.playerClass = (not issecret(class)) and class or nil
     ns.isWarlock = (ns.playerClass == "WARLOCK")
-    ns.playerName = UnitName("player")
+    -- "First Last": UnitName gives the two words as two values on this client
+    ns.playerName = ns.FullUnitName("player")
 
     -- each part on its own, so one failing does not take the others with it
     ns.Safe(ns.Group.Init)

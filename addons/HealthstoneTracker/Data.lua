@@ -145,12 +145,14 @@ end
 ----------------------------------------------------------------------
 -- Names
 ----------------------------------------------------------------------
--- Names on this client are often two words ("First Last"): a name is never
--- cut or split at a space. The same realm comes spelled two ways at once:
--- GetNormalizedRealmName() says "RPPvP", names from the server say
--- "CAMWOWUS1Realm9RPPvP". So a name is never compared with a realm glued on;
--- it is matched to a group unit by name, the realm only breaking a tie
--- (see .agents/memory/pitfalls.md, "Who sent an addon message").
+-- Names on this client are two words. UnitName gives them as two values,
+-- "Bunglfart", "Dunglode" (first name, surname in the realm slot), while the
+-- sender of an addon or chat message is "Bunglfart Dunglode". The second value
+-- may also be a real realm; it is never guessed which. A name from a message
+-- is matched against each group unit's spellings "first second" and "first"
+-- (see .agents/memory/pitfalls.md, "Names on this client"). The server may
+-- also add a realm after a dash, in its own spelling ("CAMWOWUS1Realm9RPPvP"
+-- where the client says "RPPvP"); that only breaks a tie.
 
 -- A usable plain name string, or nil.
 function ns.Norm(name)
@@ -158,13 +160,20 @@ function ns.Norm(name)
     return name
 end
 
--- The unit's name as the game gives it: "Name", or "Name-Realm" when the game
--- gives a realm (another realm). This is the key of the member table.
+-- Both values UnitName gives, or nil.
+local function UnitNames(unit)
+    local ok, first, second = pcall(UnitName, unit)
+    if not ok or issecret(first) or issecret(second) or type(first) ~= "string" or first == "" then return nil end
+    if type(second) ~= "string" or second == "" then second = nil end
+    return first, second
+end
+
+-- The unit's name as players see it: "First Last" (or just "Name"). This is
+-- the key of the member table, what is shown, and what goes into messages.
 function ns.FullUnitName(unit)
-    local ok, name, realm = pcall(UnitName, unit)
-    if not ok or issecret(name) or issecret(realm) or type(name) ~= "string" or name == "" then return nil end
-    if type(realm) == "string" and realm ~= "" then name = name .. "-" .. realm end
-    return name
+    local first, second = UnitNames(unit)
+    if not first then return nil end
+    return second and (first .. " " .. second) or first
 end
 
 -- "CAMWOWUS1Realm9RPPvP" -> "camwowus1realm9rppvp"
@@ -203,35 +212,53 @@ local function GroupUnits()
     return units
 end
 
+-- Does `name` spell `c`: the same, or `c` followed by a dash and a realm?
+-- Returns the squeezed realm after the dash ("" when none), or nil.
+local function Spells(name, c)
+    if name == c then return "" end
+    if name:sub(1, #c + 1) == c .. "-" then return Squeeze(name:sub(#c + 2)) end
+    return nil
+end
+
 -- Which group unit a name from the server or from a message belongs to.
--- Returns the unit, or nil and why: "hidden" (a secret or unusable name),
--- "not found in the group", or "several with that name".
+-- Every unit's long spelling ("first second") is tried first, the short one
+-- ("first") only when no unit has the long one. Returns the unit, or nil and
+-- why: "hidden" (a secret or unusable name), "not found in the group", or
+-- "several with that name".
 function ns.UnitOfName(full)
     if issecret(full) then return nil, "hidden" end
     if type(full) ~= "string" or full == "" then return nil, "hidden" end
-    local dash = full:find("-", 1, true)
-    local who = dash and full:sub(1, dash - 1) or full
-    local suffix = Squeeze(dash and full:sub(dash + 1) or "")
-    if who == "" then return nil, "hidden" end
-    local first, agreeing, count = nil, nil, 0
+    local names = {}
     for _, unit in ipairs(GroupUnits()) do
-        local ok, name, realm = pcall(UnitName, unit)
-        if ok and not issecret(name) and not issecret(realm) and name == who then
-            count = count + 1
-            first = first or unit
-            local agrees
-            if type(realm) == "string" and realm ~= "" then
-                agrees = suffix ~= "" and Agree(suffix, Squeeze(realm))
-            else
-                agrees = OwnRealmAgrees(suffix)
-            end
-            if agrees and not agreeing then agreeing = unit end
-        end
+        local first, second = UnitNames(unit)
+        if first then names[#names + 1] = { unit = unit, first = first, second = second } end
     end
-    if count == 1 then return first end
-    if agreeing then return agreeing end
-    if count == 0 then return nil, "not found in the group" end
-    return nil, "several with that name"
+    for pass = 1, 2 do
+        local found, agreeing, count = nil, nil, 0
+        for _, n in ipairs(names) do
+            local c = (pass == 1) and (n.second and (n.first .. " " .. n.second)) or (pass == 2 and n.first)
+            local suffix = c and Spells(full, c)
+            if suffix then
+                count = count + 1
+                found = found or n.unit
+                -- a realm after the dash decides between units with the same name;
+                -- on the short spelling the unit's second value may be its realm
+                local agrees
+                if pass == 2 and n.second and suffix ~= "" and Agree(suffix, Squeeze(n.second)) then
+                    agrees = true
+                elseif pass == 2 and n.second then
+                    agrees = false
+                else
+                    agrees = OwnRealmAgrees(suffix)
+                end
+                if agrees and not agreeing then agreeing = n.unit end
+            end
+        end
+        if count == 1 then return found end
+        if agreeing then return agreeing end
+        if count > 1 then return nil, "several with that name" end
+    end
+    return nil, "not found in the group"
 end
 
 -- 75 -> "1:15"

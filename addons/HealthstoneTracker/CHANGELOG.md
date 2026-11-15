@@ -1,5 +1,10 @@
 # Changelog
 
+## 1.3.5
+
+- Fixed: the addon still did not see other players' addons. On this client the game hands an addon a character's name in two parts ("Bunglfart", "Dunglode") while messages arrive from "Bunglfart Dunglode", so every message, even the player's own, was matched to nobody and dropped. Names are now matched both ways, and everyone is listed and shown as "First Last".
+- The message log in the saved settings now marks your own messages as yours.
+
 ## 1.3.4
 
 - The window can be photographed by the developer's screenshot helper (LookShots), so its look can be checked in the game. Without that helper nothing changes.

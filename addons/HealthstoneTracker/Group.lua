@@ -619,7 +619,7 @@ local function Flush(now)
         return
     end
     local ok, result = pcall(C_ChatInfo.SendAddonMessage, PREFIX, msg, channel)
-    Log("out", channel, nil, nil, ok and (result == nil and "nil" or result) or "error", msg)
+    Log("out", channel, ns.playerName, "player", ok and (result == nil and "nil" or result) or "error", msg)
     if not ok then
         -- the game rejects this very message: after a few tries give up on it,
         -- so everything behind it is not stuck for good
@@ -647,8 +647,8 @@ local function Flush(now)
 end
 
 -- The player traded a healthstone to someone.
--- Names inside messages go out as UnitName gives them (with a realm only when
--- the game gives one) and are looked up by name on arrival.
+-- Names inside messages go out as players see them ("First Last", built from
+-- UnitName alone) and are matched to a group unit on arrival.
 function G.NoteGave(name, item)
     local m = name and G.FindMember(name)
     if not m or m.isPlayer or m.demo then return end
