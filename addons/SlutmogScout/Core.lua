@@ -357,6 +357,24 @@ function ns.AddCustom(text)
   end
 end
 
+-- An item on the list from a link, an item ID or its exact name (any case).
+function ns.FindListItem(text)
+  if type(text) ~= "string" or text == "" then
+    return nil
+  end
+  local id = ItemIDFromLink(text)
+  if id then
+    return items[id] and id or nil
+  end
+  local want = text:lower()
+  for i, it in pairs(items) do
+    if (it.name or ""):lower() == want or (it.listName or ""):lower() == want then
+      return i
+    end
+  end
+  return nil
+end
+
 -- "/smog grade <item link, ID or name> <bikini|skimpy|cropped|auto>": the
 -- player's grade wins over the generator's; auto goes back to it.
 function ns.SetGrade(text)
@@ -367,16 +385,7 @@ function ns.SetGrade(text)
     ns.Print("Usage: |cffffff00/smog grade|r <item link, ID or name> <bikini, skimpy, cropped or auto>")
     return
   end
-  local id = ItemIDFromLink(body)
-  if not id then
-    local want = body:lower()
-    for i, it in pairs(items) do
-      if (it.name or ""):lower() == want or (it.listName or ""):lower() == want then
-        id = i
-        break
-      end
-    end
-  end
+  local id = ns.FindListItem(body)
   local it = id and items[id]
   if not it then
     ns.Print("That item is not on the list.")
@@ -1727,6 +1736,205 @@ StartLadder = function()
 end
 
 -------------------------------------------------------------------------------
+-- Buying from the list. The Buy button searches the piece's listings; the
+-- game's own confirm popup then names the cheapest copy, its price and what
+-- the piece is worth paying, and its Buy button places the buyout. Nothing is
+-- bought without that click.
+-------------------------------------------------------------------------------
+local PURCHASE_TIMEOUT = 10   -- seconds the listing search may take
+local PURCHASE_MAX = 50       -- listings read to find the cheapest
+local purchase = {}           -- id, key, sentAt: a search is out; offer: the popup is up; placed: bought, not confirmed
+ns.purchase = purchase
+
+local function PurchaseApiPresent()
+  return LadderApiPresent() and C_AuctionHouse.PlaceBid ~= nil
+end
+ns.PurchaseApiPresent = PurchaseApiPresent
+
+local function Flag(t, k)
+  local ok, v = pcall(function() return t[k] end)
+  return ok and v == true
+end
+
+-- Starts buying one piece: false (with a chat line) when it cannot start now.
+function ns.StartPurchase(id)
+  local it = items[id]
+  if not it then
+    ns.Print("That item is not on the list.")
+    return false
+  end
+  if not ns.AuctionHouseOpen() then
+    ns.Print(("Open the auction house to buy %s."):format(it.name))
+    return false
+  end
+  if not PurchaseApiPresent() then
+    ns.Print("This game client does not let addons buy. Right-click the piece in the list to search for it in the auction house.")
+    return false
+  end
+  if ns.scan and ns.scan.active then
+    ns.Print("A scan is running. Buy again when it is done.")
+    return false
+  end
+  if ladder.active then
+    ns.Print("Still reading listings after the scan. Buy again in a few seconds.")
+    return false
+  end
+  local okReady, ready = pcall(C_AuctionHouse.IsThrottledMessageSystemReady)
+  if not okReady or IsSecret(ready) or not ready then
+    ns.Print("The auction house is busy. Click Buy again in a moment.")
+    return false
+  end
+  local key = ladder.keys[id] -- the listed variant's key, with its suffix
+  if not key then
+    local ok, k = pcall(C_AuctionHouse.MakeItemKey, id)
+    key = ok and type(k) == "table" and k or nil
+  end
+  if not key then
+    ns.Print(("Could not search for %s."):format(it.name))
+    return false
+  end
+  if StaticPopup_Hide then
+    pcall(StaticPopup_Hide, "SLUTMOGSCOUT_BUY")
+  end
+  purchase.id, purchase.key, purchase.sentAt, purchase.offer = id, key, GetTime(), nil
+  local sorts = { { sortOrder = Enum.AuctionHouseSortOrder.Price, reverseSort = false } }
+  if not pcall(C_AuctionHouse.SendSearchQuery, key, sorts, false) then
+    purchase.id = nil
+    ns.Print(("The auction house refused the search for %s. Try again in a moment."):format(it.name))
+    return false
+  end
+  return true
+end
+
+-- What the confirm popup says about the price, from the buy score.
+local function PurchaseNote(id, price)
+  local info = ns.Price(id)
+  local b = info.low and ns.Buy(id, info)
+  if not b then
+    return nil
+  end
+  if b.buy then
+    if price <= b.upTo then
+      return ("Worth buying: pay at most %s (resale about %s)."):format(ns.Money(b.upTo), ns.Money(b.resale))
+    end
+    return ("|cffff2020More than the %s it is worth paying.|r"):format(ns.Money(b.upTo))
+  end
+  return b.stop and ("|cffff2020Not worth buying:|r %s."):format(b.stop) or nil
+end
+
+local function ShowPurchasePopup(text)
+  if not (StaticPopupDialogs and StaticPopup_Show) then
+    return false
+  end
+  if not StaticPopupDialogs.SLUTMOGSCOUT_BUY then
+    StaticPopupDialogs.SLUTMOGSCOUT_BUY = {
+      text = "%s",
+      button1 = BUY or "Buy",
+      button2 = CANCEL or "Cancel",
+      OnAccept = function() ns.ConfirmPurchase() end,
+      OnCancel = function() purchase.offer = nil end,
+      timeout = 0,
+      whileDead = true,
+      hideOnEscape = true,
+      preferredIndex = 3,
+    }
+  end
+  return StaticPopup_Show("SLUTMOGSCOUT_BUY", text) ~= nil
+end
+
+-- true when the results were this addon's purchase search
+local function OnPurchaseResults(itemKey)
+  if not purchase.id or (type(itemKey) == "table" and Field(itemKey, "itemID")) ~= purchase.id then
+    return false
+  end
+  local id, key = purchase.id, purchase.key
+  purchase.id = nil
+  if GetTime() - (purchase.sentAt or 0) > PURCHASE_TIMEOUT then
+    return true -- an answer that came too late: the player has moved on
+  end
+  local it = items[id]
+  local okN, n = pcall(C_AuctionHouse.GetNumItemSearchResults, key)
+  n = okN and not IsSecret(n) and Num(n) or 0
+  local offers = {}
+  for i = 1, math.min(n, PURCHASE_MAX) do
+    local ok, r = pcall(C_AuctionHouse.GetItemSearchResultInfo, key, i)
+    if ok and type(r) == "table" then
+      local buy, qty, auction = Field(r, "buyoutAmount"), Field(r, "quantity"), Field(r, "auctionID")
+      if buy and buy > 0 and auction and (qty == nil or qty == 1)
+          and not Flag(r, "containsOwnerItem") and not Flag(r, "containsAccountItem") then
+        offers[#offers + 1] = { auction = auction, price = buy }
+      end
+    end
+  end
+  table.sort(offers, function(a, b) return a.price < b.price end)
+  local name = it and it.name or ("item " .. id)
+  if #offers == 0 then
+    ns.Print(("No copy of %s can be bought out right now: none is listed with a buyout, or only yours are."):format(name))
+    return true
+  end
+  local best = offers[1]
+  local okLink, _, link = pcall(C_Item.GetItemInfo, id)
+  if not okLink or type(link) ~= "string" or IsSecret(link) then
+    link = name
+  end
+  purchase.offer = { id = id, auction = best.auction, price = best.price, nextPrice = offers[2] and offers[2].price, count = #offers }
+  local note = PurchaseNote(id, best.price)
+  local text = ("Buy %s for %s?\n%s"):format(link, ns.Money(best.price),
+    #offers == 1 and "The only copy you can buy." or ("The cheapest of %d you can buy; the next costs %s."):format(#offers, ns.Money(offers[2].price)))
+  if note then
+    text = text .. "\n\n" .. note
+  end
+  if not ShowPurchasePopup(text) then
+    purchase.offer = nil
+    ns.Print(("Cheapest %s: %s. The confirm window could not open, so nothing was bought."):format(name, ns.Money(best.price)))
+  end
+  return true
+end
+
+-- The popup's Buy button: places the buyout for the offered copy.
+function ns.ConfirmPurchase()
+  local o = purchase.offer
+  purchase.offer = nil
+  if not o then
+    return false
+  end
+  local it = items[o.id]
+  local name = it and it.name or ("item " .. o.id)
+  if not ns.AuctionHouseOpen() then
+    ns.Print("The auction house is closed: nothing was bought.")
+    return false
+  end
+  if not pcall(C_AuctionHouse.PlaceBid, o.auction, o.price) then
+    ns.Print(("The game refused to buy %s. Nothing was bought."):format(name))
+    return false
+  end
+  purchase.placed = o
+  ns.Print(("Buying %s for %s..."):format(name, ns.Money(o.price)))
+  return true
+end
+
+-- The game confirmed a purchase: one copy fewer is listed, the next is the cheapest.
+local function OnPurchaseCompleted(auctionID)
+  local o = purchase.placed
+  if not o or (auctionID ~= nil and Num(auctionID) ~= o.auction) then
+    return
+  end
+  purchase.placed = nil
+  local p = db.prices[o.id]
+  if type(p) == "table" and (Num(p.qty) or 0) > 0 then
+    p.qty = p.qty - 1
+    if p.qty > 0 and o.nextPrice then
+      p.min = o.nextPrice
+    end
+  end
+  local it = items[o.id]
+  ns.Print(("Bought %s for %s."):format(it and it.name or ("item " .. o.id), ns.Money(o.price)))
+  PricesChanged()
+  ns.Fire("SCAN")
+end
+ns.OnPurchaseCompleted = OnPurchaseCompleted
+
+-------------------------------------------------------------------------------
 -- Farm ranking
 -------------------------------------------------------------------------------
 -- How strongly an item belongs to a spot: 0..1 (share of the item's mob-level
@@ -2223,7 +2431,7 @@ frame:RegisterEvent("AUCTION_HOUSE_BROWSE_RESULTS_ADDED")
 frame:RegisterEvent("AUCTION_HOUSE_BROWSE_FAILURE")
 frame:RegisterEvent("AUCTION_HOUSE_THROTTLED_SYSTEM_READY")
 frame:RegisterEvent("ITEM_SEARCH_RESULTS_UPDATED")
-
+pcall(frame.RegisterEvent, frame, "AUCTION_HOUSE_PURCHASE_COMPLETED") -- not in every client
 frame:SetScript("OnEvent", function(_, event, arg1)
   if event == "ADDON_LOADED" then
     if arg1 ~= ADDON then
@@ -2273,8 +2481,21 @@ frame:SetScript("OnEvent", function(_, event, arg1)
   elseif event == "AUCTION_HOUSE_CLOSED" then
     Abort("the auction house was closed.")
     StopLadder(true)
+    purchase.id, purchase.offer = nil, nil
+    if StaticPopup_Hide then
+      pcall(StaticPopup_Hide, "SLUTMOGSCOUT_BUY")
+    end
     ns.Fire("AH_CLOSED")
+  elseif event == "AUCTION_HOUSE_PURCHASE_COMPLETED" then
+    pcall(OnPurchaseCompleted, arg1)
   elseif event == "ITEM_SEARCH_RESULTS_UPDATED" then
+    local okP, mine = pcall(OnPurchaseResults, arg1)
+    if not okP then
+      purchase.id, purchase.offer = nil, nil
+      ns.Print("Could not read the listings, so nothing was bought.")
+    elseif mine then
+      return
+    end
     if ladder.active and not pcall(OnLadderResults, arg1) then
       StopLadder(true) -- results this addon cannot read: keep what was read so far
     end
@@ -2374,6 +2595,13 @@ SlashCmdList.SLUTMOGSCOUT = function(input)
       .. (ns.ShowCropped() and "shown" or "hidden"))
   elseif cmd == "grade" then
     ns.SetGrade(rest)
+  elseif cmd == "buy" then
+    local id = ns.FindListItem(rest)
+    if id then
+      ns.StartPurchase(id)
+    else
+      ns.Print("Usage: |cffffff00/smog buy|r <item link, ID or name of a piece on the list>")
+    end
   elseif cmd == "common" then
     ns.SetShowCommon(not ns.ShowCommon())
     ns.Print(("Easy, common pieces (green world drops up to level %d, pieces always listed for under %s): %s"):format(
@@ -2417,6 +2645,7 @@ SlashCmdList.SLUTMOGSCOUT = function(input)
     print("  |cffffff00/smog remove <item link or id>|r  take a piece off the list")
     print("  |cffffff00/smog restore|r  bring back removed built-in pieces")
     print("  |cffffff00/smog cropped|r  show or hide cropped pieces")
+    print("  |cffffff00/smog buy|r <item>  find the cheapest copy listed and ask to buy it")
     print("  |cffffff00/smog grade|r <item> <bikini, skimpy, cropped or auto>  set a piece's grade yourself")
     print("  |cffffff00/smog common|r  show or hide easy, common pieces (low-level greens, cheap pieces always listed)")
     print("  |cffffff00/smog hints|r  pieces off the list that are priced like transmog pieces")

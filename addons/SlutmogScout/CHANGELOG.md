@@ -1,5 +1,17 @@
 # Changelog
 
+## 1.9.0
+
+Buy a piece straight from the list.
+
+- **Buy button.** While the auction house is open, each Market row for a piece listed now has a Buy button
+  in its Available cell. It finds the cheapest copy you can buy out (not your own, not bid-only) and opens
+  the game's confirm popup with its price, how many copies there are, what the next one costs, and
+  whether it is worth buying at that price. Nothing is bought until you press Buy in that popup.
+- **`/smog buy <item>`** does the same from chat. Give an item link, ID or name of a piece on the list.
+- After a purchase the list counts one copy fewer and the next copy as the cheapest, until the next scan.
+- Right-clicking a row still searches for the piece in the auction house itself.
+
 ## 1.8.0
 
 Grades fixed: Tyrant's Legplates and other plate pieces people buy for slutmog are no longer hidden as cropped.

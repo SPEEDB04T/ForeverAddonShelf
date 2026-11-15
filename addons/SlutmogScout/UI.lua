@@ -444,6 +444,29 @@ local function BuildMarketRow(parent)
       fs:SetWidth(col.width - padL - padR)
     end
     row.cells[col.key] = fs
+    if col.key == "qty" then
+      -- Buy, left in the Available cell: the cheapest copy listed now, once the
+      -- game's own confirm popup has shown its price
+      local buy = CreateFrame("Button", nil, row, "UIPanelButtonTemplate")
+      buy:SetSize(40, 18)
+      buy:SetPoint("LEFT", col.x + padL - 4, 0)
+      buy:SetText("Buy")
+      buy:SetScript("OnClick", function(self)
+        local id = self:GetParent().id
+        if id then
+          ns.StartPurchase(id)
+        end
+      end)
+      buy:SetScript("OnEnter", function(self)
+        GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
+        GameTooltip:SetText("Buy")
+        GameTooltip:AddLine("Finds the cheapest copy listed now. The game shows its price and asks you to confirm before anything is bought.", 1, 1, 1, true)
+        GameTooltip:Show()
+      end)
+      buy:SetScript("OnLeave", GameTooltip_Hide)
+      buy:Hide()
+      row.buyButton = buy
+    end
   end
   row:SetScript("OnEnter", function(self)
     if self.id then
@@ -548,6 +571,7 @@ local function RefreshMarket()
     end
   end
   local data = MarketData()
+  local ahOpen = ns.AuctionHouseOpen() and ns.PurchaseApiPresent()
   marketView.list:SetCount(#data)
   for i, d in ipairs(data) do
     local row = marketView.list.rows[i]
@@ -567,6 +591,7 @@ local function RefreshMarket()
       c.low:SetText(Grey("?"))
     end
     c.qty:SetText(d.info.qty and d.info.qty > 0 and d.info.qty or "")
+    row.buyButton:SetShown(d.info.low ~= nil and ahOpen)
     -- grey: a remembered price for a piece that is not listed right now
     c.value:SetText(ns.Money(d.info.value, d.info.value ~= nil and not d.info.low))
     c.seen:SetText(d.info.seenPct and ("%d%%"):format(Pct(d.info.seenPct)) or "")
@@ -1346,8 +1371,10 @@ ns.On(function(what)
   if what == "AH_SHOW" then
     EnsureAuctionHouseButton()
     UpdateStatus()
+    Refresh() -- the Buy buttons show while the auction house is open
   elseif what == "AH_CLOSED" then
     UpdateStatus()
+    Refresh()
     if C_Timer and C_Timer.After then
       C_Timer.After(0.3, UpdateStatus) -- the game's own window may hide after this event
     end
