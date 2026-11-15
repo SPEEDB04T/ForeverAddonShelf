@@ -22,7 +22,9 @@ local WAIT = 300                -- seconds somebody counts as waiting for an ans
 local FADE_FROM, FADE_TO = 60, 300      -- a row fades between these ages...
 local FADE_MIN, DONE_ALPHA = 0.35, 0.55 -- ... down to this; an answered row is dimmed to this at once
 local LOOK_KEEP, KEEP_FOR = 600, 1800   -- seconds a looker / an emoter or whisperer stays listed
-local RELOOK = 120              -- somebody who looks again after this long is new again
+local RELOOK = 120              -- somebody who looks again after this long is new again (with a sound)
+local LOOK_WINDOW = 10          -- a looker can be answered this long after they target you...
+local STILL = 3                 -- ... and only while they still do: seen on the last look (every 2 s)
 local ALERT_GAP = 3             -- seconds between two alert sounds
 
 -- Their emote, by a word in its text: the game's emote that goes back by itself, and which lines
@@ -173,8 +175,16 @@ local function Find(name)
 end
 
 -- Waiting for an answer: something came from them, a reply fits, and no answer went back since.
+-- Somebody who only looked can be answered only in the first seconds, while they still have you
+-- targeted (SuccuDev: "should only be able to do it within 10s of people targeting, while still targeted").
+local function CanReply(v, now)
+    if v.kind ~= "look" then return true end
+    return now - v.at <= LOOK_WINDOW and v.seen ~= nil and now - v.seen <= STILL
+end
+M.CanReply = function(v) return CanReply(v, Now()) end
+
 local function Waiting(v, now)
-    return v.reply ~= nil and (not v.doneAt or v.doneAt < v.at) and now - v.at < WAIT
+    return v.reply ~= nil and (not v.doneAt or v.doneAt < v.at) and now - v.at < WAIT and CanReply(v, now)
 end
 M.Waiting = function(v) return Waiting(v, Now()) end
 
@@ -278,6 +288,7 @@ Sync = function()
             if v.reply then
                 row.emote:SetText("Emote")
                 SetReply(row.emote, v)
+                row.emote:SetEnabled(CanReply(v, now))
                 row.emote:Show()
                 row.done:SetShown((v.doneAt and v.doneAt >= v.at) and true or false)
             else
@@ -348,7 +359,7 @@ function M.Reply(v)
     local text = Line(v)
     if not text then return false end
     local now = Now()
-    if now - lastSend < SEND_GAP then return false end
+    if now - lastSend < SEND_GAP or not CanReply(v, now) then return false end
     local send = (C_ChatInfo and C_ChatInfo.SendChatMessage) or SendChatMessage
     if type(send) ~= "function" or not pcall(send, text, "EMOTE") then
         ns.Print("the game refused the emote.")
@@ -445,6 +456,8 @@ local function Look()
                     v = Visit(name, "look", nil, LOOK_REPLY, false)
                 elseif v.kind == "look" and now - math.max(v.at, v.seen or 0) > RELOOK then
                     v = Visit(name, "look", nil, nil, false)      -- looked away and came back
+                elseif v.kind == "look" and now - (v.seen or v.at) > STILL then
+                    v.at = now                                    -- targeted you again: a new ten seconds, quietly
                 end
                 v.seen = now
                 Auto(v, LOOK_GAP)

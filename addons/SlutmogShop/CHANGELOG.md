@@ -1,5 +1,9 @@
 # Changelog
 
+## 1.10.4
+
+- Mailbox: somebody who only targets you can be answered only in the first ten seconds, and only while they still have you targeted. After that their Emote button is greyed out and they leave the big button. If they target you again, the ten seconds start over.
+
 ## 1.10.3
 
 - Mailbox: somebody who only targets you gets a little tease now, the way a girl plays with someone looking at her on the street: "catches Bob looking and smiles.", "glances back at Bob over a shoulder.", "pretends not to see Bob, then winks.", "glances back at Bob. Twice." No sales talk, nothing more than that.
