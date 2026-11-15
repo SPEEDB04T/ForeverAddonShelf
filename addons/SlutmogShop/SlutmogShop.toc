@@ -1,7 +1,7 @@
 ## Interface: 16001, 16002
 ## Title: Slutmog Shop
 ## Notes: Advertise your slutmog wares with one click: ready-made ads for every piece on the slutmog list, or your own lines, with the next piece as an item link and its price, posted to Trade or any channel. /slutshop to open.
-## Version: 1.5.0
+## Version: 1.5.1
 ## Category-enUS: Chat
 ## SavedVariables: SlutmogShopDB
 ## IconTexture: Interface\Icons\INV_Misc_Coin_02

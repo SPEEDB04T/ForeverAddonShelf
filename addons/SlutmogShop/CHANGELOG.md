@@ -1,5 +1,9 @@
 # Changelog
 
+## 1.5.1
+
+- An ad for a ware you carry no longer ends "in my bags right now" or "in stock": it just names the piece, the price and the shop. Only a ware on the auction house says where it is.
+
 ## 1.5.0
 
 - The posting panel shows the ware the next ad is for: its icon next to the ad. Hover it for the tooltip, click it to try the piece on in the dressing room.

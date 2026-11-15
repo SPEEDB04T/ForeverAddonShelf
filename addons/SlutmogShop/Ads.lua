@@ -6,7 +6,7 @@
 local _, ns = ...
 
 ns.AD_TAILS = {
-    bags = { " {item}, {price} at {shop}.", " {shop} has {item} in stock for {price}.", " ~ {shop} ~ {item}, {price}, in my bags right now." },
+    bags = { " {item}, {price} at {shop}.", " {shop} has {item} for {price}.", " ~ {shop} ~ {item}, {price}." },
     ah = { " {item} is on the auction house for {price}. ~ {shop} ~", " {shop} has {item} up on the auction house, {price} buyout.", " {item}, {price} on the AH. {shop}" },
 }
 
