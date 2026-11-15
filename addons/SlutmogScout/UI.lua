@@ -83,21 +83,21 @@ local WIN_W, WIN_H = 940, 560
 local HEADER_W = WIN_W - 4 - 5 - 4 - 26
 local COLS = {
   { key = "low", label = "Lowest", width = 96, padL = 0, padR = 14, align = "RIGHT", numeric = true,
-    tip = "Lowest price on the auction house in your last scan." },
+    tip = "Lowest price in your last scan." },
   { key = "name", label = "Item", fill = true, padL = 10, align = "LEFT" },
   { key = "type", label = "Type", width = 96, padL = 10, align = "LEFT" },
   { key = "rating", label = "Rating", width = 58, padL = 10, align = "RIGHT", numeric = true,
-    tip = "How good it looks, 1-10: your own rating (or SuccuDev's) in colour, else the estimate the list ships with in grey (~7). Rate a piece in the Review tab." },
+    tip = "Look, 1-10: your rating in colour, the list's estimate in grey. Rate pieces in the Review tab." },
   { key = "value", label = "Worth", width = 90, padL = 10, align = "RIGHT", numeric = true,
-    tip = "An estimate of what it fetches as a slutmog: its vendor price times its look, quality and rarity. Auction prices are left out: at a launch they climb as players make gold. Grey when it is not listed right now." },
+    tip = "Estimated slutmog price: vendor price times look, quality and rarity. Grey: not listed now." },
   { key = "vendor", label = "x Vendor", width = 66, padL = 10, align = "RIGHT", numeric = true,
-    tip = "The lowest price as a multiple of the vendor price. A vendor always pays its vendor price, so near 1x little can be lost." },
+    tip = "Lowest price as a multiple of the vendor price." },
   { key = "qty", label = "Stock", width = 90, padL = 10, padR = 10, align = "RIGHT", numeric = true,
-    tip = "How many are listed now, with the usual number from your earlier scans in grey. Many more than usual: sellers are piling in. Fewer: some sold." },
+    tip = "Listed now, with your usual count in grey." },
   { key = "seen", label = "Seen %", width = 54, padL = 10, align = "RIGHT", numeric = true,
-    tip = "Share of your scans in which the piece was listed at all. Low: it rarely comes up." },
+    tip = "Share of your scans it was listed in." },
   { key = "farm", label = "Farm", width = 74, padL = 10, align = "RIGHT", numeric = true,
-    tip = "About how long one copy takes to farm alone, from the Classic loot tables and an assumed kill rate. Long: few copies reach the auction house. Grey: only the mob level is known." },
+    tip = "Time to farm one copy alone. Grey: only the mob level is known." },
 }
 do
   local fixed = 0
@@ -116,7 +116,8 @@ end
 local HEADER_OVERLAP = 2 -- SetColumnHeaderOverlap(2) in the auction house table builder
 local CELL_FONT = "Number14FontWhite"
 
-local TAB_DEFS = { { "market", "Market", 80 }, { "farm", "Farm guide", 90 }, { "measured", "Measured", 90 }, { "review", "Review", 80 } }
+local TAB_DEFS = { { "market", "Market", 80 }, { "farm", "Farm guide", 90 }, { "measured", "Measured", 90 }, { "review", "Review", 80 },
+  { "sell", "Sell", 70 } }
 local TAB_INDEX = {}
 for i, def in ipairs(TAB_DEFS) do
   TAB_INDEX[def[1]] = i
@@ -126,6 +127,7 @@ end
 local state = { tab = "market", armor = "all", listedOnly = true, freshOnly = false, sortKey = "value", sortAsc = false, farmItem = nil,
   reviewShow = "todo", reviewSel = nil, reviewIndex = 1, reviewPage = 1, female = true, wholeBody = false }
 local win, marketView, farmView, measuredView, reviewView, statusText, scanButton, farmHeader, farmClear, listedCheck, listedText
+local sellView, sellMoney
 local levelBox
 local ReviewSelected, ReviewMoveView -- the review grid's view helpers, defined further down
 local filterButton, dealsCheck, dealsText, croppedCheck, croppedText, commonCheck, commonText
@@ -265,7 +267,7 @@ function ns.FillItemTooltip(tip, id)
   -- worth and the floor
   if info.fair then
     pair("Slutmog worth (estimate)", ns.Money(info.fair, not info.low))
-    note(("%.1fx its vendor price: %s."):format(info.times or 0, table.concat(info.worthWhy or {}, ", ")))
+    note(("%.1fx vendor: %s"):format(info.times or 0, table.concat(info.worthWhy or {}, ", ")))
   end
   if info.vendor and info.vendor > 0 then
     pair("Vendor price", ns.Money(info.vendor) .. (info.low and Grey((" (lowest is %.1fx)"):format(info.low / info.vendor)) or ""))
@@ -292,8 +294,6 @@ function ns.FillItemTooltip(tip, id)
   end
   if #same > 0 then
     note("Same look on " .. table.concat(same, " and ") .. ".")
-  elseif it.shared == 1 then
-    note("No other item has this look.")
   end
 
   -- where it comes from
@@ -312,7 +312,7 @@ function ns.FillItemTooltip(tip, id)
       for _, sp in ipairs(ns.SpotsForItem(id, 3)) do
         names[#names + 1] = ns.SpotLabel(sp.spot)
       end
-      tip:AddLine(("World drop from about level %d-%d mobs%s (rule of thumb)."):format(mlo, mhi,
+      tip:AddLine(("World drop, mobs level %d-%d%s."):format(mlo, mhi,
         #names > 0 and (", e.g. " .. table.concat(names, "; ")) or ""), w1, w2, w3, true)
     end
   end
@@ -324,7 +324,7 @@ function ns.FillItemTooltip(tip, id)
     end
     tip:AddLine("Dropped for you: " .. table.concat(parts, ", ") .. ".", w1, w2, w3, true)
   end
-  note("Click: farm guide. Right-click: search the auction house. Ctrl-click: try on. Shift-click: link.")
+  note("Click: farm guide. Right-click: search the auction house.")
 end
 
 local function ShowItemTooltip(owner, id)
@@ -480,9 +480,11 @@ local function BuildMarketRow(parent)
       border:SetPoint("CENTER", row.icon, "CENTER")
       if HasAtlas("auctionhouse-itemicon-small-border") then
         border:SetAtlas("auctionhouse-itemicon-small-border")
+        border.smogArt = true
       else
         border:Hide()
       end
+      row.iconBorder = border
       fs:SetPoint("LEFT", row.icon, "RIGHT", 4, -1)
       fs:SetWidth(col.width - padL - 14 - 4 - padR)
     else
@@ -506,7 +508,7 @@ local function BuildMarketRow(parent)
       buy:SetScript("OnEnter", function(self)
         GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
         GameTooltip:SetText("Buy")
-        GameTooltip:AddLine("Finds the cheapest copy listed now. The game shows its price and asks you to confirm before anything is bought.", 1, 1, 1, true)
+        GameTooltip:AddLine("Finds the cheapest copy. You confirm before anything is bought.", 1, 1, 1, true)
         GameTooltip:Show()
       end)
       buy:SetScript("OnLeave", GameTooltip_Hide)
@@ -514,6 +516,13 @@ local function BuildMarketRow(parent)
       row.buyButton = buy
     end
   end
+  -- a section line ("New or cheaper since your last scan"): gold text across the row
+  local st = row:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+  st:SetPoint("LEFT", 8, 0)
+  st:SetJustifyH("LEFT")
+  st:Hide()
+  row.sectionText = st
+  row.isSection = false
   row:SetScript("OnEnter", function(self)
     if self.id then
       ShowItemTooltip(self, self.id)
@@ -572,6 +581,11 @@ local function MarketData()
   end
   local key, asc, numeric = state.sortKey, state.sortAsc, NUMERIC[state.sortKey]
   table.sort(rows, function(a, b)
+    -- new or cheaper since the scan before: a group of their own at the top
+    -- (SuccuDev, 2026-11-15: "new since last scan should be separated more")
+    if (a.fresh ~= nil) ~= (b.fresh ~= nil) then
+      return a.fresh ~= nil
+    end
     local av, bv = a[key], b[key]
     if numeric then
       local amiss, bmiss = av < 0, bv < 0
@@ -614,49 +628,81 @@ local function RefreshMarket()
   end
   local data = MarketData()
   local ahOpen = ns.AuctionHouseOpen() and ns.PurchaseApiPresent()
-  marketView.list:SetCount(#data)
-  for i, d in ipairs(data) do
+  local nFresh = 0
+  for _, d in ipairs(data) do
+    if d.fresh then
+      nFresh = nFresh + 1
+    end
+  end
+  local lines = data
+  if nFresh > 0 and not state.freshOnly then
+    lines = { { section = ("New or cheaper since your last scan (%d)"):format(nFresh) } }
+    for i, d in ipairs(data) do
+      if i == nFresh + 1 then
+        lines[#lines + 1] = { section = ("Everything else (%d)"):format(#data - nFresh) }
+      end
+      lines[#lines + 1] = d
+    end
+  end
+  marketView.list:SetCount(#lines)
+  for i, d in ipairs(lines) do
     local row = marketView.list.rows[i]
-    row.id = d.id
     SetStripe(row, i)
-    row.icon:SetTexture(ItemIcon(d.id))
     local c = row.cells
-    c.name:SetText(ItemName(d.id, d.it) .. (d.it.custom and (" " .. Grey("*")) or "")
-      .. (d.fresh and ("  " .. FRESH_TEXT[d.fresh]) or ""))
-    c.type:SetText(d.type)
-    if d.rating < 0 then
-      c.rating:SetText("")
-    elseif d.ratingFrom == "estimate" then
-      c.rating:SetText(Grey(("~%d"):format(d.rating)))
+    row.isSection = d.section ~= nil
+    if d.section then
+      row.id = nil
+      row.sectionText:SetText(d.section)
+      row.sectionText:Show()
+      row.icon:Hide()
+      row.iconBorder:Hide()
+      row.buyButton:Hide()
+      for _, col in ipairs(COLS) do
+        c[col.key]:SetText("")
+      end
     else
-      -- as in the Review tab: green 7+, gold on the list, red off it
-      c.rating:SetText(("|cff%s%d/10|r"):format(d.rating >= 7 and "40ff40" or d.rating >= ns.RATING_KEEP and "ffd100" or "ff4040", d.rating))
-    end
-    if d.info.low then
-      c.low:SetText(ns.Money(d.info.low))
-    elseif d.info.qty then
-      c.low:SetText(Grey("none"))
-    else
-      c.low:SetText(Grey("?"))
-    end
-    if d.info.qty and d.info.qty > 0 then
-      c.qty:SetText(d.info.qty .. (d.usual and (" " .. Grey(("(%s)"):format(math.floor(d.usual + 0.5)))) or ""))
-    else
-      c.qty:SetText("")
-    end
-    c.vendor:SetText(d.vendor >= 0 and ("%.1fx"):format(d.vendor) or "")
-    row.buyButton:SetShown(d.info.low ~= nil and ahOpen)
-    -- grey: a remembered price for a piece that is not listed right now
-    c.value:SetText(ns.Money(d.info.value, d.info.value ~= nil and not d.info.low))
-    c.seen:SetText(d.info.seenPct and ("%d%%"):format(Pct(d.info.seenPct)) or "")
-    if d.hours then
-      c.farm:SetText(ShortHours(d.hours))
-    elseif d.it.src == "fishing" then
-      c.farm:SetText(Grey("fishing"))
-    elseif d.it.inst then
-      c.farm:SetText(Grey("dungeon"))
-    else
-      c.farm:SetText(Grey(("lvl %d-%d"):format(d.lo, d.hi)))
+      row.sectionText:Hide()
+      row.icon:Show()
+      row.iconBorder:SetShown(row.iconBorder.smogArt == true)
+      row.id = d.id
+      row.icon:SetTexture(ItemIcon(d.id))
+      c.name:SetText(ItemName(d.id, d.it) .. (d.it.custom and (" " .. Grey("*")) or "")
+        .. (d.fresh and ("  " .. FRESH_TEXT[d.fresh]) or ""))
+      c.type:SetText(d.type)
+      if d.rating < 0 then
+        c.rating:SetText("")
+      elseif d.ratingFrom == "estimate" then
+        c.rating:SetText(Grey(("~%d"):format(d.rating)))
+      else
+        -- as in the Review tab: green 7+, gold on the list, red off it
+        c.rating:SetText(("|cff%s%d/10|r"):format(d.rating >= 7 and "40ff40" or d.rating >= ns.RATING_KEEP and "ffd100" or "ff4040", d.rating))
+      end
+      if d.info.low then
+        c.low:SetText(ns.Money(d.info.low))
+      elseif d.info.qty then
+        c.low:SetText(Grey("none"))
+      else
+        c.low:SetText(Grey("?"))
+      end
+      if d.info.qty and d.info.qty > 0 then
+        c.qty:SetText(d.info.qty .. (d.usual and (" " .. Grey(("(%s)"):format(math.floor(d.usual + 0.5)))) or ""))
+      else
+        c.qty:SetText("")
+      end
+      c.vendor:SetText(d.vendor >= 0 and ("%.1fx"):format(d.vendor) or "")
+      row.buyButton:SetShown(d.info.low ~= nil and ahOpen)
+      -- grey: a remembered price for a piece that is not listed right now
+      c.value:SetText(ns.Money(d.info.value, d.info.value ~= nil and not d.info.low))
+      c.seen:SetText(d.info.seenPct and ("%d%%"):format(Pct(d.info.seenPct)) or "")
+      if d.hours then
+        c.farm:SetText(ShortHours(d.hours))
+      elseif d.it.src == "fishing" then
+        c.farm:SetText(Grey("fishing"))
+      elseif d.it.inst then
+        c.farm:SetText(Grey("dungeon"))
+      else
+        c.farm:SetText(Grey(("lvl %d-%d"):format(d.lo, d.hi)))
+      end
     end
   end
   if state.freshOnly then
@@ -733,9 +779,9 @@ local function FarmRowTooltip(self)
     end
     GameTooltip:AddDoubleLine("  " .. ItemName(p.id, it), right)
   end
-  GameTooltip:AddLine("Prices shown after the 5% auction house cut. Grey: not listed right now.", GREY[1], GREY[2], GREY[3], true)
+  GameTooltip:AddLine("After the 5% auction house cut. Grey: not listed now.", GREY[1], GREY[2], GREY[3], true)
   if not state.farmItem then
-    GameTooltip:AddLine("The value is an estimate: the summed price of every piece whose level band overlaps the spot. Not gold per hour: drop chances are unknown.", GREY[1], GREY[2], GREY[3], true)
+    GameTooltip:AddLine("The sum of the pieces that can drop here, not gold per hour.", GREY[1], GREY[2], GREY[3], true)
   end
   local measured = ns.MeasuredForZone(spot.zone)
   if #measured > 0 then
@@ -837,7 +883,7 @@ local function MeasuredRowTooltip(self)
     end
   end
   GameTooltip:AddLine(" ")
-  GameTooltip:AddLine("Gold per hour counts only the list pieces found, at their typical price today after the 5% auction house cut. Other loot is not counted. Time is only the stretches between loots (pauses over 5 minutes are left out), so a short or sparse session reads higher than a full hour of farming would.", GREY[1], GREY[2], GREY[3], true)
+  GameTooltip:AddLine("List pieces only, at today's price after the 5% cut. Pauses over 5 min are left out.", GREY[1], GREY[2], GREY[3], true)
   GameTooltip:Show()
 end
 
@@ -1208,6 +1254,224 @@ local function ReviewCounts()
 end
 
 -------------------------------------------------------------------------------
+-- Sell tab: a sell box for the selected bag piece over a list of the bag
+-- pieces (one copy each) and your auctions, as in the auction house's own
+-- Sell and Auctions tabs.
+-------------------------------------------------------------------------------
+local SELL_COLS = {
+  { key = "name", label = "Item", fill = true, padL = 10, align = "LEFT" },
+  { key = "price", label = "Price", width = 110, padL = 10, align = "RIGHT" },
+  { key = "low", label = "Lowest", width = 110, padL = 10, align = "RIGHT" },
+  { key = "others", label = "Others", width = 64, padL = 10, align = "RIGHT" },
+  { key = "left", label = "Time left", width = 96, padL = 10, align = "RIGHT" },
+  { key = "status", label = "Status", width = 84, padL = 10, align = "LEFT" },
+  { key = "act", label = "", width = 84, padL = 6, padR = 6, align = "LEFT" },
+}
+do
+  local fixed = 0
+  for _, col in ipairs(SELL_COLS) do
+    fixed = fixed + (col.width or 0)
+  end
+  local x = 0
+  for _, col in ipairs(SELL_COLS) do
+    if col.fill then
+      col.width = HEADER_W - fixed
+    end
+    col.x = x
+    x = x + col.width
+  end
+end
+local SELL_STATUS = { undercut = "|cffff4040Undercut|r", lowest = "|cff40ff40Lowest|r" }
+
+local function MoneyGet()
+  local m = sellMoney
+  if m and type(MoneyInputFrame_GetCopper) == "function" then
+    local ok, c = pcall(MoneyInputFrame_GetCopper, m)
+    c = ok and tonumber(c) or nil
+    if c and c > 0 then
+      return c
+    end
+  end
+  return nil
+end
+
+local function MoneySet(copper)
+  local m = sellMoney
+  if m and type(MoneyInputFrame_SetCopper) == "function" then
+    pcall(MoneyInputFrame_SetCopper, m, copper)
+  end
+end
+
+local function MarketText(m)
+  if not m then
+    return Grey("...")
+  elseif m.unknown then
+    return Grey("?")
+  elseif m.low then
+    return ns.Money(m.low)
+  end
+  return Grey("none")
+end
+
+local function OthersText(m)
+  if not m or m.unknown then
+    return ""
+  end
+  return m.more and (m.count .. "+") or tostring(m.count)
+end
+
+-- the bag piece in the sell box: the one picked, else the first not listed
+local function SellSelected(bags)
+  local first
+  for _, r in ipairs(bags) do
+    if not r.listed then
+      if r.id == state.sellSel then
+        return r
+      end
+      first = first or r
+    end
+  end
+  return first
+end
+
+local function SellSelectedNow()
+  return SellSelected((ns.SellRows()))
+end
+
+-- Post: the sell box's price for the piece in it, else the piece's own default.
+local function SellPostRow(r)
+  if not r then
+    return
+  end
+  local price
+  if sellView and state.sellBoxId == r.id then
+    price = MoneyGet()
+  end
+  if not price then
+    price = ns.DefaultPostPrice(r.id, r.market, r.link)
+  end
+  ns.SellPost(r.entry, price)
+end
+
+local function SellInfoLine(r)
+  local parts = {}
+  local m = r.market
+  if not m then
+    parts[#parts + 1] = "Reading listings..."
+  elseif m.unknown then
+    parts[#parts + 1] = "Listings unknown"
+  elseif m.low then
+    parts[#parts + 1] = ("Lowest %s, %s %s"):format(ns.Money(m.low), OthersText(m), m.count == 1 and "other" or "others")
+  else
+    parts[#parts + 1] = "No other listings"
+  end
+  if r.count > 1 then
+    parts[#parts + 1] = ("%d in bags"):format(r.count)
+  end
+  return table.concat(parts, ", ")
+end
+
+local function RefreshSellBox(bags)
+  local box = sellView.box
+  local r = SellSelected(bags)
+  local ahOpen = ns.AuctionHouseOpen()
+  if not r then
+    state.sellBoxId = nil
+    box.icon:SetTexture(nil)
+    box.name:SetText(Grey(#bags > 0 and "Every piece in your bags is listed" or "No list piece in your bags"))
+    box.info:SetText("")
+    box.note:SetText("")
+    box.post:SetEnabled(false)
+    return
+  end
+  box.icon:SetTexture(ItemIcon(r.id))
+  box.name:SetText(r.link or ItemName(r.id))
+  box.info:SetText(Grey(SellInfoLine(r)))
+  local price, source = ns.DefaultPostPrice(r.id, r.market, r.link)
+  local current = MoneyGet()
+  if state.sellBoxId ~= r.id or current == nil or current == state.sellBoxSet then
+    MoneySet(price)
+    state.sellBoxSet = price
+  end
+  state.sellBoxId = r.id
+  state.sellSel = r.id
+  local deposit = ns.PostDeposit(r.entry)
+  box.note:SetText(Grey(source .. (deposit and (", deposit " .. ns.Money(deposit)) or "")))
+  box.post:SetEnabled(ahOpen and not ns.sell.pending)
+end
+
+local function RefreshSell()
+  local bags, auctions = ns.SellRows()
+  RefreshSellBox(bags)
+  local ahOpen = ns.AuctionHouseOpen()
+  local busy = ns.sell.pending ~= nil
+  local rows = {}
+  if #bags > 0 then
+    rows[#rows + 1] = { section = ("In your bags (%d)"):format(#bags) }
+    for _, r in ipairs(bags) do
+      rows[#rows + 1] = r
+    end
+  end
+  if #auctions > 0 then
+    rows[#rows + 1] = { section = ("Your auctions (%d)"):format(#auctions) }
+    for _, r in ipairs(auctions) do
+      rows[#rows + 1] = r
+    end
+  end
+  local list = sellView.list
+  list:SetCount(#rows)
+  for i, d in ipairs(rows) do
+    local row = list.rows[i]
+    row.data = d.section == nil and d or false
+    row.id = d.id
+    SetStripe(row, i)
+    local c = row.cells
+    row.act:Hide()
+    row.selected:SetShown(d.kind == "bag" and d.id == state.sellBoxId)
+    if d.section then
+      row.sectionText:SetText(d.section)
+      row.sectionText:Show()
+      row.icon:Hide()
+      row.iconBorder:Hide()
+      for _, col in ipairs(SELL_COLS) do
+        c[col.key]:SetText("")
+      end
+    else
+      row.sectionText:Hide()
+      row.icon:Show()
+      row.iconBorder:SetShown(row.iconBorder.smogArt == true)
+      row.icon:SetTexture(ItemIcon(d.id))
+      c.low:SetText(MarketText(d.market))
+      c.others:SetText(OthersText(d.market))
+      if d.kind == "bag" then
+        c.name:SetText((d.link or ItemName(d.id)) .. (d.count > 1 and Grey(" x" .. d.count) or ""))
+        local price = ns.DefaultPostPrice(d.id, d.market, d.link)
+        c.price:SetText(ns.Money(price, d.listed))
+        c.left:SetText("")
+        c.status:SetText(d.listed and Grey("Listed") or "")
+        if not d.listed and ahOpen then
+          row.act:SetText("Post")
+          row.act:SetEnabled(not busy)
+          row.act:Show()
+        end
+      else
+        c.name:SetText(d.link or ItemName(d.id))
+        c.price:SetText(d.price and ns.Money(d.price, d.status == "sold") or "")
+        c.left:SetText(d.status == "sold" and "" or (d.left and Dur(d.left) or ""))
+        c.status:SetText(d.status == "sold" and Grey("Sold") or SELL_STATUS[d.status] or Grey("..."))
+        if d.status ~= "sold" and ahOpen then
+          row.act:SetText("Cancel")
+          row.act:SetEnabled(not ns.sell.cancelling)
+          row.act:Show()
+        end
+      end
+    end
+  end
+  sellView.empty:SetText(ahOpen and "No list piece in your bags or on the auction house." or "Open the auction house to sell.")
+  sellView.empty:SetShown(#rows == 0)
+end
+
+-------------------------------------------------------------------------------
 -- Window
 -------------------------------------------------------------------------------
 -- the scan advice's colour: green when fresh, gold when due, red when stale
@@ -1224,8 +1488,9 @@ local function ScanTooltip(self)
     r, g, b = 1, 0.31, 0.31
   end
   GameTooltip:AddLine(advice, r, g, b, true)
-  GameTooltip:AddLine(ns.db.opts.autoScan and "Scans by itself when you open the auction house and the prices are over 30 min old."
-    or "Options > Scan at the auction house scans by itself when the prices are over 30 min old.", 1, 1, 1, true)
+  if ns.db.opts.autoScan then
+    GameTooltip:AddLine("Scans by itself when prices are over 30 min old.", 1, 1, 1, true)
+  end
   GameTooltip:Show()
 end
 ns.ScanTooltip = ScanTooltip
@@ -1235,17 +1500,33 @@ local function UpdateStatus()
     return
   end
   local scan = ns.scan
-  if scan.active then
+  if state.tab == "sell" and not scan.active then
+    if not ns.AuctionHouseOpen() then
+      statusText:SetText("Open the auction house to sell.")
+    else
+      local post, listed, under, left = ns.SellCounts()
+      local parts = { ("%d to post"):format(post), ("%d listed"):format(listed) }
+      if under > 0 then
+        parts[#parts + 1] = ("|cffff4040%d undercut|r"):format(under)
+      end
+      if left > 0 then
+        parts[#parts + 1] = Grey(("reading listings, %d left"):format(left))
+      end
+      statusText:SetText(table.concat(parts, ", "))
+    end
+    scanButton:SetText("Refresh")
+    scanButton:SetEnabled(ns.AuctionHouseOpen())
+  elseif scan.active then
     statusText:SetText(("Scanning... %d search results read"):format(scan.rows or 0))
     scanButton:SetText("Scanning")
     scanButton:Disable()
   elseif ns.ladder and ns.ladder.active then
-    statusText:SetText(("Reading the next listings of pieces with several copies... %d left"):format(#ns.ladder.queue + (ns.ladder.current and 1 or 0)))
+    statusText:SetText(("Reading listings... %d left"):format(#ns.ladder.queue + (ns.ladder.current and 1 or 0)))
     scanButton:SetText("Scan")
     scanButton:SetEnabled(ns.AuctionHouseOpen())
   elseif state.tab == "review" then
     local all, kept, off = ReviewCounts()
-    statusText:SetText(("%d of %d pieces rated: %d kept on the list, %d taken off. 4-10 keeps a piece, 1-3 takes it off. Over the grid: 1-9 and 0 rate, arrows move, the wheel zooms, right-drag moves the view, Shift-wheel pages.")
+    statusText:SetText(("%d of %d rated: %d kept, %d off. 4-10 keeps, 1-3 takes off. Keys 1-9 and 0 rate, arrows move.")
       :format(kept + off, all, kept, off))
     scanButton:SetText("Scan")
     scanButton:SetEnabled(ns.AuctionHouseOpen())
@@ -1256,8 +1537,8 @@ local function UpdateStatus()
     end
     local hidden = ns.CheckHidden()
     local level, advice = ns.ScanAdvice()
-    statusText:SetText(("|c%s%s|r  %d pieces tracked.%s"):format(SCAN_HEX[level] or SCAN_HEX.due, advice, n,
-      hidden > 0 and (" %d hidden by the game-build check (/smog verify)."):format(hidden) or ""))
+    statusText:SetText(("|c%s%s|r  %d pieces.%s"):format(SCAN_HEX[level] or SCAN_HEX.due, advice, n,
+      hidden > 0 and (" %d hidden (/smog verify)."):format(hidden) or ""))
     scanButton:SetText("Scan")
     scanButton:SetEnabled(ns.AuctionHouseOpen())
   end
@@ -1308,12 +1589,15 @@ Refresh = function()
   farmView:SetShown(state.tab == "farm")
   measuredView:SetShown(state.tab == "measured")
   reviewView:SetShown(state.tab == "review")
+  sellView:SetShown(state.tab == "sell")
   if state.tab == "market" then
     RefreshMarket()
   elseif state.tab == "farm" then
     RefreshFarm()
   elseif state.tab == "review" then
     RefreshReview()
+  elseif state.tab == "sell" then
+    RefreshSell()
   else
     RefreshMeasured()
   end
@@ -1401,6 +1685,9 @@ local function SelectTab(key)
     state.farmItem = nil
   end
   Refresh()
+  if key == "sell" then
+    ns.SellRefresh()
+  end
 end
 
 local function FilterIsDefault()
@@ -1631,7 +1918,7 @@ local function CreateLevelRange(anchor)
     e:SetScript("OnEnter", function(self)
       GameTooltip:SetOwner(self, "ANCHOR_TOP")
       GameTooltip:AddLine("Level range")
-      GameTooltip:AddLine("Only pieces whose required level lies in this range show, in every tab, the buys and the chat lines after a scan. Leave a box empty for no limit.", 1, 1, 1, true)
+      GameTooltip:AddLine("Shows only pieces of this required level. Leave a box empty for no limit.", 1, 1, 1, true)
       GameTooltip:Show()
     end)
     e:SetScript("OnLeave", GameTooltip_Hide)
@@ -1948,6 +2235,200 @@ local function CreateReviewView()
   end)
 end
 
+-- The Sell tab's row: the auction house's list line, with a Post or Cancel
+-- button in its last cell.
+local function BuildSellRow(parent)
+  local row = CreateFrame("Button", nil, parent)
+  row.smogRow = true
+  row:RegisterForClicks("LeftButtonUp", "RightButtonUp")
+  AddStripe(row)
+  local sel = row:CreateTexture(nil, "BACKGROUND", nil, 1)
+  sel:SetAllPoints()
+  if SetArt(sel, "auctionhouse-ui-row-select", "Interface\\QuestFrame\\UI-QuestTitleHighlight") then
+    sel:SetBlendMode("ADD")
+  end
+  sel:Hide()
+  row.selected = sel
+  local font = CellFont()
+  row.cells = {}
+  for _, col in ipairs(SELL_COLS) do
+    local padL, padR = col.padL or 0, col.padR or 0
+    local fs = row:CreateFontString(nil, "OVERLAY", font)
+    fs:SetJustifyH(col.align)
+    fs:SetWordWrap(false)
+    if col.key == "name" then
+      row.icon = row:CreateTexture(nil, "BACKGROUND", nil, 2)
+      row.icon:SetSize(14, 14)
+      row.icon:SetPoint("LEFT", col.x + padL, 0)
+      local border = row:CreateTexture(nil, "BACKGROUND", nil, 3)
+      border:SetSize(16, 16)
+      border:SetPoint("CENTER", row.icon, "CENTER")
+      if HasAtlas("auctionhouse-itemicon-small-border") then
+        border:SetAtlas("auctionhouse-itemicon-small-border")
+        border.smogArt = true
+      end
+      row.iconBorder = border
+      fs:SetPoint("LEFT", row.icon, "RIGHT", 4, -1)
+      fs:SetWidth(col.width - padL - 14 - 4 - padR)
+    else
+      fs:SetPoint("LEFT", col.x + padL, 0)
+      fs:SetWidth(col.width - padL - padR)
+    end
+    row.cells[col.key] = fs
+    if col.key == "act" then
+      local b = CreateFrame("Button", nil, row, "UIPanelButtonTemplate")
+      b:SetSize(col.width - padL - padR, 18)
+      b:SetPoint("LEFT", col.x + padL, 0)
+      b:SetScript("OnClick", function(self)
+        local d = self:GetParent().data
+        if not d then
+          return
+        end
+        if d.kind == "bag" then
+          SellPostRow(d)
+        else
+          ns.SellCancel(d.auction)
+        end
+      end)
+      b:SetScript("OnEnter", function(self)
+        local d = self:GetParent().data
+        if d and d.kind == "auction" then
+          GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
+          GameTooltip:SetText("Cancel")
+          GameTooltip:AddLine("It goes to your mailbox.", 1, 1, 1, true)
+          local cost = ns.CancelCost(d.auction)
+          if cost and cost > 0 then
+            GameTooltip:AddLine("Costs " .. ns.Money(cost), 1, 1, 1, true)
+          end
+          GameTooltip:Show()
+        end
+      end)
+      b:SetScript("OnLeave", GameTooltip_Hide)
+      b:Hide()
+      row.act = b
+    end
+  end
+  -- a section line ("In your bags"): gold text across the row
+  local st = row:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+  st:SetPoint("LEFT", 8, 0)
+  st:SetJustifyH("LEFT")
+  st:Hide()
+  row.sectionText = st
+  row:SetScript("OnEnter", function(self)
+    local d = self.data
+    if not d then
+      return
+    end
+    GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
+    ns.tipFilled = false
+    if d.link and GameTooltip.SetHyperlink then
+      GameTooltip:SetHyperlink(d.link)
+    else
+      GameTooltip:SetItemByID(d.id)
+    end
+    if not ns.tipFilled then
+      ns.FillItemTooltip(GameTooltip, d.id)
+    end
+    GameTooltip:Show()
+  end)
+  row:SetScript("OnLeave", GameTooltip_Hide)
+  row:SetScript("OnClick", function(self)
+    local d = self.data
+    if not d then
+      return
+    end
+    if IsModifiedClick("CHATLINK") and d.link then
+      ChatEdit_InsertLink(d.link)
+    elseif IsModifiedClick("DRESSUP") then
+      DressUpItemLink(d.link or ("item:" .. d.id))
+    elseif d.kind == "bag" and not d.listed then
+      state.sellSel = d.id
+      Refresh()
+    end
+  end)
+  return row
+end
+
+local function PostFromBox()
+  SellPostRow(SellSelectedNow())
+end
+
+local function CreateSellView()
+  sellView = MakeView()
+  -- the sell box: item, price box and Post, as in the auction house's Sell tab
+  local box = CreateFrame("Frame", nil, sellView)
+  box:SetPoint("TOPLEFT", 0, 0)
+  box:SetPoint("TOPRIGHT", 0, 0)
+  box:SetHeight(46)
+  sellView.box = box
+  local icon = box:CreateTexture(nil, "ARTWORK")
+  icon:SetSize(36, 36)
+  icon:SetPoint("LEFT", 8, 0)
+  box.icon = icon
+  local frame = box:CreateTexture(nil, "OVERLAY")
+  frame:SetSize(38, 38)
+  frame:SetPoint("CENTER", icon, "CENTER")
+  if not SetArt(frame, "auctionhouse-itemicon-border-white", nil) then
+    frame:Hide()
+  end
+  local name = box:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
+  name:SetPoint("TOPLEFT", icon, "TOPRIGHT", 10, -2)
+  name:SetPoint("RIGHT", box, "RIGHT", -400, 0)
+  name:SetJustifyH("LEFT")
+  name:SetWordWrap(false)
+  box.name = name
+  local info = box:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+  info:SetPoint("BOTTOMLEFT", icon, "BOTTOMRIGHT", 10, 2)
+  info:SetPoint("RIGHT", box, "RIGHT", -400, 0)
+  info:SetJustifyH("LEFT")
+  info:SetWordWrap(false)
+  box.info = info
+  local post = MakeButton(box, "Post", 100, PostFromBox)
+  post:SetPoint("RIGHT", box, "RIGHT", -8, 0)
+  box.post = post
+  sellMoney = TryCreate("Frame", "SlutmogScoutSellPrice", box, "MoneyInputFrameTemplate")
+  if sellMoney then
+    sellMoney:SetPoint("RIGHT", post, "LEFT", -12, 0)
+    -- Enter in the price box posts
+    for _, k in ipairs({ "gold", "silver", "copper" }) do
+      local eb = sellMoney[k]
+      if type(eb) == "table" and eb.SetScript then
+        eb:SetScript("OnEnterPressed", function(self)
+          pcall(self.ClearFocus, self)
+          PostFromBox()
+        end)
+      end
+    end
+  end
+  local note = box:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+  note:SetPoint("BOTTOMRIGHT", post, "TOPRIGHT", 0, 3)
+  note:SetJustifyH("RIGHT")
+  box.note = note
+
+  local headers = CreateFrame("Frame", nil, sellView)
+  headers:SetPoint("TOPLEFT", 4, -48)
+  headers:SetPoint("TOPRIGHT", -26, -48)
+  headers:SetHeight(19)
+  for ci, col in ipairs(SELL_COLS) do
+    local h = TryCreate("Button", nil, headers, "ColumnDisplayButtonShortTemplate") or CreateFrame("Button", nil, headers)
+    h:SetSize(col.width + (ci < #SELL_COLS and HEADER_OVERLAP or 0), 19)
+    h:SetPoint("TOPLEFT", col.x, 0)
+    pcall(h.EnableMouse, h, false)
+    local fs = h:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+    fs:SetPoint("LEFT", 8, 0)
+    fs:SetJustifyH("LEFT")
+    fs:SetText(col.label)
+  end
+  sellView.inset = MakeInset(sellView)
+  sellView.inset:SetPoint("TOPLEFT", 0, -67)
+  sellView.inset:SetPoint("BOTTOMRIGHT", 0, 0)
+  sellView.list = CreateList(sellView, ROW_H, BuildSellRow)
+  sellView.list.scroll:SetPoint("TOPLEFT", headers, "BOTTOMLEFT", 0, -6)
+  sellView.list.scroll:SetPoint("RIGHT", headers, "RIGHT", 0, 0)
+  sellView.list.scroll:SetPoint("BOTTOM", sellView, "BOTTOM", 0, 3)
+  sellView.empty = MakeEmptyText(sellView, sellView.list.scroll)
+end
+
 local function CreateTabs()
   -- the game's tabs under the bottom edge, placed as the auction house
   -- places its Buy tab (20 px in, 28 px down; the rest 3 px apart)
@@ -2126,7 +2607,7 @@ local function CreateWindow()
   grip:SetScript("OnEnter", function(self)
     GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
     GameTooltip:AddLine("Window size")
-    GameTooltip:AddLine(("Drag to make the whole window bigger or smaller (now %d%%). Also /smog scale 120, or the options window."):format(math.floor(ns.WindowScale() * 100 + 0.5)), 1, 1, 1, true)
+    GameTooltip:AddLine(("Drag to resize (now %d%%)."):format(math.floor(ns.WindowScale() * 100 + 0.5)), 1, 1, 1, true)
     GameTooltip:Show()
   end)
   grip:SetScript("OnLeave", GameTooltip_Hide)
@@ -2151,11 +2632,24 @@ local function CreateWindow()
     if PlaySound and SOUNDKIT and SOUNDKIT.IG_MAINMENU_OPTION_CHECKBOX_ON then
       PlaySound(SOUNDKIT.IG_MAINMENU_OPTION_CHECKBOX_ON)
     end
-    ns.StartScan()
+    if state.tab == "sell" then
+      ns.SellRefresh(true)
+    else
+      ns.StartScan()
+    end
   end)
   scanButton:SetPoint("RIGHT", win, "TOPRIGHT", -12, -49)
   pcall(scanButton.SetMotionScriptsWhileDisabled, scanButton, true) -- the tooltip shows while the auction house is closed
-  scanButton:SetScript("OnEnter", ScanTooltip)
+  scanButton:SetScript("OnEnter", function(self)
+    if state.tab == "sell" then
+      GameTooltip:SetOwner(self, "ANCHOR_TOP")
+      GameTooltip:AddLine("Refresh")
+      GameTooltip:AddLine("Reads your auctions and each piece's listings again.", 1, 1, 1, true)
+      GameTooltip:Show()
+    else
+      ScanTooltip(self)
+    end
+  end)
   scanButton:SetScript("OnLeave", GameTooltip_Hide)
   filterButton = CreateFilterDropdown()
   if not filterButton then
@@ -2215,6 +2709,7 @@ local function CreateWindow()
   measuredView.empty:SetText("Nothing measured yet. Loot mobs anywhere and this tab fills in by itself.")
 
   CreateReviewView()
+  CreateSellView()
 
   win:SetScript("OnShow", Refresh)
 end
@@ -2311,26 +2806,22 @@ local function EnsureAuctionHouseButton()
   end)
   ahButton:SetScript("OnEnter", ScanTooltip)
   ahButton:SetScript("OnLeave", GameTooltip_Hide)
-  -- Posting the list pieces in the bags (SuccuDev, 2026-11-15: "auto post it to
-  -- auction house with 2 hour deposits")
-  local postButton = CreateFrame("Button", "SlutmogScoutPostButton", AuctionHouseFrame, "UIPanelButtonTemplate")
-  postButton:SetSize(120, 22)
-  postButton:SetPoint("RIGHT", ahButton, "LEFT", -4, 0)
-  postButton:SetText("Slutmog post")
-  postButton:SetScript("OnClick", function()
-    ns.StartPosting()
+  -- the Sell tab (SuccuDev, 2026-11-15: "proper auctioning addon")
+  local sellButton = CreateFrame("Button", "SlutmogScoutSellButton", AuctionHouseFrame, "UIPanelButtonTemplate")
+  sellButton:SetSize(120, 22)
+  sellButton:SetPoint("RIGHT", ahButton, "LEFT", -4, 0)
+  sellButton:SetText("Slutmog sell")
+  sellButton:SetScript("OnClick", function()
+    ns.Toggle("sell", true)
+    ns.SellRefresh()
   end)
-  postButton:SetScript("OnEnter", function(self)
+  sellButton:SetScript("OnEnter", function(self)
     GameTooltip:SetOwner(self, "ANCHOR_BOTTOM")
-    GameTooltip:SetText("Slutmog post")
-    GameTooltip:AddLine(("Lists the pieces on the list in your bags one at a time, for %s (the cheapest deposit)."):format(ns.PostDurationText()), 1, 1, 1, true)
-    GameTooltip:AddLine("Each gets a window with its listings, vendor price and deposit, and a price box set to your Slutmog Shop price, or else 1 silver under the lowest other listing (the game's own default). Change it if you like, then press Enter or Post.", 1, 1, 1, true)
-    GameTooltip:AddLine("The game lets an addon post only on a click or a key press, so each auction takes one.", 0.6, 0.6, 0.6, true)
-    local n = #ns.PostablePieces()
-    GameTooltip:AddLine(n == 0 and "No piece on the list is in your bags." or ("%d %s in your bags can be posted."):format(n, n == 1 and "piece" or "pieces"), 1, 0.82, 0, true)
+    GameTooltip:SetText("Slutmog sell")
+    GameTooltip:AddLine(("Post your list pieces for %s and watch your auctions."):format(ns.PostDurationText()), 1, 1, 1, true)
     GameTooltip:Show()
   end)
-  postButton:SetScript("OnLeave", GameTooltip_Hide)
+  sellButton:SetScript("OnLeave", GameTooltip_Hide)
 end
 
 ns.On(function(what)
@@ -2338,6 +2829,9 @@ ns.On(function(what)
     EnsureAuctionHouseButton()
     UpdateStatus()
     Refresh() -- the Buy buttons show while the auction house is open
+    if win and win:IsShown() and state.tab == "sell" then
+      ns.SellRefresh()
+    end
   elseif what == "AH_CLOSED" then
     UpdateStatus()
     Refresh()
@@ -2352,6 +2846,10 @@ ns.On(function(what)
     end
   elseif what == "ITEMS" or what == "DROPS" then
     Refresh()
+  elseif what == "SELL" then
+    if win and win:IsShown() and state.tab == "sell" then
+      Refresh()
+    end
   end
 end)
 
@@ -2385,6 +2883,7 @@ LookShotsTargets["SlutmogScout"] = {
     { label = "window: one piece's farm spots", frame = WindowOn("farm", true) },
     { label = "window: Measured", frame = WindowOn("measured") },
     { label = "window: Review", frame = WindowOn("review") },
+    { label = "window: Sell", frame = WindowOn("sell") },
     { label = "auction house button", frame = function() return ahButton end, pad = 60 },
   },
 }

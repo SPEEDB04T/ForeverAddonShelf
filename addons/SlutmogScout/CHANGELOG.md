@@ -1,5 +1,17 @@
 # Changelog
 
+## 1.16.0
+
+- **New Sell tab.** It lists your list pieces in the bags and your auctions, with the lowest other
+  listing for each. The Slutmog sell button above the auction house (or `/smog sell`) opens it.
+- **One copy per piece.** A piece you already list shows Listed and can't be posted again.
+- **Undercut check.** Your auctions show Undercut, Lowest or Sold, and each has a Cancel button.
+- **Post box.** It starts at your Slutmog Shop price, or else 1 silver under the lowest listing.
+  Press Enter or Post to list the piece for 2 hours.
+- **Scans leave your own auctions out**, so prices and counts are other sellers' only.
+- **New or cheaper pieces get their own section** at the top of the Market list.
+- **Shorter text** in chat, tooltips and the status line.
+
 ## 1.15.1
 
 - **Slutmog post uses your Slutmog Shop prices.** A piece you priced in Slutmog Shop now opens at that
