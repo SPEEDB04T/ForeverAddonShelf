@@ -1,0 +1,15 @@
+## Interface: 16001, 16002
+## Title: Destroy Advisor
+## Notes: Lists the items in your bags that are safe to destroy or sell, and says why: grey junk, quest leftovers whose quests you've done or can't take, bound gear your class can never use, things you already know. Nothing a quest still needs is ever suggested.
+## Version: 1.0.0
+## OptionalDeps: Questie, QuestieDB, Baganator
+## SavedVariables: DestroyAdvisorDB
+## IconTexture: Interface\Icons\INV_Misc_Bag_07_Red
+## AddonCompartmentFunc: DestroyAdvisor_Toggle
+
+Core.lua
+Judge.lua
+UI.lua
+Hooks.lua
+Kit.lua
+Options.lua
