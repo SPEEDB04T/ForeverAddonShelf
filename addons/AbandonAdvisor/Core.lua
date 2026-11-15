@@ -2,7 +2,7 @@
 local ADDON, ns = ...
 
 ns.ADDON = ADDON
-ns.VERSION = "1.4.1"
+ns.VERSION = "1.4.2"
 
 local defaults = {
     point = nil,

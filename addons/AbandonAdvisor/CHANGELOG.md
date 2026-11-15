@@ -1,3 +1,6 @@
+## 1.4.2
+- Lists its frames (window, quest log tab page or side button, row tooltip, the two questions) for the LookShots screenshot helper, so the author can see them in the game. Does nothing without LookShots.
+
 ## 1.4.1
 - Options window and minimap button redrawn by the shared kit: the options are now the game's own Options rows, and the minimap button is the game's round minimap button.
 - Shorter option names so each fits on one line: "Count low drop rates", "Suggest group abandons", "Share my abandons", "Open when the log is full". The rest of each explanation is in its tip.

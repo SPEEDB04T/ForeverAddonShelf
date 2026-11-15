@@ -244,6 +244,36 @@ function QL.Init()
     Attach()
 end
 
+----------------------------------------------------------------------
+-- LookShots (a helper on SuccuDev's machine only): the frames this addon
+-- draws, so it can take a game screenshot of each the first time it shows.
+-- The options window and minimap button are the shared kit's and listed there.
+----------------------------------------------------------------------
+local function VisiblePopup(which)
+    if type(StaticPopup_FindVisible) ~= "function" then return nil end
+    local ok, dialog = pcall(StaticPopup_FindVisible, which)
+    if ok and type(dialog) == "table" then return dialog end
+end
+
+function QL.LookShotsFrames()
+    return {
+        { label = "window", frame = function() return _G.AbandonAdvisorFrame end },
+        { label = "quest log tab page", frame = function() return QL.mode == "tab" and panel or nil end },
+        { label = "quest log side button", frame = function() return QL.mode == "button" and QL.tab or nil end },
+        { label = "row tooltip", frame = function()
+            local tip = GameTooltip
+            if type(tip) ~= "table" or not tip:IsShown() then return nil end
+            local owner = tip.GetOwner and tip:GetOwner()
+            if type(owner) == "table" and owner.isAbandonAdvisorRow then return tip end
+        end },
+        { label = "abandon question", frame = function() return VisiblePopup("ABANDONADVISOR_CONFIRM") end },
+        { label = "group question", frame = function() return VisiblePopup("ABANDONADVISOR_GROUP") end },
+    }
+end
+
+LookShotsTargets = LookShotsTargets or {}
+LookShotsTargets["AbandonAdvisor"] = { version = ns.VERSION, frames = QL.LookShotsFrames() }
+
 -- /abandon log: the quest log, on the Abandon Advisor tab.
 function QL.Open()
     if QL.mode ~= "tab" then

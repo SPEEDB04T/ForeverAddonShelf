@@ -317,6 +317,7 @@ end
 
 local function CreateRow(list)
     local row = CreateFrame("Button", nil, list.content)
+    row.isAbandonAdvisorRow = true        -- so LookShots can tell our row tooltip from others
     row:SetHeight(TEXT_TOP + 2 * FALLBACK_LINE + OBJECTIVE_GAP + ROW_EXTRA)
     row:RegisterForClicks("LeftButtonUp", "RightButtonUp")
 
