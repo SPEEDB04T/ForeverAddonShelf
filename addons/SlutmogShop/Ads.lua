@@ -74,6 +74,13 @@ ns.AD_POOLS = {
         "Take your tabard off. It's covering the good part.",
     },
     shop_smuttanie = {
+        "Long night of grinding with the boys? Smuttanie keeps you ready!",
+        "Boys wiping at 3am again? Smuttanie keeps them coming back!",
+        "Nobody wants to run you through Deadmines? Smuttanie changes their mind!",
+        "Tired of tipping the mage? Smuttanie has him tipping you!",
+        "Big night in Goldshire? Smuttanie has you uncovered!",
+        "Boys only want you for your heals? Smuttanie gives them something else to want!",
+        "Looking for more? Smuttanie has less!",
         "Ask anyone upstairs at the Goldshire inn about Smuttanie's.",
         "Half of Goldshire shops at Smuttanie's. The other half is watching.",
         "What happens in Goldshire was bought at Smuttanie's.",

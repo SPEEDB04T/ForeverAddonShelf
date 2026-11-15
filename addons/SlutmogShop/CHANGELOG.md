@@ -1,5 +1,9 @@
 # Changelog
 
+## 1.4.2
+
+- Seven more name lines for a shop with "Smuttanie" in its name, in the pattern of "Long night of grinding with the boys? Smuttanie keeps you ready!": a thing players really say that also reads dirty, then Smuttanie to the rescue.
+
 ## 1.4.1
 
 - Ads reworked from the second round of Yes/No votes. The 17 lines voted No are gone, the first five Smuttanie name lines among them.
