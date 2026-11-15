@@ -1,5 +1,12 @@
 # Changelog
 
+## 1.10.0
+
+- Mailbox replies are custom emotes now, with their name in it: "Smuttanie gives Bob a look that costs extra." They need no target, so they always reach the right person (the 1.9.0 click-to-target did not work in the game).
+- The big button shows the line exactly as it will read in chat, in the emote colour. Reply sends it, Another picks a different line. 19 lines, by what they did to you: looked, kissed, winked, flirted, whistled or cheered, hugged, waved, danced, or anything else.
+- The row buttons say Reply and send that person's line. The next reply to the same person is a different line.
+- Nothing is sent without your click; one reply every two seconds at most, against double clicks.
+
 ## 1.9.0
 
 Mailbox mode, reworked.
