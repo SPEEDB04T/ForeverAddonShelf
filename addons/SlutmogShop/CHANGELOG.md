@@ -1,5 +1,9 @@
 # Changelog
 
+## 1.6.2
+
+- Every ready-made ad now says the piece is for transmog: the ending reads "[item] for transmog, 10g at Shop" or "Transmog: [item], 10g on the AH", and set ads say "Mog set: [top] + [bottom]".
+
 ## 1.6.1
 
 - Eleven new ad lines on two selling points: the look is bought once and stays on through every gear upgrade up to Naxxramas, and it is cheap now, before the raiders with gold want it.

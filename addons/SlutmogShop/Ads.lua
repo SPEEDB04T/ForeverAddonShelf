@@ -6,14 +6,14 @@
 local _, ns = ...
 
 ns.AD_TAILS = {
-    bags = { " {item}, {price} at {shop}.", " {shop} has {item} for {price}.", " ~ {shop} ~ {item}, {price}." },
-    ah = { " {item} is on the auction house for {price}. ~ {shop} ~", " {shop} has {item} up on the auction house, {price} buyout.", " {item}, {price} on the AH. {shop}" },
+    bags = { " {item} for transmog, {price} at {shop}.", " {shop} has {item} for your transmog, {price}.", " ~ {shop} ~ Transmog: {item}, {price}." },
+    ah = { " Transmog: {item} is on the auction house for {price}. ~ {shop} ~", " {shop} has {item} for transmog on the auction house, {price} buyout.", " AH transmog: {item}, {price}. {shop}" },
 }
 
 -- A set (a top and a bottom sold together): {item} is the top, {pair} the bottom, {price} both together.
 ns.SET_TAILS = {
-    bags = { " {item} + {pair}, {price} for both. {shop}", " {shop}: {item} + {pair}, {price} the pair.", " {item} + {pair}, {price} for both." },
-    ah = { " {item} + {pair} on the AH, {price} for both. {shop}", " {shop}: {item} + {pair}, both on the AH, {price}.", " {item} + {pair} on the AH, {price} for both." },
+    bags = { " Mog set: {item} + {pair}, {price} for both. {shop}", " {shop} mog set: {item} + {pair}, {price}.", " Mog set: {item} + {pair}, {price}." },
+    ah = { " Mog set on the AH: {item} + {pair}, {price} for both. {shop}", " {shop} mog set, both on the AH: {item} + {pair}, {price}.", " Mog set on the AH: {item} + {pair}, {price}." },
 }
 
 ns.AD_POOLS = {
