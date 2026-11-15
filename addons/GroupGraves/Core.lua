@@ -42,6 +42,7 @@ local CHOICES = {
 }
 local SIZE_MIN, SIZE_MAX = 12, 40
 ns.SIZE_MIN, ns.SIZE_MAX = SIZE_MIN, SIZE_MAX
+ns.SIZE_DEFAULT = DEFAULTS.size                   -- the size at which a marker matches the game's corpse pin
 
 local MAX_AGE       = 2 * 3600  -- a saved marker older than this is dropped at login
 local MISSING_TICKS = 10        -- seconds a marker survives without its member in the group

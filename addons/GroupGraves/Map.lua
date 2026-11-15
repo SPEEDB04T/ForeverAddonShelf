@@ -13,15 +13,15 @@ local _, ns = ...
 local Map = {}
 ns.Map = Map
 
--- Drawn the way the game draws these things on its own map: the tombstone of the game's
--- corpse pin (CorpsePinTemplate), and the class-coloured dot the map uses for group members
--- (UnitPositionFrame, atlas WhiteCircle-RaidBlips) at its corner, so it reads as "this
--- member's corpse".
+-- A marker is a copy of the game's own corpse pin (CorpsePinTemplate and CorpsePinMixin in
+-- Blizzard_SharedMapDataProviders/DeathMapDataProvider): a 24 x 24 frame with the POIIcons
+-- tombstone filling it on the ARTWORK layer, scaled by 0.8 (its SetScalingLimits(1, 0.8, 0.8))
+-- times the map's pin scale over the canvas scale, no highlight, nothing drawn over it.
+-- Whose corpse it is shows in the tooltip, and under the marker if names are switched on.
 local TOMB   = "Interface\\Minimap\\POIIcons"
 local TOMB_COORDS = { 0.56640625, 0.6328125, 0.001953125, 0.03515625 }
-local DOT_ATLAS = "WhiteCircle-RaidBlips"
-local BASE = 22                                         -- marker size the art is laid out for
-local DOT = 10                                          -- the class dot, at BASE
+local BASE = 24                                         -- CorpsePinTemplate's size
+local CORPSE_SCALE = 0.8                                -- CorpsePinMixin's scaling limits
 
 -- The game's text colours, with their values as a fallback.
 local function FontColor(name, r, g, b)
@@ -99,9 +99,15 @@ local function Anchor(pin)
     return "ANCHOR_RIGHT"
 end
 
+-- The corpse pin's scale, times the player's marker size (the default size is the game's).
+local function Size()
+    local size = ns.db and ns.db.size or ns.SIZE_DEFAULT or 22
+    return CORPSE_SCALE * size / (ns.SIZE_DEFAULT or 22)
+end
+
 -- Every marker under the cursor: a wipe puts several on one spot.
 local function Near(a, b)
-    local reach = (ns.db and ns.db.size or BASE) * 0.5
+    local reach = BASE * Size() * 0.5
     local dx, dy = a.sx - b.sx, a.sy - b.sy
     return dx * dx + dy * dy <= reach * reach
 end
@@ -157,24 +163,12 @@ local function CreatePin()
     local pin = FrameUnder(host)
     pin:SetSize(BASE, BASE)
 
-    pin.tomb = Tombstone(pin, "ARTWORK")           -- the game's corpse tombstone, at full size
-    pin.glow = Tombstone(pin, "HIGHLIGHT")         -- brightens under the mouse, like the map's pins
-    pin.glow:SetBlendMode("ADD")
-    pin.glow:SetAlpha(0.5)
+    pin.tomb = Tombstone(pin, "ARTWORK")
 
-    -- The member's class colour, as the map's own group-member dot. Without that atlas the
-    -- marker is the tombstone alone; the tooltip and the name still say whose it is.
-    pin.dot = pin:CreateTexture(nil, "OVERLAY")
-    pin.dot:SetSize(DOT, DOT)
-    pin.dot:SetPoint("CENTER", pin, "BOTTOMRIGHT", -3, 4)
-    local ok, set = pcall(pin.dot.SetAtlas, pin.dot, DOT_ATLAS)
-    pin.hasDot = ok and set ~= false
-    pin.dot:SetShown(pin.hasDot)
-
-    pin.label = pin:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
-    pin.label:SetPoint("TOP", pin, "BOTTOM", 0, -1)
-    local font, fontSize = pin.label:GetFont()
-    if font and fontSize then pin.label:SetFont(font, fontSize, "OUTLINE") end
+    -- Names (off unless switched on): the game's outlined small font, under the marker.
+    local font = _G.GameFontNormalSmallOutline and "GameFontNormalSmallOutline" or "GameFontHighlightSmall"
+    pin.label = pin:CreateFontString(nil, "OVERLAY", font)
+    pin.label:SetPoint("TOP", pin, "BOTTOM", 0, -2)
 
     pin:EnableMouse(true)
     if pin.SetMouseClickEnabled then pin:SetMouseClickEnabled(false) end
@@ -214,7 +208,7 @@ end
 local function Layout(map, canvas, mapID, width, height, canvasScale, pinScale)
     ReleaseAll()
     if not (ns.db and mapID and width > 0 and height > 0) then return end
-    local scale = (ns.db.size / BASE) * pinScale / canvasScale    -- the same size on screen at any zoom
+    local scale = Size() * pinScale / canvasScale     -- the same size on screen at any zoom
     local level
     for _, g in pairs(ns.graves) do
         if ns.Visible(g) then
@@ -230,7 +224,6 @@ local function Layout(map, canvas, mapID, width, height, canvasScale, pinScale)
                 pin:SetPoint("CENTER", canvas, "TOPLEFT", width * x / scale, -height * y / scale)
                 pin:SetFrameLevel(level)
                 local r, gr, b = ClassColor(g.class)
-                pin.dot:SetVertexColor(r, gr, b, 1)
                 pin:SetAlpha(g.released and 1 or 0.7)       -- still lying there, not released
                 if ns.db.names then
                     pin.label:SetText(g.name)

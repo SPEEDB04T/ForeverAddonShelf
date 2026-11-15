@@ -1,5 +1,10 @@
 # Changelog
 
+## 1.2.0
+
+- A marker is now exactly the game's own corpse marker: the same size, and nothing added to it. The class-coloured dot at its corner and the glow under the mouse are gone. Whose corpse it is shows in the tooltip (name in the class colour), or under the marker with "Names under the markers".
+- Names under the markers use the game's outlined small font.
+
 ## 1.1.0
 
 - The markers look like the game's own map pins: the game's corpse tombstone at full size, with the class-coloured dot the map uses for group members at its corner, in place of the coloured ring and the dark disc. They brighten under the mouse.
