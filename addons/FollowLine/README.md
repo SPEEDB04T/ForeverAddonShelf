@@ -3,7 +3,7 @@
 Puts your party or raid into a follow line: one player leads, and everyone else follows the player directly ahead of them. One player orders the line and calls it; everyone sees who is on the line and who dropped off.
 
 - **The caller** opens the window with `/line`, puts the players in order (the first one leads) and presses **Call line**.
-- **Everyone else with the addon** gets a **Follow** button naming the player ahead of them. A click on it, or the key you give it, starts the follow.
+- **Everyone else with the addon** gets a **Follow** button naming the player ahead of them. A click on it, or the key you give it, starts the follow. The player who leads gets no button (they have nobody to follow), and players without the addon get none either: chat tells the caller who got one. To see the button on your own, try `/line demo`.
 - **The window** shows each player's state, so the caller can see at a glance who is not following, and **Regroup** nudges exactly those players.
 - **Players without the addon** can still be put in the line: `/line announce` posts the order in group chat and they type `/follow` themselves.
 

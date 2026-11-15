@@ -1,5 +1,14 @@
 # Changelog
 
+## 1.1.1
+
+- Calling a line now says what it did: the one who leads gets no Follow button (the players behind them do), how many players got one, and which players have no Follow Line and need **Announce**.
+- `/line demo` on your own puts you second, so the demo shows your Follow button.
+- The Follow button keeps to the action bars' own looks: checked while you follow (instead of dimmed), the key turns red when the player ahead is too far (a dot stands in when there is no key), and no more pulsing red.
+- The row buttons are all one size, the game's 16 px, with one gap.
+- No more "Unrecognized XML" warnings at login (Bindings.xml was listed in the file list; the game reads it by itself).
+- Names from other realms with a space or dash in the realm now match the addon messages.
+
 ## 1.1.0
 
 Looks like part of the game's own UI.

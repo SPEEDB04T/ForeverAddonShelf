@@ -1,8 +1,8 @@
 -- Follow Line: the Follow button every player gets, and the window the line is ordered in.
 --
 -- Both are built from the game's own parts so they sit in its UI: the Follow
--- button is an action button (the action bars' slot, frame, pushed, highlight and
--- flash art) with its name beside it, and the window is the game's basic frame
+-- button is an action button (ActionButtonTemplate's slot, mask, frame, pushed,
+-- highlight and checked art) with its name beside it, and the window is the game's basic frame
 -- with an inset, panel buttons and the quest log's row highlight.
 --
 -- The Follow button is a secure button running "/follow <the player ahead>", so
@@ -35,6 +35,8 @@ local GRAY = FontColor("GRAY_FONT_COLOR", 0.5, 0.5, 0.5)
 local GREEN = FontColor("GREEN_FONT_COLOR", 0.1, 1.0, 0.1)
 local RED = FontColor("RED_FONT_COLOR", 1.0, 0.1, 0.1)
 local YELLOW = FontColor("YELLOW_FONT_COLOR", 1.0, 1.0, 0.0)
+local HOTKEY = FontColor("ACTIONBAR_HOTKEY_FONT_COLOR", 0.6, 0.6, 0.6)
+local RANGE_DOT = type(RANGE_INDICATOR) == "string" and RANGE_INDICATOR or "\226\151\143"   -- the game's dot
 
 local function Hex(c)
     return ("ff%02x%02x%02x"):format(c[1] * 255, c[2] * 255, c[3] * 255)
@@ -124,15 +126,17 @@ local function CreateButton()
     b.icon = b:CreateTexture(nil, "BACKGROUND", nil, 1)
     b.icon:SetAllPoints(b)
     b.icon:SetTexture(ns.ICON)
+    -- ActionButtonTemplate: the mask at its atlas size, centred on the icon
     local mask = b.CreateMaskTexture and b:CreateMaskTexture()
     if mask then
-        mask:SetAtlas("UI-HUD-ActionBar-IconFrame-Mask", false)
-        mask:SetAllPoints(b.icon)
+        mask:SetAtlas("UI-HUD-ActionBar-IconFrame-Mask", true)
+        mask:SetPoint("CENTER", b.icon, "CENTER", 0, 0)
         b.icon:AddMaskTexture(mask)
     end
+    -- frame, pushed and highlight art at the template's 46 x 45 from the top left
     b:SetNormalAtlas("UI-HUD-ActionBar-IconFrame")
     b:SetPushedAtlas("UI-HUD-ActionBar-IconFrame-Down")
-    b:SetHighlightAtlas("UI-HUD-ActionBar-IconFrame-Mouseover", "ADD")
+    b:SetHighlightAtlas("UI-HUD-ActionBar-IconFrame-Mouseover")
     for _, t in ipairs({ b:GetNormalTexture(), b:GetPushedTexture(), b:GetHighlightTexture() }) do
         if type(t) == "table" then
             t:ClearAllPoints()
@@ -140,13 +144,17 @@ local function CreateButton()
             t:SetSize(BUTTON_SIZE + 1, BUTTON_SIZE)
         end
     end
-    -- the red flash an action button shows; it pulses while the player is off the line
-    b.flashTex = b:CreateTexture(nil, "ARTWORK", nil, 1)
-    b.flashTex:SetAtlas("UI-HUD-ActionBar-IconFrame-Flash", true)
-    b.flashTex:SetPoint("TOPLEFT", b, "TOPLEFT", 0, 0)
-    b.flashTex:Hide()
+    -- the template's CheckedTexture: an action button is checked while its action
+    -- runs (auto attack, a channel), and this one while the player follows
+    b.checked = b:CreateTexture(nil, "OVERLAY")
+    b.checked:SetAtlas("UI-HUD-ActionBar-IconFrame-Mouseover")
+    b.checked:SetBlendMode("ADD")
+    b.checked:SetPoint("TOPLEFT", b, "TOPLEFT", 0, 0)
+    b.checked:SetSize(BUTTON_SIZE + 1, BUTTON_SIZE)
+    b.checked:Hide()
 
     b.hotkey = b:CreateFontString(nil, "OVERLAY", "NumberFontNormalSmallGray")
+    b.hotkey:SetSize(32, 10)
     b.hotkey:SetPoint("TOPRIGHT", b, "TOPRIGHT", -4, -5)
     b.hotkey:SetJustifyH("RIGHT")
 
@@ -177,20 +185,6 @@ local function CreateButton()
     end)
     b:SetScript("OnEnter", ButtonTooltip)
     b:SetScript("OnLeave", HideTooltip)
-    b:SetScript("OnUpdate", function(self, elapsed)
-        if self.flash then
-            self.phase = (self.phase or 0) + elapsed * 4
-            self.flashTex:SetAlpha(0.25 + 0.75 * math.abs(math.sin(self.phase)))
-            if not self.flashShown then
-                self.flashShown = true
-                self.flashTex:Show()
-            end
-        elseif self.flashShown then
-            self.flashShown = false
-            self.phase = 0
-            self.flashTex:Hide()
-        end
-    end)
     b:Hide()
 end
 
@@ -224,22 +218,27 @@ local function RefreshButton()
     local total = Line.line and #Line.line.order or 0
     local place = ("Place %d of %d"):format(Line.place or 0, total)
     local key = BoundKey()
+    local inRange = Line.InRange(Line.members[target])     -- nil when the game can't tell
+    local far = not on and inRange == false
     local sub
     if UI.pending and button.target ~= target then
         -- the line changed during a fight: the button still points at someone else
         sub = Paint(RED, "After the fight.") .. " Type /follow " .. target
     elseif on then
         sub = place
-    elseif Line.InRange(Line.members[target]) == false then
+    elseif far then
         sub = Paint(RED, "Too far away:") .. " walk closer"
     else
         sub = place .. (key and "" or ", click to fall in")
     end
     button.label:SetText((on and "Following " or "Follow ") .. target)
     button.sub:SetText(sub)
-    button.hotkey:SetText(key and ShortKey(key) or "")
-    button:SetAlpha(on and 0.5 or 1)
-    button.flash = (Line.dropped and not on) and true or false
+    -- the action bars' states (ActionButton.lua): checked while the action runs; out of
+    -- range the key turns red, and with no key a dot stands in for it while range is known
+    button.checked:SetShown(on)
+    button.hotkey:SetText(key and ShortKey(key) or (inRange ~= nil and RANGE_DOT or ""))
+    local c = far and RED or HOTKEY
+    button.hotkey:SetVertexColor(c[1], c[2], c[3])
 end
 
 ----------------------------------------------------------------------
@@ -277,14 +276,16 @@ end
 -- A small button inside a row, drawn with the game's own button art.
 local ART = {
     up     = { "Interface\\ChatFrame\\UI-ChatIcon-ScrollUp-Up", "Interface\\ChatFrame\\UI-ChatIcon-ScrollUp-Down",
-               "Interface\\ChatFrame\\UI-ChatIcon-ScrollUp-Disabled", "Interface\\Buttons\\UI-Common-MouseHilight", 18 },
+               "Interface\\ChatFrame\\UI-ChatIcon-ScrollUp-Disabled", "Interface\\Buttons\\UI-Common-MouseHilight", 16 },
     down   = { "Interface\\ChatFrame\\UI-ChatIcon-ScrollDown-Up", "Interface\\ChatFrame\\UI-ChatIcon-ScrollDown-Down",
-               "Interface\\ChatFrame\\UI-ChatIcon-ScrollDown-Disabled", "Interface\\Buttons\\UI-Common-MouseHilight", 18 },
+               "Interface\\ChatFrame\\UI-ChatIcon-ScrollDown-Disabled", "Interface\\Buttons\\UI-Common-MouseHilight", 16 },
     remove = { "Interface\\Buttons\\UI-MinusButton-Up", "Interface\\Buttons\\UI-MinusButton-Down",
-               "Interface\\Buttons\\UI-MinusButton-Disabled", "Interface\\Buttons\\UI-PlusButton-Hilight", 14 },
+               "Interface\\Buttons\\UI-MinusButton-Disabled", "Interface\\Buttons\\UI-PlusButton-Hilight", 16 },
     add    = { "Interface\\Buttons\\UI-PlusButton-Up", "Interface\\Buttons\\UI-PlusButton-Down",
-               "Interface\\Buttons\\UI-PlusButton-Disabled", "Interface\\Buttons\\UI-PlusButton-Hilight", 14 },
+               "Interface\\Buttons\\UI-PlusButton-Disabled", "Interface\\Buttons\\UI-PlusButton-Hilight", 16 },
 }
+-- one size for all four (the plus and minus buttons' own 16 x 16) and one gap between them
+local MINI_GAP = 2
 
 local function MiniButton(row, art, tip, onClick)
     local a = ART[art]
@@ -349,7 +350,6 @@ local function NewRow(bench)
     hl:SetTexture("Interface\\QuestFrame\\UI-QuestTitleHighlight")
     hl:SetBlendMode("ADD")
     hl:SetAllPoints(row)
-    hl:SetAlpha(0.5)
 
     row.num = row:CreateFontString(nil, "OVERLAY", "GameFontDisableSmall")
     row.num:SetPoint("LEFT", row, "LEFT", 0, 0)
@@ -363,9 +363,9 @@ local function NewRow(bench)
         row.rem = MiniButton(row, "remove", "Take them out of the line", function(name) Line.Remove(name) end)
         row.rem:SetPoint("RIGHT", row, "RIGHT", -2, 0)
         row.down = MiniButton(row, "down", "Move back one place", function(name) Line.Move(name, 1) end)
-        row.down:SetPoint("RIGHT", row.rem, "LEFT", -3, 0)
+        row.down:SetPoint("RIGHT", row.rem, "LEFT", -MINI_GAP, 0)
         row.up = MiniButton(row, "up", "Move forward one place", function(name) Line.Move(name, -1) end)
-        row.up:SetPoint("RIGHT", row.down, "LEFT", 1, 0)
+        row.up:SetPoint("RIGHT", row.down, "LEFT", -MINI_GAP, 0)
     end
 
     row.state = row:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
@@ -498,7 +498,7 @@ function UI.Create()
 
     CommandButton("Call line", "Call line", "Sends this order to everyone in the group with the addon. The first player leads; each of the others gets a Follow button for the player ahead of them.",
         function() Line.Call() end)
-    CommandButton("Regroup", "Regroup", "Nudges everyone who is off the line: their Follow button flashes and they hear a sound.",
+    CommandButton("Regroup", "Regroup", "Nudges everyone who is off the line: they get a chat line naming whom to follow, and a sound.",
         function() Line.Regroup() end)
     CommandButton("Stop", "Stop", "Ends the line for everyone. Players who are following keep walking until they move by themselves.",
         function() Line.Stop() end)
@@ -529,7 +529,7 @@ local function NoteText()
     end
     local by = (line.by == ns.playerName) and "you" or line.by
     if Line.place == 1 then
-        return ("Called by %s. You lead."):format(by)
+        return ("Called by %s. You lead; the others get the Follow buttons."):format(by)
     elseif Line.target then
         return ("Called by %s. You follow %s."):format(by, Line.target)
     end

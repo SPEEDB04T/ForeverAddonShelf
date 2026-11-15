@@ -26,7 +26,7 @@ L.touched = false   -- the player changed the draft by hand
 L.target = nil      -- who the player follows in the line
 L.place = nil       -- the player's place in the line
 L.following = nil   -- who the game says the player is following right now
-L.dropped = false   -- the player fell off the line (the Follow button flashes)
+L.dropped = false   -- the player fell off the line
 L.lastStamp, L.lastBy = 0, ""
 
 local queue = {}
@@ -132,9 +132,15 @@ end
 
 local function DefaultOrder()
     local order = {}
-    if ns.playerName and L.members[ns.playerName] then order[1] = ns.playerName end
+    local me = ns.playerName and L.members[ns.playerName] and ns.playerName
     for _, name in ipairs(L.roster) do
-        if name ~= ns.playerName then order[#order + 1] = name end
+        if name ~= me then order[#order + 1] = name end
+    end
+    if me then
+        -- in the demo, alone, you stand second, so the demo shows your Follow button;
+        -- in a group the caller leads
+        local alone = L.demo and not L.grouped and #order > 0
+        table.insert(order, alone and 2 or 1, me)
     end
     return order
 end
@@ -678,6 +684,31 @@ local function NextStamp()
     return math.max(ServerTime(), L.lastStamp + 1)
 end
 
+-- What calling did, for the one who called: who got a Follow button and who has to be told.
+function L.TellCaller()
+    local line = L.line
+    if not line then return end
+    local with, without = 0, {}
+    for i = 2, #line.order do
+        local name = line.order[i]
+        local m = L.members[name]
+        if m and not m.isPlayer then
+            if m.hasAddon then with = with + 1 else without[#without + 1] = name end
+        end
+    end
+    if L.place == 1 then
+        ns.Print("you lead, so you get no Follow button: the players behind you do.")
+    end
+    if with > 0 then
+        ns.Print(("%d %s Follow Line and now %s a Follow button."):format(
+            with, with == 1 and "player has" or "players have", with == 1 and "has" or "have"))
+    end
+    if #without > 0 then
+        ns.Print(("no Follow Line seen for %s, so no Follow button for them. Press Announce (/line announce) to tell them whom to /follow."):format(
+            table.concat(without, ", ")))
+    end
+end
+
 function L.Call()
     if not (L.grouped or L.demo) then
         ns.Print("you're not in a group.")
@@ -702,6 +733,7 @@ function L.Call()
     EnqueueLine()
     Flush(GetTime())
     ns.Print("line called: " .. table.concat(L.line.order, " > ") .. "." .. CombatNote())
+    L.TellCaller()
     local me = L.members[ns.playerName]
     if InRaid() and me and (me.rank or 0) == 0 then
         ns.Print("you're not the raid leader or an assistant: players only take your line if they set /line who anyone.")

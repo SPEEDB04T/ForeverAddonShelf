@@ -67,7 +67,8 @@ end
 function ns.FullUnitName(unit)
     local ok, name, realm = pcall(UnitName, unit)
     if not ok or issecret(name) or issecret(realm) or type(name) ~= "string" or name == "" then return nil end
-    if type(realm) == "string" and realm ~= "" then name = name .. "-" .. realm end
+    -- the realm the way addon messages spell it ("Name-RealmName"), without spaces
+    if type(realm) == "string" and realm ~= "" then name = name .. "-" .. realm:gsub("[%s%-]", "") end
     return ns.Norm(name)
 end
 
