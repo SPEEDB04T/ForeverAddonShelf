@@ -71,9 +71,10 @@ function QL.Update(res)
     local textHeight = ns.Num(summary:GetStringHeight())
     if not textHeight or textHeight < 10 then textHeight = 40 end
 
-    local quests = res.rows or {}
+    local quests = ns.Score.Listed(res)
     local top = PAD + textHeight + PAD
     local rowsHeight = ns.UI.FillList(list, quests, top)
+    empty:SetText(ns.Score.EmptyText(res))
     empty:SetShown(#quests == 0 and not res.error)
     scrollContent:SetHeight(top + rowsHeight + PAD)
 end

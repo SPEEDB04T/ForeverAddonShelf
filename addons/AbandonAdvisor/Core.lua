@@ -2,7 +2,7 @@
 local ADDON, ns = ...
 
 ns.ADDON = ADDON
-ns.VERSION = "1.4.3"
+ns.VERSION = "1.5.0"
 
 local defaults = {
     point = nil,
@@ -91,7 +91,6 @@ end
 function ns.Compute()
     local player = ns.Scan.Player()
     local quests, meta = ns.Scan.Log(player)
-    player.pos = ns.Scan.TurnIns(quests)
     ns.result = ns.Score.RateAll(quests, player, meta, {
         target = ns.db.target, keep = ns.cdb.keep, drops = ns.db.dropRates,
         partner = ns.db.groupSuggest and ns.partner or nil,
@@ -114,89 +113,6 @@ function ns.ToggleKeep(questID)
     local keep = ns.cdb.keep
     if keep[questID] then keep[questID] = nil else keep[questID] = true end
     return keep[questID] == true
-end
-
-----------------------------------------------------------------------
--- Hand-in route. The game's own super tracking (its quest arrow and map
--- pin) points at a stop; once that quest leaves the log it moves to the
--- next stop, until the player tracks something else.
-----------------------------------------------------------------------
-ns.following = nil              -- the quest the route is tracking, while it follows
-local advancing = false
-
-local function SuperTracked()
-    if not C_SuperTrack then return nil end
-    return ns.Num(ns.Call(C_SuperTrack.GetSuperTrackedQuestID))
-end
-
-function ns.CanTrack()
-    return C_SuperTrack ~= nil and type(C_SuperTrack.SetSuperTrackedQuestID) == "function"
-end
-
-function ns.IsTracked(questID)
-    return questID ~= nil and SuperTracked() == questID
-end
-
--- Tracks questID and follows the route from it; nil stops tracking.
-function ns.Track(questID)
-    if not ns.CanTrack() then return false end
-    ns.following = questID
-    local ok = pcall(C_SuperTrack.SetSuperTrackedQuestID, questID or 0)
-    if not ok then ns.following = nil end
-    ns.Refresh()
-    return ok
-end
-
--- Tracks the first stop of the route as it stands now.
-function ns.NextStop()
-    advancing = false
-    local res = ns.Compute()
-    local stop = res.route and res.route.stops[1]
-    if stop then
-        local row = stop.rows[1]
-        ns.Track(row.id)
-        ns.Print(("Next hand-in: %s (%s)."):format(row.title, stop.zone or "unknown zone"))
-        return true
-    end
-    ns.following = nil
-    if res.ready > 0 then
-        ns.Print("The game does not say where your finished quests are handed in; nothing to track.")
-    else
-        ns.Print("No finished quests left to hand in.")
-    end
-    return false
-end
-
-local function OnTrackedQuestGone(questID)
-    if questID and questID == ns.following and not advancing then
-        advancing = true
-        ns.After(1, ns.NextStop)         -- once the log no longer lists it
-    end
-end
-
-local function OnSuperTrackingChanged()
-    local now = SuperTracked()
-    if ns.following and now and now ~= 0 and now ~= ns.following then ns.following = nil end
-end
-
-function ns.RouteReport()
-    local res = ns.Compute()
-    if res.error then ns.Print(res.error); return end
-    local route = res.route
-    if res.ready == 0 then ns.Print("No finished quests to hand in."); return end
-    if #route.stops == 0 then
-        ns.Print("The game does not say where your finished quests are handed in.")
-        return
-    end
-    ns.Print(ns.Score.RouteText(route))
-    for _, stop in ipairs(route.stops) do
-        local titles = {}
-        for _, row in ipairs(stop.rows) do titles[#titles + 1] = row.title end
-        local where = stop.zone or "unknown zone"
-        if stop.leg then where = where .. ", " .. ns.Score.Yards(stop.leg) end
-        ns.Print(("  %d. %s (%s)"):format(stop.number, table.concat(titles, ", "), where))
-    end
-    for _, row in ipairs(route.unplaced) do ns.Print(("  -  %s (no turn-in position)"):format(row.title)) end
 end
 
 ----------------------------------------------------------------------
@@ -561,12 +477,12 @@ function ns.Report()
     ns.Print(ns.Score.Summary(res))
     local shown = 0
     for _, row in ipairs(res.rows) do
-        if row.pick or row.verdict == "abandon" or row.verdict == "turnin" then
+        if row.pick or row.verdict == "abandon" then
             shown = shown + 1
             local why = {}
             for i = 1, math.min(3, #row.reasons) do why[#why + 1] = row.reasons[i].short end
             ns.Print(("  %s[%s] %s|r: %s (%s)"):format(
-                row.pick and ns.ColorCode("RED_FONT_COLOR", 1, 0.125, 0.125) .. "Â» "
+                row.pick and ns.ColorCode("RED_FONT_COLOR", 1, 0.125, 0.125) .. "\194\187 "
                     or ns.ColorCode("HIGHLIGHT_FONT_COLOR", 1, 1, 1), row.level and tostring(row.level) or "?",
                 row.title, VERDICT_TEXT[row.verdict], table.concat(why, ", ")))
         end
@@ -671,15 +587,6 @@ local function Slash(msg)
         end
     elseif cmd == "list" or cmd == "report" then
         ns.Report()
-    elseif cmd == "route" then
-        if arg == "next" or arg == "go" or arg == "follow" then
-            ns.NextStop()
-        elseif arg == "stop" or arg == "off" then
-            ns.Track(nil)
-            ns.Print("Stopped following the hand-in route.")
-        else
-            ns.RouteReport()
-        end
     elseif cmd == "free" or cmd == "target" then
         local n = tonumber(arg)
         if n and n >= 1 and n <= 25 then
@@ -721,9 +628,12 @@ local function Slash(msg)
     elseif cmd == "debug" then
         Debug()
     else
-        ns.Print("Commands: /abandon (window), config (options), log (quest log tab), list, "
-            .. "route (hand-in order; route next tracks the first stop and follows), free <n>, auto, drops, "
-            .. "group, share, unpin, scale <n>, minimap, reset, debug")
+        ns.Print("Commands: /abandon (the quests to drop, and why), list (print them), free <n> (free slots "
+            .. "to aim for), log (quest log tab), config (options), auto, drops, group, share, unpin, scale <n>, "
+            .. "minimap, reset, debug")
+        if cmd == "route" then
+            ns.Print("The hand-in route is its own addon now: Turn-in Route (/turnin).")
+        end
     end
     if ns.Kit then ns.Kit.Sync() end      -- an open options window follows what was typed
 end
@@ -767,7 +677,7 @@ local frame = CreateFrame("Frame")
 ns.eventFrame = frame
 local EVENTS = { "PLAYER_LOGIN", "QUEST_LOG_UPDATE", "QUEST_ACCEPTED", "QUEST_REMOVED", "QUEST_TURNED_IN",
     "ZONE_CHANGED_NEW_AREA", "PLAYER_LEVEL_UP", "GROUP_ROSTER_UPDATE", "UI_ERROR_MESSAGE", "CHAT_MSG_ADDON",
-    "PLAYER_REGEN_ENABLED", "QUEST_COMPLETE", "QUEST_FINISHED", "SUPER_TRACKING_CHANGED" }
+    "PLAYER_REGEN_ENABLED", "QUEST_COMPLETE", "QUEST_FINISHED" }
 for _, event in ipairs(EVENTS) do pcall(frame.RegisterEvent, frame, event) end
 
 frame:SetScript("OnEvent", function(_, event, a, b, c, d)
@@ -795,16 +705,12 @@ frame:SetScript("OnEvent", function(_, event, a, b, c, d)
         reward = { id = ns.Num(ns.Call(GetQuestID)) }
     elseif event == "QUEST_FINISHED" then           -- a quest panel closed
         if reward and not reward.closed then reward.closed = Now() end
-    elseif event == "SUPER_TRACKING_CHANGED" then
-        OnSuperTrackingChanged()
     else
         if event == "QUEST_REMOVED" then
             OnQuestRemoved(a)
-            OnTrackedQuestGone(ns.Num(a))
         elseif event == "QUEST_TURNED_IN" then
             local id = ns.Num(a)
             if id then turnedIn[id] = Now() end
-            OnTrackedQuestGone(id)
         elseif event == "GROUP_ROSTER_UPDATE" then
             OnGroupChanged()
         end

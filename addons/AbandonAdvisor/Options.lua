@@ -95,7 +95,7 @@ function Options.Init()
         db = function() return ns.db end,
         rows = Rows,
         click = function() ns.UI.Toggle() end,
-        clickHint = "show or hide the window",
+        clickHint = "show or hide the quests to drop",
         status = Status,
     })
 end

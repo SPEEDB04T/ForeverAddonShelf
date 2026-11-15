@@ -1,3 +1,8 @@
+## 1.5.0
+- Abandon Advisor is back to one job: which quests to drop, and why. The hand-in route moved to the new Turn-in Route addon (`/turnin`), which plans the trip with flight paths, the hearthstone and boats.
+- The window and the quest log tab list only quests you could drop. Finished quests are left out; the summary says how many there are and how many slots handing them in frees.
+- The summary, the minimap tooltip and `/abandon help` lead with the drop advice. `/abandon route` now points to Turn-in Route.
+
 ## 1.4.3
 - Group: messages from group members are recognised on this client, where the game gives a name as first name and surname ("Bunglfart Dunglode"). Before, every message from the group could be dropped, and your own echo was not recognised as yours. Names show as "First Last".
 - Group: when you join a group (or log in while in one) Abandon Advisor says hello to the group, and answers the hellos of the others. `/abandon debug` shows your name as the group sees it and who in the group has Abandon Advisor. Every group session now leaves its messages in the saved settings.

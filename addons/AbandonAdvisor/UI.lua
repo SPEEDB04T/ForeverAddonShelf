@@ -98,11 +98,10 @@ local function OpenInQuestLog(row)
 end
 
 local function CanAbandon(row)
-    return row.verdict ~= "turnin" and row.canAbandon ~= false
+    return row.canAbandon ~= false
 end
 
 local function TogglePin(row)
-    if row.verdict == "turnin" then return end
     local pinned = ns.ToggleKeep(row.id)
     ns.Print((pinned and "Pinned as keep: %s" or "Unpinned: %s"):format(row.title))
     UI.UpdateAll(ns.Compute())
@@ -150,28 +149,12 @@ end
 local function OpenMenu(owner, row)
     local pinText = row.pinned and "Unpin" or "Pin as Keep"
     if not (MenuUtil and MenuUtil.CreateContextMenu) then
-        -- A client without the menu: right-click pins (or super tracks a finished quest),
-        -- shift + right-click abandons (after asking).
-        if row.verdict == "turnin" then
-            if ns.CanTrack() then ns.Track(not ns.IsTracked(row.id) and row.id or nil) end
-        elseif IsShiftKeyDown and IsShiftKeyDown() then
+        -- A client without the menu: right-click pins, shift + right-click abandons (after asking).
+        if IsShiftKeyDown and IsShiftKeyDown() then
             if CanAbandon(row) then ConfirmAbandon(row) end
         else
             TogglePin(row)
         end
-        return
-    end
-    if row.verdict == "turnin" then
-        -- The quest log's own pair (SUPER_TRACK_QUEST / STOP_SUPER_TRACK_QUEST); here tracking
-        -- a stop also follows the route: the next stop is tracked once this one is handed in.
-        if not ns.CanTrack() then return end
-        pcall(MenuUtil.CreateContextMenu, owner, function(_, root)
-            if ns.IsTracked(row.id) then
-                root:CreateButton(Text("STOP_SUPER_TRACK_QUEST", "Stop Super Tracking"), function() ns.Track(nil) end)
-            else
-                root:CreateButton(Text("SUPER_TRACK_QUEST", "Super Track"), function() ns.Track(row.id) end)
-            end
-        end)
         return
     end
     pcall(MenuUtil.CreateContextMenu, owner, function(_, root)
@@ -197,7 +180,7 @@ local function PlaceTooltip(owner)
     end
 end
 
-local VERDICT_LABEL = { turnin = "Hand in", abandon = "Abandon", maybe = "Maybe", keep = "Keep" }
+local VERDICT_LABEL = { abandon = "Abandon", maybe = "Maybe", keep = "Keep" }
 
 local function ShowTooltip(self)
     local row = self.data
@@ -206,21 +189,10 @@ local function ShowTooltip(self)
     GameTooltip:SetText(row.title)
     local wr, wg, wb = White()
     local gr, gg, gb = Gold()
-    if row.verdict == "turnin" then
-        GameTooltip:AddLine(Text("QUEST_WATCH_QUEST_READY", "Ready for turn-in"), wr, wg, wb, true)
-        if row.stop and row.stops > 1 then
-            GameTooltip:AddLine(("Stop %d of %d on the shortest route through your finished quests."):format(
-                row.stop, row.stops), wr, wg, wb, true)
-        end
-        if ns.following and ns.following == row.id then
-            GameTooltip:AddLine("Super tracked: handing it in tracks the next stop.", wr, wg, wb, true)
-        end
-    else
-        local label = row.pinned and "Pinned as keep" or VERDICT_LABEL[row.verdict]
-        GameTooltip:AddDoubleLine(label, ("score %d"):format(row.score), gr, gg, gb, wr, wg, wb)
-        if row.pick then
-            GameTooltip:AddLine("One of the first to drop to reach your free-slot target.", wr, wg, wb, true)
-        end
+    local label = row.pinned and "Pinned as keep" or VERDICT_LABEL[row.verdict] or row.verdict
+    GameTooltip:AddDoubleLine(label, ("score %d"):format(row.score), gr, gg, gb, wr, wg, wb)
+    if row.pick then
+        GameTooltip:AddLine("One of the first to drop to reach your free-slot target.", wr, wg, wb, true)
     end
     if #row.reasons > 0 then GameTooltip:AddLine(" ") end
     for _, reason in ipairs(row.reasons) do
@@ -245,12 +217,7 @@ local function ShowTooltip(self)
         Fact("XP", text)
     end
     if row.money and row.money > 0 then Fact("Money", MoneyText(row.money)) end
-    if row.turnIn and row.turnIn.zone then Fact("Hand in", row.turnIn.zone) end
-    if row.stop then
-        if row.leg then Fact(row.stop == 1 and "From you" or "From the stop before", ns.Score.Yards(row.leg)) end
-    elseif row.distance then
-        Fact("Distance", ns.Score.Yards(row.distance))
-    end
+    if row.distance then Fact("Distance", ns.Score.Yards(row.distance)) end
     if row.drop then Fact("Drops", ns.Score.DropText(row.drop)) end
     local objectives = false
     local sr, sg, sb = Gray()
@@ -268,11 +235,7 @@ local function ShowTooltip(self)
     GameTooltip:AddLine(" ")
     local hr, hg, hb = Green()
     GameTooltip:AddLine("<Click to show it in the quest log>", hr, hg, hb)
-    if row.verdict ~= "turnin" then
-        GameTooltip:AddLine("<Right-click to abandon or pin it>", hr, hg, hb)
-    elseif ns.CanTrack() then
-        GameTooltip:AddLine("<Right-click to super track it>", hr, hg, hb)
-    end
+    GameTooltip:AddLine("<Right-click to abandon or pin it>", hr, hg, hb)
     GameTooltip:Show()
 end
 
@@ -360,17 +323,8 @@ local function TagFor(data)
     if data.pick or data.verdict == "abandon" then return "Abandon" end
 end
 
--- What the line under the title says: for a finished quest its place on the hand-in route
--- (or the quest log's "Ready for turn-in"), otherwise the reasons.
+-- What the line under the title says: its zone and the top reasons.
 local function LineFor(data)
-    if data.verdict == "turnin" then
-        if not (data.stop and data.stops > 1) then return Text("QUEST_WATCH_QUEST_READY", "Ready for turn-in") end
-        local line = ("Stop %d of %d"):format(data.stop, data.stops)
-        local zone = data.turnIn and data.turnIn.zone
-        if zone then line = line .. ": " .. zone end
-        if data.leg then line = line .. ", " .. ns.Score.Yards(data.leg) end
-        return line
-    end
     local why = {}
     for i = 1, math.min(3, #data.reasons) do why[#why + 1] = data.reasons[i].short end
     local line = table.concat(why, ", ")
@@ -587,8 +541,9 @@ function UI.Update(res)
     if not f or not res then return end
     f.summary:SetText(ns.Score.Summary(res))
 
-    local quests = res.rows or {}
+    local quests = ns.Score.Listed(res)
     f.content:SetHeight(math.max(40, UI.FillList(f.list, quests, 0)))
+    f.empty:SetText(ns.Score.EmptyText(res))
     if #quests == 0 and not res.error then f.empty:Show() else f.empty:Hide() end
 end
 

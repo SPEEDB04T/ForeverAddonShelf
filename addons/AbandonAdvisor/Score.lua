@@ -191,186 +191,6 @@ function Score.Rate(q, player, ctx)
     return row
 end
 
-----------------------------------------------------------------------
--- Hand-in route: the order to visit the finished quests' turn-ins in.
--- Straight lines in world yards; the game gives no paths, flight times or
--- portals to addons, so a route across continents is only ordered, not measured.
-----------------------------------------------------------------------
-Score.SAME_PLACE = 15       -- yards: turn-ins this close are one stop (one NPC, or NPCs side by side)
-Score.EXACT_UP_TO = 9       -- stops on one continent solved exactly; more get nearest-neighbour + 2-opt
-
-local function dist(a, b)
-    local dx, dy = a.x - b.x, a.y - b.y
-    return math.sqrt(dx * dx + dy * dy)
-end
-
-local function pathLength(points, order, start)
-    local total, prev = 0, start
-    for _, i in ipairs(order) do
-        if prev then total = total + dist(prev, points[i]) end
-        prev = points[i]
-    end
-    return total
-end
-
--- Held-Karp: the shortest open path through every point, from `start` (or from any point).
-local function exactPath(points, start)
-    local n = #points
-    local pow, cost, prev = {}, {}, {}
-    for i = 1, n do pow[i] = 2 ^ (i - 1) end
-    for i = 1, n do
-        cost[pow[i]], prev[pow[i]] = { [i] = start and dist(start, points[i]) or 0 }, {}
-    end
-    local full = 2 ^ n - 1
-    for mask = 1, full do
-        local here = cost[mask]
-        if here then
-            for last = 1, n do
-                local c = here[last]
-                if c then
-                    for nxt = 1, n do
-                        if floor(mask / pow[nxt]) % 2 == 0 then
-                            local m = mask + pow[nxt]
-                            local nc = c + dist(points[last], points[nxt])
-                            cost[m], prev[m] = cost[m] or {}, prev[m] or {}
-                            if not cost[m][nxt] or nc < cost[m][nxt] - 1e-9 then
-                                cost[m][nxt], prev[m][nxt] = nc, last
-                            end
-                        end
-                    end
-                end
-            end
-        end
-    end
-    local best
-    for last = 1, n do
-        if cost[full][last] and (not best or cost[full][last] < cost[full][best] - 1e-9) then best = last end
-    end
-    local order, mask, last = {}, full, best
-    while last do
-        table.insert(order, 1, last)
-        local before = prev[mask][last]
-        mask = mask - pow[last]
-        last = before
-    end
-    return order
-end
-
-local function greedyPath(points, start, first)
-    local order, used, here = {}, {}, start
-    if first then
-        order[1], used[first], here = first, true, points[first]
-    end
-    while #order < #points do
-        local pick, best
-        for i, p in ipairs(points) do
-            if not used[i] then
-                local d = here and dist(here, p) or 0
-                if not best or d < best then pick, best = i, d end
-            end
-        end
-        order[#order + 1], used[pick], here = pick, true, points[pick]
-    end
-    return order
-end
-
--- 2-opt for an open path: reverse any stretch while that shortens it.
-local function twoOpt(points, order, start)
-    local length, improved = pathLength(points, order, start), true
-    while improved do
-        improved = false
-        for i = 1, #order - 1 do
-            for j = i + 1, #order do
-                local try = {}
-                for k = 1, #order do try[k] = order[k] end
-                for k = 0, j - i do try[i + k] = order[j - k] end
-                local tryLength = pathLength(points, try, start)
-                if tryLength < length - 1e-6 then order, length, improved = try, tryLength, true end
-            end
-        end
-    end
-    return order
-end
-
-local function bestPath(points, start)
-    if #points <= 1 then return #points == 1 and { 1 } or {} end
-    if #points <= Score.EXACT_UP_TO then return exactPath(points, start) end
-    if start then return twoOpt(points, greedyPath(points, start), start) end
-    -- No start: the best greedy walk from any stop, then 2-opt on that one only (this runs on every refresh).
-    local best, bestLength
-    for first = 1, #points do
-        local order = greedyPath(points, nil, first)
-        local length = pathLength(points, order)
-        if not bestLength or length < bestLength - 1e-6 then best, bestLength = order, length end
-    end
-    return twoOpt(points, best, nil)
-end
-
--- rows: rated quests; here: where the player stands ({ continent, x, y } or nil).
--- Sets row.stop / row.stops / row.leg on the placed finished quests and returns
--- { stops = { { rows, pos, zone, leg, number } }, unplaced = { rows }, yards, elsewhere }.
-function Score.Route(rows, here)
-    local stops, unplaced = {}, {}
-    for _, row in ipairs(rows) do
-        if row.verdict == "turnin" then
-            local pos = row.turnIn
-            if pos then
-                local stop
-                for _, s in ipairs(stops) do
-                    if s.pos.continent == pos.continent and dist(s.pos, pos) <= Score.SAME_PLACE then stop = s end
-                end
-                if stop then
-                    stop.rows[#stop.rows + 1] = row
-                else
-                    stops[#stops + 1] = { rows = { row }, pos = pos, zone = pos.zone }
-                end
-            else
-                unplaced[#unplaced + 1] = row
-            end
-        end
-        row.stop, row.stops, row.leg = nil, nil, nil
-    end
-
-    -- One group per continent: yours first, then the ones with the most stops.
-    local groups, byContinent = {}, {}
-    for _, stop in ipairs(stops) do
-        local c = stop.pos.continent
-        if not byContinent[c] then
-            byContinent[c] = { continent = c, stops = {} }
-            groups[#groups + 1] = byContinent[c]
-        end
-        local list = byContinent[c].stops
-        list[#list + 1] = stop
-    end
-    local mine = here and here.continent
-    table.sort(groups, function(a, b)
-        if (a.continent == mine) ~= (b.continent == mine) then return a.continent == mine end
-        if #a.stops ~= #b.stops then return #a.stops > #b.stops end
-        return a.continent < b.continent
-    end)
-
-    local route = { stops = {}, unplaced = unplaced, yards = 0, elsewhere = 0, located = here ~= nil }
-    for _, group in ipairs(groups) do
-        local start = group.continent == mine and here or nil
-        local points = {}
-        for i, stop in ipairs(group.stops) do points[i] = stop.pos end
-        local prev = start
-        for _, i in ipairs(bestPath(points, start)) do
-            local stop = group.stops[i]
-            stop.leg = prev and dist(prev, stop.pos) or nil
-            if start then route.yards = route.yards + (stop.leg or 0) else route.elsewhere = route.elsewhere + 1 end
-            prev = stop.pos
-            route.stops[#route.stops + 1] = stop
-            stop.number = #route.stops
-        end
-    end
-    for _, stop in ipairs(route.stops) do
-        for _, row in ipairs(stop.rows) do
-            row.stop, row.stops, row.leg = stop.number, #route.stops, stop.leg
-        end
-    end
-    return route
-end
 
 -- "120 yds", the game's navigation range text where it has one.
 function Score.Yards(yards)
@@ -430,62 +250,56 @@ function Score.RateAll(quests, player, meta, opts)
         picks = picks + 1
     end
 
-    local route = Score.Route(rows, player.pos)
-
     table.sort(rows, function(a, b)
         if (a.pick or false) ~= (b.pick or false) then return a.pick == true end
         local va, vb = VERDICT_ORDER[a.verdict], VERDICT_ORDER[b.verdict]
         if va ~= vb then return va < vb end
-        if a.verdict == "turnin" then           -- finished quests in route order, unplaced ones last
-            local sa, sb = a.stop or math.huge, b.stop or math.huge
-            if sa ~= sb then return sa < sb end
-        end
         if a.score ~= b.score then return a.score > b.score end
         return a.id < b.id
     end)
 
     return {
         rows = rows, player = player, count = count, max = cap, free = free, target = target,
-        needed = needed, picks = picks, ready = ready, route = route,
+        needed = needed, picks = picks, ready = ready,
         hiddenByCollapse = meta.hiddenByCollapse, error = meta.error,
     }
 end
 
--- "Shortest hand-in route: 3 stops, about 640 yds, then 2 on another continent."
-function Score.RouteText(route)
-    local near = #route.stops - route.elsewhere
-    local text
-    if not route.located then
-        text = ("Hand-in route: %d stops (the game does not say where you are here)"):format(#route.stops)
-    elseif near > 0 then
-        text = ("Shortest hand-in route: %d %s, about %s"):format(near, near == 1 and "stop" or "stops",
-            Score.Yards(route.yards))
-        if route.elsewhere > 0 then text = text .. (", then %d on another continent"):format(route.elsewhere) end
-    else
-        text = ("Hand-in route: %d stops, on another continent"):format(route.elsewhere)
+-- The quests the window and the quest log tab list: everything but the finished ones,
+-- which are handed in, not dropped.
+function Score.Listed(res)
+    local out = {}
+    for _, row in ipairs(res and res.rows or {}) do
+        if row.verdict ~= "turnin" then out[#out + 1] = row end
     end
-    return text .. "."
+    return out
 end
 
+-- What an empty list says: the quest log's own text, or that only finished quests are left.
+function Score.EmptyText(res)
+    if res and (res.count or 0) > 0 and (res.ready or 0) > 0 then
+        return "Nothing to drop: every quest in your log is finished."
+    end
+    return _G.QUEST_LOG_NO_QUESTS or "Your quest log is empty."
+end
+
+-- The drop advice first, then the log's count; finished quests only as a footnote.
 function Score.Summary(res)
     if res.error then return res.error end
-    local parts = { ("Quest log %d/%d (%d free)."):format(res.count, res.max, res.free) }
-    if res.ready > 0 then
-        parts[#parts + 1] = ("%d finished: hand %s in first, it costs nothing."):format(
-            res.ready, res.ready == 1 and "it" or "them")
-        local route = res.route
-        if route and #route.stops > 1 then
-            parts[#parts + 1] = Score.RouteText(route)
-        end
-    end
+    local parts = {}
     if res.needed == 0 then
-        parts[#parts + 1] = ("You already have %d free; no need to drop anything."):format(res.free)
+        parts[1] = ("No need to drop anything: you have %d free (target %d)."):format(res.free, res.target)
     elseif res.picks < res.needed then
-        parts[#parts + 1] = ("To reach %d free you need %d more, but only %d can be dropped."):format(
+        parts[1] = ("To reach %d free you need %d more, but only %d can be dropped."):format(
             res.target, res.needed, res.picks)
     else
-        parts[#parts + 1] = ("To reach %d free, drop the %s at the top of the list."):format(
+        parts[1] = ("To reach %d free, drop the %s at the top of the list."):format(
             res.target, res.picks == 1 and "quest" or (res.picks .. " quests"))
+    end
+    parts[#parts + 1] = ("Quest log %d/%d (%d free)."):format(res.count, res.max, res.free)
+    if res.ready > 0 then
+        parts[#parts + 1] = res.ready == 1 and "1 finished quest is not listed: handing it in frees a slot."
+            or ("%d finished quests are not listed: handing them in frees %d slots."):format(res.ready, res.ready)
     end
     if res.hiddenByCollapse then
         parts[#parts + 1] = ("%d quests are under collapsed zone headers and not rated: expand them in the quest log.")
