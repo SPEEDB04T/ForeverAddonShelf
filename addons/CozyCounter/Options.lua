@@ -31,8 +31,6 @@ local function Rows()
           get = GetRemind("camp"), set = SetRemind("camp") },
         { kind = "check", label = "No reminders in an inn or a city",
           get = Get("hideResting"), set = Set("hideResting") },
-        { kind = "check", label = "Show what I lost under the icons",
-          get = Get("showSummary"), set = Set("showSummary") },
         { kind = "check", label = "Lock the icons in place",
           tip = "Unlocked, drag an icon to move them. Same as /cozy lock and /cozy unlock.",
           get = Get("locked"), set = Set("locked") },

@@ -4,12 +4,12 @@ For WoW Forever (Interface 16001). Reminds you of the three XP buffs the game gi
 
 ## What it does
 
-- **Reminder.** One small icon per missing buff, in the action bar's own frame, with "Lost this session: N XP" under it. It shows only out of a fight, alive, on the ground and (by default) outside inns and cities. It is off at max level or with XP gain switched off. Hover an icon for what the buff gives, how to get it, and what missing it has cost you; left-click prints the count in chat; right-click opens the options; drag moves the icons (lock them in the options).
+- **Reminder.** One greyed-out buff icon per missing buff, built as the game's own buff icon (`AuraButtonArtTemplate`: 30 px icon, 5 px apart). It shows only out of a fight, alive, on the ground and (by default) outside inns and cities. It is off at max level or with XP gain switched off. Hover an icon for what the buff gives, how to get it, and what missing it has cost you; left-click prints the count in chat; right-click opens the options; drag moves the icons (lock them in the options; size with the "Icon size" slider).
   - **Well Fed** icon while you are not Well Fed.
-  - **Well-Rested** icon while you have fewer than 3 stacks, and only once you carry a Cozy Sleeping Bag (option). With 1 or 2 stacks it shows "1/3".
+  - **Well-Rested** icon while you have fewer than 3 stacks, and only once you carry a Cozy Sleeping Bag (option). With 2 stacks it shows "2" at the bottom right, as the buff itself does.
   - **Camp Tent** icon while your rested XP is below what a tent gives (5% of a level) and you have not had the tent's top-up this hour (no Boosted Rest debuff).
 - **Lost XP.** Every XP gain while a buff is missing adds what that buff would have added: per buff and in total, for this session and all-time on this character (saved per character). At every level-up a chat line says what missing buffs cost on that level (option).
-- **Where to see it:** the reminder's tooltip and its line, the minimap button's tooltip, `/cozy`.
+- **Where to see it:** the reminder's tooltip, the minimap button's tooltip, the level-up line, `/cozy`.
 
 ## Commands
 

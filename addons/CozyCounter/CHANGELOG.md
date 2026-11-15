@@ -1,5 +1,10 @@
 # Changelog
 
+## 1.1.0 (2026-11-14)
+
+- The reminder icons are now the game's own buff icon (AuraButtonArtTemplate: 30 px, 5 px apart, buff frame strata), greyed out for a missing buff. Gone: the resized action-button frame, its highlight and pushed art, the "1/3" printed on the icon (the bag shows its stack count only from 2, as the buff does) and the "Lost this session" line under the row (it is in the tooltip, the minimap tooltip and /cozy).
+- Option "Show what I lost under the icons" removed with that line.
+
 ## 1.0.0 (2026-11-14)
 
 - First version: reminder icons for Well Fed, Well-Rested (Cozy Sleeping Bag) and the Camp Tent's rest at a campfire, shown only out of a fight and off at max level or with XP gain off.

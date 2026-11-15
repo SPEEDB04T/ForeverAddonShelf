@@ -53,7 +53,6 @@ ns.DEFAULTS = {
     campHours = 1,          -- how often the tent can top you up
     needBag = true,         -- remind of the sleeping bag only when you carry one
     hideResting = true,     -- no reminders in an inn or city
-    showSummary = true,     -- the "lost" line under the reminder icons
     levelReport = true,     -- a chat line at every level-up
     locked = false,
     scale = 1,

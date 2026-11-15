@@ -1,7 +1,7 @@
 ## Interface: 16001
 ## Title: Cozy Counter
 ## Notes: Reminds you of Well Fed, the Cozy Sleeping Bag and the Camp Tent's rest, and counts the XP you lost without them. /cozy
-## Version: 1.0.0
+## Version: 1.1.0
 ## SavedVariables: CozyCounterDB
 ## SavedVariablesPerCharacter: CozyCounterCharDB
 ## IconTexture: Interface\Icons\Spell_Misc_Food
