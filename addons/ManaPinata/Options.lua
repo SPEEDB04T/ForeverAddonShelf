@@ -24,15 +24,17 @@ end
 local function Rows()
     return {
         { kind = "header", text = "Piñata" },
-        { kind = "check", label = "Piñata on enemies with Judgement of Wisdom",
-          tip = "Any paladin's Judgement of Wisdom counts, not only your own. Same as /pinata on and /pinata off.",
+        { kind = "check", label = "Piñata on Judgement of Wisdom",
+          tip = "A piñata over every enemy with Judgement of Wisdom on it. Any paladin's Judgement of Wisdom "
+              .. "counts, not only your own. Same as /pinata on and /pinata off.",
           get = Get("enabled"), set = Set("enabled") },
-        { kind = "check", label = "Turn that enemy's health bar blue too",
-          tip = "The health bar is drawn in mana blue for as long as the debuff lasts, then goes back to "
+        { kind = "check", label = "Blue health bar too",
+          tip = "That enemy's health bar is drawn in mana blue for as long as the debuff lasts, then goes back to "
               .. "its own colour. Same as /pinata bar.",
           get = Get("colorBar"), set = Set("colorBar") },
-        { kind = "check", label = "Show a test piñata on every nameplate",
-          tip = "For sizing and placing it without a paladin around, with the blue health bar if that is on. "
+        { kind = "check", label = "Test piñatas on nameplates",
+          tip = "Shows a test piñata on every nameplate. "
+              .. "For sizing and placing it without a paladin around, with the blue health bar if that is on. "
               .. "The real ones are hidden meanwhile, and the test ends by itself when a fight starts. "
               .. "Same as /pinata test.",
           get = function() return ns.Testing() end,
