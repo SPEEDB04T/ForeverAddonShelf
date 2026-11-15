@@ -57,6 +57,8 @@ local function Rows()
               .. "when the player is missing health. Same as /fdots hpfull.",
           get = Get("hpAlways"), set = Set("hpAlways") },
         { kind = "choice", label = "Names",
+          tip = "A small name above each dot, in the nameplate's own name font. "
+              .. "In a battleground, Your target keeps the screen clearer. Same as /fdots names.",
           options = {
               { "off", "Off" },
               { "target", "Your target" },

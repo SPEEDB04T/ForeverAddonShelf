@@ -10,6 +10,7 @@ For WoW Forever (Interface 16001).
 
 - **Dot**: 12 px circle in the player's class colour with the nameplate's thin dark border.
 - **Health**: a 2 px line under the dot, drawn with the nameplate's own health bar in the player's class colour (friendly nameplates colour health by class). It only appears when the player is missing health. Dead and offline players are dimmed.
+- **Name**: a small name above each dot, in the nameplate's own outlined 9 px name font and the player's class colour. `/fdots names target` shows only your target's, `/fdots names off` none.
 - **Target**: the border of your target's dot turns white, as the game's nameplate border does. That dot is also drawn on top of its neighbours.
 - **Your party**: members of your own party get a bigger dot (by the same ratio the world map uses for party members) and are drawn on top of other dots, so you can pick them out of the rest of the team.
 - **Raid markers** (skull, star...) stay visible and sit above the dot.
@@ -18,7 +19,7 @@ For WoW Forever (Interface 16001).
 ## Setup
 
 1. Copy the `FriendDots` folder into `World of Warcraft\_forever_\Interface\AddOns`, so that the file ends up at `AddOns\FriendDots\FriendDots.toc` (not `AddOns\FriendDots\FriendDots\...`).
-2. Restart the game. A new addon needs a full restart; after an update `/reload` is enough.
+2. Type `/reload` (or log in). On WoW Forever a `/reload` also picks up a new addon.
 3. Friendly player nameplates must be on: `/fdots plates` (or Shift+V). Or let Friend Dots turn them on only during fights: `/fdots combat`.
 
 ## Commands
@@ -32,7 +33,7 @@ For WoW Forever (Interface 16001).
 | `/fdots size <4-64>` | Size of the current style (dot 12, icon 22 by default) |
 | `/fdots hp bar` / `fill` / `off` | Health as a line under the dot, as the dot itself draining, or not at all |
 | `/fdots hpfull` | Keep the health line visible at full health |
-| `/fdots names off` / `target` / `all` | Name above the dot: never, only your target, or always |
+| `/fdots names all` / `target` / `off` | Name above the dot: always (the default), only your target, or never |
 | `/fdots where all` / `pvp` | Dots everywhere, or only inside battlegrounds and arenas |
 | `/fdots group` | Highlight on members of your own party (bigger dot, drawn on top) on / off |
 | `/fdots npcs` | Also turn friendly NPCs and pets into smaller green dots |
@@ -54,6 +55,6 @@ For WoW Forever (Interface 16001).
 - **Plates that appear mid-fight**: if the game hides who a new nameplate belongs to, it keeps its normal look until the fight ends, then turns into a dot. A dot that is already up stays up.
 - **Crowds**: if dots climb into columns when many players stand together, friendly nameplate stacking is on. Turn it off in the game's nameplate options (or the friendly stacking option of your nameplate addon) so dots overlap on the spot instead.
 - **Only in fights** (`/fdots combat`, or the "Friendly plates only in combat" tick in the options): the game's friendly player nameplates come on as a fight starts and go off when it ends, after zone changes and at log-in. This works everywhere, whatever `where` is set to. Shift+V or `/fdots plates` still work, until the next fight or zone change. Turning the option off, or turning the dots off, puts your own nameplate setting back. With **BetterBlizzPlates**, Friend Dots writes its value again after BetterBlizzPlates applies its per-zone nameplate setting.
-- **Names**: `names all` is fine for a small group. In a battleground use `names target`.
+- **Names** are on for everyone by default. In a crowded battleground, `names target` keeps the screen clearer.
 - **Fill mode** only works with dots: with icons the health line is used instead.
 - This version has been checked with an offline test only, not yet in a real battleground or arena. If something looks wrong, `/fdots debug` prints what a bug report needs.

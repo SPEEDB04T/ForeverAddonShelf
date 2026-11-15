@@ -1,5 +1,10 @@
 # Changelog
 
+## 1.4.4
+
+- Names are on: a small name above each dot, in the nameplate's own 9 px outlined name font and the player's class colour. This update turns names on once for everyone who had the old default (off); `/fdots names target` or `off`, or the Names choice in the options, changes it, and that choice sticks.
+- The note shown when the options window's files are missing now says a `/reload` brings them, as it does on WoW Forever.
+
 ## 1.4.3
 
 - `/fdots preview`: one dot of each kind (plain, party, target, class icon, NPC) in the middle of the screen for a minute, drawn with your current settings and at the nameplates' scale. A fight hides it.

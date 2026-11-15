@@ -66,7 +66,7 @@ local DEFAULTS = {
     iconSize     = 22,
     hp           = "bar",   -- "bar" (line under the dot) | "fill" (the dot drains) | "off"
     hpAlways     = false,   -- false: the line only shows when health is missing
-    names        = "off",   -- "off" | "target" | "all"
+    names        = "all",   -- "off" | "target" | "all"
     where        = "all",   -- "all" | "pvp" (battlegrounds and arenas only)
     groupRing    = true,
     combatPlates = false,   -- friendly player nameplates only while you are in combat
@@ -931,6 +931,12 @@ local function InitDB()
     for key, allowed in pairs(CHOICES) do
         if not allowed[db[key]] then db[key] = DEFAULTS[key] end
     end
+    -- 1.4.4: names are on by default. Names were off by default before, so
+    -- an earlier "off" is turned on once; switching them off later sticks.
+    if not db.namesOnce then
+        db.namesOnce = true
+        if db.names == "off" then db.names = DEFAULTS.names end
+    end
     ns.db = db
 end
 
@@ -1145,12 +1151,12 @@ function ns.SetPlates(turnOn)
     end
 end
 
--- Kit.lua and Options.lua are new in 1.2.0. The game only finds new files after a full restart,
--- so right after an update a /reload runs this file without them: say so instead of erroring.
+-- Kit.lua and Options.lua are new in 1.2.0. If the game is still running the files it loaded
+-- before an update, they are missing: say so instead of erroring (on WoW Forever /reload loads them).
 local function HasKit()
     if ns.Kit and ns.Options then return true end
-    print(PREFIX .. "the options window and the minimap button appear after you restart the game once "
-        .. "(this update added new files, and /reload does not load those).")
+    print(PREFIX .. "the options window and the minimap button appear after a /reload "
+        .. "(this update added new files).")
     return false
 end
 
