@@ -15,7 +15,7 @@ local ADDON, ns = ...
 
 local floor, max, min = math.floor, math.max, math.min
 
-ns.VERSION = "1.0.1"
+ns.VERSION = "1.1.0"
 
 ----------------------------------------------------------------------
 -- The shields on WoW Forever (talentsforever.com data.json, beta client 1.60.1.70755,
@@ -62,14 +62,16 @@ ns.DEFAULTS = {
     remindCombat = true,    -- ... also in a fight
     hideResting = true,     -- no icon in an inn or city
     hideMounted = true,     -- no icon while mounted
-    fightLine = true,       -- now and then, a roast in your chat for the fights that cost you
+    fightLine = false,      -- a roast in your chat for the fights that cost you (opt-in since 1.1.0)
     roastMinutes = 5,       -- at most one roast line this often
     confess = false,        -- also tell your party or raid (off unless you turn it on)
     locked = false,
     scale = 1,
     point = { "TOP", "TOP", 0, -190 },
     minimap = {},
+    settingsVersion = 2,    -- 2: 1.1.0 turned the chat roast off for everyone once
 }
+ns.LOG_SIZE = 25          -- fights kept in the per-character fight log
 
 ----------------------------------------------------------------------
 -- Safe reads
@@ -130,6 +132,11 @@ function ns.Commas(n)
     return s
 end
 
+-- 1 -> "1 orb", 3 -> "3 orbs"
+function ns.Count(n, word)
+    return ns.Commas(n) .. " " .. word .. (floor((n or 0) + 0.5) == 1 and "" or "s")
+end
+
 function ns.Duration(sec)
     sec = floor((sec or 0) + 0.5)
     if sec < 60 then return sec .. "s" end
@@ -151,8 +158,11 @@ local function CopyDefaults(dst, src)
     end
 end
 
--- One running count: damage and mana lost, orbs missed, seconds fought with no shield.
-local TALLY = { damage = 0, mana = 0, hits = 0, seconds = 0, fights = 0 }
+-- One running count: damage and mana lost, orbs missed, seconds fought with no shield, fights
+-- that cost something, and (since 1.1.0) seconds fought at all and seconds of those with no
+-- shield, for the uptime. "bare" is "seconds" counted only from 1.1.0 on, so an all-time
+-- uptime is never worked out from older seconds without the fight time to go with them.
+local TALLY = { damage = 0, mana = 0, hits = 0, seconds = 0, fights = 0, fought = 0, bare = 0 }
 local function NewTally()
     local t = {}
     for k, v in pairs(TALLY) do t[k] = v end
@@ -172,14 +182,31 @@ ns.session = NewTally()
 ns.fight = nil          -- the fight going on now
 ns.lastFight = nil      -- the one before
 
+local LOG_FIELDS = { len = 0, seen = 0, shielded = 0, cooldown = 0, lost = 0, casts = 0, damage = 0, mana = 0, bare = 0 }
+
 local function LoadSaved()
     if type(ShieldShameDB) ~= "table" then ShieldShameDB = {} end
+    local version = type(ShieldShameDB.settingsVersion) == "number" and ShieldShameDB.settingsVersion or 0
     CopyDefaults(ShieldShameDB, ns.DEFAULTS)
+    -- 1.1.0: the chat roast became opt-in (SuccuDev, 2026-11-15: "still annoying in chat").
+    -- Turned off once for settings saved before; anyone who turns it back on keeps it.
+    if version < 2 then ShieldShameDB.fightLine = false end
+    ShieldShameDB.settingsVersion = ns.DEFAULTS.settingsVersion
     ns.db = ShieldShameDB
     if type(ShieldShameCharDB) ~= "table" then ShieldShameCharDB = {} end
     local c = ShieldShameCharDB
     c.total = FixTally(c.total)
     if c.lastUsed ~= "lightning" and c.lastUsed ~= "water" then c.lastUsed = nil end
+    if type(c.log) ~= "table" then c.log = {} end
+    local log = {}
+    for _, e in ipairs(c.log) do
+        if type(e) == "table" then
+            for k, v in pairs(LOG_FIELDS) do if type(e[k]) ~= "number" then e[k] = v end end
+            log[#log + 1] = e
+        end
+    end
+    while #log > ns.LOG_SIZE do table.remove(log, 1) end
+    c.log = log
     ns.char = c
 end
 ns.LoadSaved = LoadSaved
@@ -189,6 +216,7 @@ function ns.Set(key, value)
     if default == nil or type(default) == "table" then return end
     if type(default) == "boolean" then value = value and true or false
     elseif type(value) ~= type(default) then return end
+    if key == "settingsVersion" then return end
     if key == "measure" and value ~= "auto" and value ~= "lightning" and value ~= "water" then return end
     ns.db[key] = value
     ns.Refresh()
@@ -199,6 +227,7 @@ function ns.Reset()
     for k in pairs(ns.db) do ns.db[k] = nil end
     CopyDefaults(ns.db, ns.DEFAULTS)
     ns.db.minimap = minimap or {}
+    ns.db.settingsVersion = ns.DEFAULTS.settingsVersion
     if ns.UI then ns.UI.Place() end
     if ns.Kit and ns.Kit.RefreshMinimap then pcall(ns.Kit.RefreshMinimap) end
     ns.Refresh()
@@ -446,6 +475,10 @@ ns.ReadShield = ReadShield
 function ns.CurrentShield(now)
     now = now or Now()
     local live = ReadShield()
+    local info = ns.fightInfo
+    if info then
+        if live ~= nil then info.liveReads = info.liveReads + 1 else info.hiddenReads = info.hiddenReads + 1 end
+    end
     if live ~= nil then
         ns.shield = live or nil
         ns.auraLive = true
@@ -470,6 +503,7 @@ function ns.OnCast(spellID)
     local now = Now()
     ns.shield = { kind = kind, charges = (e and e.charges) or ns.CHARGES, ends = now + ((e and e.lasts) or ns.DURATION) }
     ns.char.lastUsed = kind
+    if ns.fightInfo then ns.fightInfo.casts = ns.fightInfo.casts + 1 end
     if ns.UI then ns.UI.Update() end
 end
 
@@ -523,6 +557,8 @@ function ns.OnHit(action, schoolMask, now)
     local school = Num(schoolMask)
     if school and school ~= 1 and not ns.db.spellHits then return nil end
     now = now or Now()
+    local info = ns.fightInfo
+    if info then info.seen = info.seen + 1 end
     local s = ns.CurrentShield(now)
     local kind = s and s.kind ~= "other" and s.kind or ns.Measured()
     local ready = now - ns.lastOrb >= ns.ICD(kind)
@@ -538,10 +574,15 @@ function ns.OnHit(action, schoolMask, now)
                 end
             end
         end
+        if info then info.shielded = info.shielded + 1 end
         return "shielded"
     end
-    if not ready then return "cooldown" end
+    if not ready then
+        if info then info.cooldown = info.cooldown + 1 end
+        return "cooldown"
+    end
     ns.lastOrb = now
+    if info then info.lost = info.lost + 1 end
     ns.AddOrb(ns.Measured())
     if ns.UI then ns.UI.Update() end
     return "lost"
@@ -556,11 +597,13 @@ function ns.Tick(now)
     if not last or not ns.Counting() then return end
     local dt = min(now - last, 5)
     if dt <= 0 then return end
+    Add("fought", dt)
     local had = ns.shield ~= nil
     local s = ns.CurrentShield(now)
     if (s ~= nil) ~= had and ns.UI then ns.UI.Update() end
     if s then return end
     Add("seconds", dt)
+    Add("bare", dt)
     local kind = ns.Measured()
     local e = ns.values[kind]
     if kind == "water" and e and e.mp5 and e.mp5 > 0 then Add("mana", e.mp5 / 5 * dt) end
@@ -642,27 +685,58 @@ function ns.Confess(t)
     return ok
 end
 
+-- 1234 -> "1,234"; 12345 -> "12.3k"; 1234567 -> "1.2m". For the line under the icon.
+function ns.Short(n)
+    n = floor((n or 0) + 0.5)
+    if n < 10000 then return ns.Commas(n) end
+    if n < 1000000 then return (("%.1f"):format(n / 1000):gsub("%.0$", "")) .. "k" end
+    return (("%.1f"):format(n / 1000000):gsub("%.0$", "")) .. "m"
+end
+
+-- Share of fight time with a shield up, 0-100, or nil before any fight time was counted.
+function ns.Uptime(t)
+    if not t or (t.fought or 0) < 1 then return nil end
+    return max(0, min(100, 100 * (1 - (t.bare or 0) / t.fought)))
+end
+
+local function Pct(p) return ("%d%%"):format(floor(p + 0.5)) end
+ns.Pct = Pct
+
+-- What a tally lost, in words: "1,234 mana", "56 damage and 1,234 mana", or "nothing".
+function ns.LostText(t)
+    local parts = {}
+    if t.damage >= 1 then parts[#parts + 1] = ns.Commas(t.damage) .. " damage" end
+    if t.mana >= 1 then parts[#parts + 1] = ns.Commas(t.mana) .. " mana" end
+    return #parts > 0 and table.concat(parts, " and ") or "nothing"
+end
+
 function ns.Summary()
     local lines = {}
     local function Line(label, t)
-        local parts = {}
-        parts[#parts + 1] = ns.Commas(t.damage) .. " damage"
-        parts[#parts + 1] = ns.Commas(t.mana) .. " mana"
-        lines[#lines + 1] = ("%s: |cffffffff%s lost|r (%s orbs missed, %s in fights with no shield)."):format(
-            label, table.concat(parts, " and "), ns.Commas(t.hits), ns.Duration(t.seconds))
+        local up = ns.Uptime(t)
+        local tail = up and (", shield up %s of %s fought"):format(Pct(up), ns.Duration(t.fought))
+            or (t.seconds >= 1 and (", %s in fights with no shield"):format(ns.Duration(t.seconds)) or "")
+        lines[#lines + 1] = ("%s: |cffffffff%s lost|r (%s missed%s)."):format(
+            label, ns.LostText(t), ns.Count(t.hits, "orb"), tail)
     end
     if ns.fight then Line("This fight", ns.fight) elseif ns.lastFight then Line("Last fight", ns.lastFight) end
     Line("This session", ns.session)
-    Line("All time on this character", ns.char.total)
+    Line("All time", ns.char.total)
     return lines
 end
 
+-- The verdict goes by uptime: this session's once it has a minute of fighting, else all time's.
 function ns.Verdict()
-    local t = ns.char.total
-    if t.hits == 0 then return "Not a single orb wasted. Suspicious, but fine." end
-    if t.hits < 10 then return "A little sloppy. The elements are watching." end
-    if t.hits < 100 then return "That's a habit now. Recast your shield." end
-    return "Legendary negligence. Your totems have filed a complaint."
+    local t = (ns.session.fought or 0) >= 60 and ns.session or ns.char.total
+    local up = ns.Uptime(t)
+    if not up then
+        if ns.char.total.hits == 0 then return "Not a single orb wasted. Suspicious, but fine." end
+        return "That's a habit now. Recast your shield."
+    end
+    if up >= 95 then return "Shield up " .. Pct(up) .. " of the time. The elements grudgingly approve." end
+    if up >= 80 then return "Shield up " .. Pct(up) .. " of the time. Sloppy. The elements are watching." end
+    if up >= 50 then return "Shield up " .. Pct(up) .. " of the time. That's a habit now. Recast your shield." end
+    return "Shield up " .. Pct(up) .. " of the time. Legendary negligence. Your totems have filed a complaint."
 end
 
 function ns.PrintSummary()
@@ -678,12 +752,57 @@ function ns.PrintSummary()
     end
 end
 
+----------------------------------------------------------------------
+-- The fight log: the last LOG_SIZE fights on this character, for checking the counts against
+-- what really happened (/shame log, or ShieldShameCharDB.log in the saved variables).
+----------------------------------------------------------------------
+local function ShieldText(s)
+    if not s then return "none" end
+    if s.kind == "other" then return "Earth Shield" end
+    return ("%s (%s)"):format(ns.SHIELDS[s.kind].english, ns.Count(s.charges or 0, "orb"))
+end
+
+local function Stamp()
+    if type(date) == "function" then
+        local ok, v = pcall(date, "%m-%d %H:%M")
+        if ok and type(v) == "string" then return v end
+    end
+    return ""
+end
+
+function ns.LogLine(e)
+    local lost = {}
+    if e.damage >= 1 then lost[#lost + 1] = ns.Commas(e.damage) .. " damage" end
+    if e.mana >= 1 then lost[#lost + 1] = ns.Commas(e.mana) .. " mana" end
+    local at = (e.at and e.at ~= "") and (e.at .. ", ") or ""
+    return ("%s%s fight. Shield at the start: %s; auras %s. %s: %d shielded, %d lost, %d inside the orb cooldown. "
+        .. "%s cast. No shield for %s. Lost %s."):format(
+        at, ns.Duration(e.len), e.start or "?", e.auras or "?", ns.Count(e.seen, "hit"), e.shielded, e.lost, e.cooldown,
+        ns.Count(e.casts, "shield"), ns.Duration(e.bare), #lost > 0 and table.concat(lost, " and ") or "nothing")
+end
+
 local function FightStart()
     ns.inCombat = true
     ns.fight = NewTally()
     ns.lastTick = Now()
-    ns.CurrentShield()
+    local info = { started = ns.lastTick, liveReads = 0, hiddenReads = 0, seen = 0, shielded = 0, cooldown = 0, lost = 0, casts = 0 }
+    ns.fightInfo = info
+    local s, live = ns.CurrentShield()
+    info.start = ShieldText(s) .. (live and "" or " (auras hidden: the addon's own record)")
     if ns.UI then ns.UI.Update() end
+end
+
+-- Keeps the fight in the log if anything was counted in it.
+local function LogFight(t, info)
+    if not info or (t.fought or 0) < 1 then return end
+    local auras = info.hiddenReads == 0 and "readable" or (info.liveReads == 0 and "hidden" or "sometimes hidden")
+    local log = ns.char.log
+    log[#log + 1] = {
+        at = Stamp(), len = max(0, Now() - (info.started or Now())), start = info.start, auras = auras,
+        seen = info.seen, shielded = info.shielded, cooldown = info.cooldown, lost = info.lost, casts = info.casts,
+        damage = floor(t.damage + 0.5), mana = floor(t.mana + 0.5), bare = floor(t.bare + 0.5),
+    }
+    while #log > ns.LOG_SIZE do table.remove(log, 1) end
 end
 
 -- The roast: costly fights pile up in ns.roast and come out as one line, only once the pile is
@@ -720,11 +839,14 @@ end
 local function FightEnd()
     local t = ns.fight
     if t then ns.Tick() end
+    local info = ns.fightInfo
     ns.inCombat = false
     ns.fight = nil
+    ns.fightInfo = nil
     ns.lastTick = nil
     if t then
         ns.lastFight = t
+        LogFight(t, info)
         if t.damage >= 1 or t.mana >= 1 then
             t.fights = 1
             ns.session.fights = ns.session.fights + 1
@@ -838,6 +960,15 @@ local function Slash(msg)
     elseif msg == "test" then
         if ns.UI then ns.UI.SetTesting(not ns.UI.Testing()) end
         ns.Print(ns.UI and ns.UI.Testing() and "showing the reminder. /shame test again to hide it." or "test reminder hidden.")
+    elseif msg == "log" then
+        local log = ns.char.log
+        if #log == 0 then
+            ns.Print("no fights logged yet on this character.")
+        else
+            local from = max(1, #log - 7)
+            ns.Print(("the last %d of %d logged fights, oldest first:"):format(#log - from + 1, #log))
+            for i = from, #log do ns.Print(ns.LogLine(log[i])) end
+        end
     elseif msg == "status" or msg == "debug" then
         ns.ReadValues()
         ns.CurrentShield()
@@ -845,7 +976,7 @@ local function Slash(msg)
     else
         ns.Print("|cffffffff/shame|r what you lost, |cffffffff/shame options|r, |cffffffff/shame on|r / |cffffffffoff|r, "
             .. "|cffffffff/shame lightning|r / |cffffffffwater|r / |cffffffffauto|r (what to count against), "
-            .. "|cffffffff/shame lock|r / |cffffffffunlock|r, |cffffffff/shame test|r, |cffffffff/shame reset|r, |cffffffff/shame status|r.")
+            .. "|cffffffff/shame lock|r / |cffffffffunlock|r, |cffffffff/shame test|r, |cffffffff/shame reset|r, |cffffffff/shame log|r (the last fights, hit by hit), |cffffffff/shame status|r.")
     end
 end
 ns.Slash = Slash

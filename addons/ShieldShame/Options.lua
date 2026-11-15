@@ -13,7 +13,7 @@ local function Rows()
     return {
         { kind = "header", text = "Reminder" },
         { kind = "check", label = "Show the missing-shield icon",
-          tip = "A greyed-out shield icon while no shield is up. Its tooltip says what that has cost you.",
+          tip = "A greyed-out shield icon while no shield is up. Under it, what going without has cost you this session; its tooltip has the rest.",
           get = Get("remind"), set = Set("remind") },
         { kind = "check", label = "Also in fights",
           tip = "Keeps the icon up during a fight when your shield is gone, so you notice the moment its orbs run out.",
@@ -57,19 +57,21 @@ local function Rows()
           get = Get("spellHits"), set = Set("spellHits") },
 
         { kind = "header", text = "Shaming" },
-        { kind = "check", label = "A roast in chat now and then",
-          tip = "Now and then, one mocking line in your own chat about what the fights since the last one cost you. "
-              .. "It waits until there is something worth saying (a whole shield's worth of orbs, or 5% of your mana) "
-              .. "and comes at most once every few minutes (below). Nobody else sees it. /shame always prints everything.",
+        { kind = "check", label = "Roast me in chat too",
+          tip = "Off unless you turn it on: the icon does the shaming. On, one mocking line in your own chat about what "
+              .. "the fights since the last one cost you, once there is something worth saying (a whole shield's worth "
+              .. "of orbs, or 5% of your mana), at most once every few minutes (below). Nobody else sees it.",
           get = Get("fightLine"), set = Set("fightLine") },
         { kind = "slider", label = "At most one roast every", min = 1, max = 30, step = 1,
           format = function(v) return ("%d min"):format(v) end,
           get = Get("roastMinutes"), set = Set("roastMinutes") },
         { kind = "check", label = "Confess to my group",
-          tip = "Also says the roast in party or raid chat. Off unless you turn it on.",
+          tip = "Says the roast in party or raid chat as well, at most once a minute. Off unless you turn it on.",
           get = Get("confess"), set = Set("confess") },
         { kind = "buttons", buttons = {
             { label = "Print what I lost", click = function() ns.PrintSummary() end },
+            { label = "Print the fight log", tip = "The last fights, hit by hit: what the addon saw and counted. Same as /shame log.",
+              click = function() ns.Slash("log") end },
             { label = "New session", tip = "Starts the session count again.",
               click = function() ns.ResetSession() end },
             { label = "Clear all-time", confirm = true, tip = "Sets this character's all-time count back to 0.",
@@ -89,9 +91,10 @@ Options.Rows = Rows
 
 local function Status()
     local s, t = ns.session, ns.char.total
+    local up = ns.Uptime(s)
     return {
-        ("Lost this session: %s damage, %s mana"):format(ns.Commas(s.damage), ns.Commas(s.mana)),
-        ("Lost all time: %s damage, %s mana"):format(ns.Commas(t.damage), ns.Commas(t.mana)),
+        "Lost this session: " .. ns.LostText(s) .. (up and (" (shield up %s of fight time)"):format(ns.Pct(up)) or ""),
+        "Lost all time: " .. ns.LostText(t),
         ns.shield and "Shield up. For now." or "No shield up.",
     }
 end

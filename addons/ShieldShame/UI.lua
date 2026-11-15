@@ -1,6 +1,6 @@
 -- Shield Shame: the reminder. One greyed-out buff icon of the shield you should be wearing,
--- built as the game's own buff icon (AuraButtonArtTemplate); what it cost you is in its
--- tooltip. It is a plain frame (nothing secure), so showing and hiding it in a fight is allowed.
+-- built as the game's own buff icon (AuraButtonArtTemplate). What going without has cost you
+-- this session sits under it where a buff's time left goes; the rest is in its tooltip. It is a plain frame (nothing secure), so showing and hiding it in a fight is allowed.
 local _, ns = ...
 local UI = {}
 ns.UI = UI
@@ -28,6 +28,14 @@ local function Icon(kind)
     return v or ns.SHIELDS[kind].iconPath
 end
 
+-- What goes under the icon: this session's loss in the shield's own currency, or nil.
+local function LossUnder(kind)
+    local what = kind == "water" and "mana" or "damage"
+    local n = ns.session and ns.session[what] or 0
+    if n < 1 then return nil end
+    return ns.Short(n)
+end
+
 local function HasKit()
     return ns.Kit and ns.Options and ns.Options.Ready and ns.Options.Ready()
 end
@@ -48,13 +56,18 @@ local function ShowTooltip(self)
     GameTooltip:AddLine(" ")
     local f = ns.fight or ns.lastFight
     if f then
-        GameTooltip:AddDoubleLine(ns.fight and "Lost this fight" or "Lost last fight",
-            ("%s damage, %s mana"):format(ns.Commas(f.damage), ns.Commas(f.mana)), C(NORMAL), C(WHITE))
+        GameTooltip:AddDoubleLine(ns.fight and "Lost this fight" or "Lost last fight", ns.LostText(f), C(NORMAL), C(WHITE))
     end
     local s, t = ns.session, ns.char.total
-    GameTooltip:AddDoubleLine("Lost this session", ("%s damage, %s mana"):format(ns.Commas(s.damage), ns.Commas(s.mana)), C(NORMAL), C(WHITE))
-    GameTooltip:AddDoubleLine("Lost all time", ("%s damage, %s mana"):format(ns.Commas(t.damage), ns.Commas(t.mana)), C(NORMAL), C(WHITE))
+    GameTooltip:AddDoubleLine("Lost this session", ns.LostText(s), C(NORMAL), C(WHITE))
+    GameTooltip:AddDoubleLine("Lost all time", ns.LostText(t), C(NORMAL), C(WHITE))
+    local up = ns.Uptime(s) or ns.Uptime(t)
+    if up then
+        GameTooltip:AddDoubleLine(ns.Uptime(s) and "Shield up this session" or "Shield up all time",
+            ns.Pct(up) .. " of fight time", C(NORMAL), C(WHITE))
+    end
     GameTooltip:AddLine(" ")
+    if LossUnder(kind) then GameTooltip:AddLine("The number under the icon: lost this session.", C(GRAY)) end
     GameTooltip:AddLine("Left-click: what you lost, in chat", C(GRAY))
     GameTooltip:AddLine("Right-click: options", C(GRAY))
     if not ns.db.locked then GameTooltip:AddLine("Drag: move", C(GRAY)) end
@@ -183,6 +196,13 @@ function UI.Update()
     if kind ~= shownKind then
         button.Icon:SetTexture(Icon(kind))
         shownKind = kind
+    end
+    local under = LossUnder(kind)
+    if under then
+        button.Duration:SetText("-" .. under)
+        button.Duration:Show()
+    else
+        button.Duration:Hide()
     end
     button:Show()
     holder:Show()

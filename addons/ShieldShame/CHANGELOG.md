@@ -1,5 +1,22 @@
 # Changelog
 
+## 1.1.0 (2026-11-15)
+
+- No chat by default (SuccuDev: "still annoying in chat, overall needs improvement"). The
+  roast after costly fights is now opt-in ("Roast me in chat too") and has been turned off
+  once for everyone who had it on; turn it back on and it stays on. The addon now only
+  writes to chat when you ask (`/shame`, the minimap button, the options).
+- The shaming moved onto the icon: what going without a shield has cost you this session
+  sits under the missing-shield icon, where a buff shows its time left ("-1,240", "-34k").
+- Shield uptime: the share of your fight time with a shield up, in the icon's tooltip, the
+  minimap tooltip and `/shame`. The verdict now goes by it. Counted from this version on.
+- `/shame` is shorter: one line each for the last fight, the session and all time, leaving
+  out a currency you lost none of.
+- A fight log: the last 25 fights on each character, hit by hit (shield at the start,
+  whether the game showed your auras, hits shielded, lost and inside the orb cooldown,
+  shields cast). `/shame log` or the "Print the fight log" button. It is there to check
+  the counts against what really happened in the game.
+
 ## 1.0.1 (2026-11-14)
 
 - Much less chat (SuccuDev: "water shield addon is annoying in chat"). The line after every

@@ -5,15 +5,17 @@ Lightning Shield or Water Shield up, and mocks you for it. Asked for as: "addon 
 about how much damage and mana ive lost not maintaining shaman shields".
 
 - A greyed-out shield icon while no shield is up (out of fights, and in fights the moment
-  your orbs run out). Its tooltip has a jab and what you have lost.
-- Now and then, a roast in your own chat: one mocking line for the fights since the last one,
-  once they add up to something worth saying (a whole shield's 3 orbs, or 5% of your max
-  mana), and at most once every 5 minutes (a setting). Fights it skips are rolled into the
-  next line ("Last 4 fights: ..."); small losses are still counted in full.
+  your orbs run out). Under it, where a buff shows its time left, what going without has
+  cost you this session ("-1,240", "-34k"). Its tooltip has a jab, what you lost this fight,
+  this session and all time, and your shield uptime.
+- **Shield uptime**: the share of your fight time with a shield up. The verdict goes by it.
 - `/shame` prints the last fight, this session and all time on this character.
 - The minimap button's tooltip shows the session and all-time totals.
-- Quiet by default: one icon, at most one chat line every 5 minutes, nothing sent to other
-  players. "Confess to my group" (off by default) also says the roast in party or raid chat.
+- **No chat unless you ask.** Nothing is written to chat on its own. Opt-in: "Roast me in
+  chat too" (one mocking line for the fights since the last one, once they add up to a whole
+  shield's 3 orbs or 5% of your max mana, at most once every 5 minutes, fights in between
+  rolled into it) and "Confess to my group" (the roast in party or raid chat as well).
+- `/shame log`: the last 25 fights, hit by hit, to check the counts against the game.
 
 The addon does nothing on other classes: no icon, no minimap button, no events.
 
@@ -22,7 +24,8 @@ The addon does nothing on other classes: no icon, no minimap button, no events.
 `/shame` (or `/shieldshame`): what you lost. `/shame options`, `/shame on` / `off`,
 `/shame lightning` / `water` / `auto` (what to count against), `/shame lock` / `unlock`,
 `/shame test` (show the icon to place it), `/shame reset session`, `/shame reset all`,
-`/shame status` (what the addon read: ranks, values, where each came from).
+`/shame log` (the last fights, hit by hit), `/shame status` (what the addon read: ranks,
+values, where each came from).
 
 ## The shields on this client
 
@@ -75,8 +78,19 @@ used either: Water Shield if you have the talent, else Lightning Shield. Options
 
 **Totals.** This fight, this session (since login or `/shame reset session`) and all time on
 this character (saved per character, `ShieldShameCharDB`). Each keeps damage, mana, orbs
-missed, seconds fought with no shield, and fights that cost you something. Settings are
-account-wide (`ShieldShameDB`).
+missed, seconds fought with no shield, fights that cost you something, and (from 1.1.0)
+seconds fought, for the uptime. Settings are account-wide (`ShieldShameDB`).
+
+**Uptime.** Seconds fought with a shield up / seconds fought, counted the same way as the
+gaps (in a fight, alive, not on a flight path, a shield known). The all-time uptime only
+covers fights from 1.1.0 on.
+
+**The fight log.** For each of the last 25 fights on the character (`ShieldShameCharDB.log`):
+when, how long, the shield at the start (and whether that came from your buffs or, with
+auras hidden, from the addon's own record), whether the game showed your auras during the
+fight, the hits seen and what each became (shielded, lost, inside the orb cooldown), shields
+cast, seconds with no shield, and what was lost. If the totals look too high, this shows
+whether the hits were really taken with no shield up.
 
 ## What is an estimate
 
