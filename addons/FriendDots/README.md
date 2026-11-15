@@ -41,6 +41,7 @@ For WoW Forever (Interface 16001).
 | `/fdots plates` | Turn friendly player nameplates on / off |
 | `/fdots combat` | Friendly player nameplates (and so the dots) only in fights: on as a fight starts, off when it ends |
 | `/fdots on` / `off` / `reset` / `debug` | Enable, disable, defaults, bug-report info |
+| `/fdots preview` | One dot of each kind (plain, party, target, class icon, NPC) in the middle of the screen for a minute, with your current settings |
 
 ## Notes
 

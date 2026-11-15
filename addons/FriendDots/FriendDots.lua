@@ -23,6 +23,7 @@
     /fdots y <n>      -> move the dot up / down
     /fdots plates     -> turn friendly player nameplates on / off (the game setting)
     /fdots on|off, /fdots reset, /fdots debug
+    /fdots preview    -> one dot of each kind in the middle of the screen, for a minute
 ]]
 
 local ADDON_NAME, ns = ...
@@ -323,7 +324,7 @@ local function SetPad(tex, anchor, pad)
     tex:SetPoint("BOTTOMRIGHT", anchor, "BOTTOMRIGHT", pad, -pad)
 end
 
-local function CreateWidget(plate)
+local function CreateWidget(plate, sample)   -- sample: a preview dot, not tied to a nameplate
     local w = CreateFrame("Frame", nil, plate)
     w.plate = plate
     w:SetFrameLevel((plate:GetFrameLevel() or 0) + LEVEL_NORMAL)
@@ -388,7 +389,7 @@ local function CreateWidget(plate)
     w.name = name
 
     w:Hide()
-    widgets[plate] = w
+    if not sample then widgets[plate] = w end
     return w
 end
 
@@ -480,34 +481,34 @@ end
 ---------------------------------------------------------------------------
 -- Look
 ---------------------------------------------------------------------------
-local function Style(w)
-    local unit = w.unit
-    -- The class is remembered per dot: if the client hides it mid-fight, a
-    -- dot that already had its colour keeps it.
-    local classFile = (w.kind == "player") and (ClassOf(unit) or w.classFile) or nil
-    w.classFile = classFile
+-- Colour, size, icon and health mode for a dot from plain facts (shared by
+-- the nameplate dots and the preview).
+local function Look(kind, classFile, inParty, style)
     local r, g, b
-    if w.kind == "npc" then
+    if kind == "npc" then
         r, g, b = NPC_COLOR[1], NPC_COLOR[2], NPC_COLOR[3]
     else
         r, g, b = ClassColor(classFile)
     end
 
     -- Icons need a known class; otherwise (and for NPCs) fall back to a dot.
-    local atlas = (db.style == "icon" and w.kind == "player") and ClassAtlas(classFile) or nil
+    local atlas = (style == "icon" and kind == "player") and ClassAtlas(classFile) or nil
     local size = atlas and db.iconSize or db.dotSize
-    if w.kind == "npc" then size = max(4, floor(size * 0.7 + 0.5)) end
-
+    if kind == "npc" then size = max(4, floor(size * 0.7 + 0.5)) end
     -- Your own party stands out the way the world map shows it: a bigger
-    -- dot (party pins 11 against raid pins 8.25), drawn above the others.
-    w.inParty = InParty(w)
-    if w.inParty then size = floor(size * GROUP_SCALE + 0.5) end
-    if raised ~= w then w:SetFrameLevel(BaseLevel(w)) end
+    -- dot (party pins 11 against raid pins 8.25).
+    if inParty then size = floor(size * GROUP_SCALE + 0.5) end
 
+    local mode = db.hp
+    if mode == "fill" and atlas then mode = "bar" end   -- an icon can't drain
+    if hpBroken then mode = "off" end
+    return r, g, b, size, atlas, mode
+end
+
+-- Draws a dot from that look. The unit's own values (name text, health,
+-- target) are set afterwards by the caller.
+local function Paint(w, r, g, b, size, atlas, mode, showName)
     w:SetSize(size, size)
-    w:ClearAllPoints()
-    w:SetPoint("CENTER", w.plate, "CENTER", 0, db.yOffset)
-
     SetPad(w.ring, w, 1)
     SetPad(w.targetRing, w, 2)
     if atlas then
@@ -520,9 +521,6 @@ local function Style(w)
     w.bg:SetVertexColor(r * 0.3 + 0.08, g * 0.3 + 0.08, b * 0.3 + 0.08, 1)
     w.fill:SetStatusBarColor(r, g, b)
 
-    local mode = db.hp
-    if mode == "fill" and atlas then mode = "bar" end   -- an icon can't drain
-    if hpBroken then mode = "off" end
     w.hpMode = mode
     if mode ~= "fill" then
         w.fill:SetMinMaxValues(0, 1)
@@ -536,15 +534,34 @@ local function Style(w)
         w.hp:Hide()
     end
 
-    if db.names == "off" then
-        w.name:Hide()
-    else
+    if showName then
         w.name:ClearAllPoints()
         w.name:SetPoint("BOTTOM", w, "TOP", 0, NAME_GAP)
-        w.name:SetText(UnitName(unit))            -- may be secret: fine for a widget
         w.name:SetTextColor(r, g, b)
         w.name:SetAlpha(1)
         w.name:Show()
+    else
+        w.name:Hide()
+    end
+end
+
+local function Style(w)
+    local unit = w.unit
+    -- The class is remembered per dot: if the client hides it mid-fight, a
+    -- dot that already had its colour keeps it.
+    local classFile = (w.kind == "player") and (ClassOf(unit) or w.classFile) or nil
+    w.classFile = classFile
+    w.inParty = InParty(w)
+    local r, g, b, size, atlas, mode = Look(w.kind, classFile, w.inParty, db.style)
+
+    -- Party members are drawn above the others, your target above everything.
+    if raised ~= w then w:SetFrameLevel(BaseLevel(w)) end
+    w:ClearAllPoints()
+    w:SetPoint("CENTER", w.plate, "CENTER", 0, db.yOffset)
+
+    Paint(w, r, g, b, size, atlas, mode, db.names ~= "off")
+    if db.names ~= "off" then
+        w.name:SetText(UnitName(unit))            -- may be secret: fine for a widget
     end
 
     local uf = w.plate.UnitFrame
@@ -609,41 +626,133 @@ function RefreshAll()
         local unit = plate.namePlateUnitToken or (plate.UnitFrame and plate.UnitFrame.unit)
         if unit then Attach(unit) end
     end
+    if ns.RepaintPreview then ns.RepaintPreview() end   -- an open preview follows the settings
 end
 
 ---------------------------------------------------------------------------
--- LookShots (a screenshot helper on the author's machine only; harmless
--- without it): one dot of each kind, the first time one shows.
+-- Preview: one dot of each kind side by side on a plain frame, drawn by the
+-- same code as the nameplate dots. It exists for screenshots: this client
+-- hides the position of anything anchored to a nameplate from addons
+-- (GetRect and friends are "secret when anchoring is secret"), so a
+-- screenshot helper can't find the real dots, but it can find this frame.
+-- /fdots preview shows it for a minute; with the author's LookShots helper
+-- loaded it also shows by itself until LookShots has shot this version.
 ---------------------------------------------------------------------------
-local function FirstDot(test)
-    for _, w in pairs(active) do
-        if w:IsShown() and test(w) then return w end
-    end
-end
-
-local function IconShown(w)
-    return w.icon:IsShown() and true or false
-end
-
+local PREVIEW_LABEL   = "preview"
+local PREVIEW_SECONDS = 60
+local PREVIEW_STEP    = 48          -- centre-to-centre distance of the samples
+local SAMPLES = {
+    { class = "MAGE",    hp = 0.6 },                    -- a friendly player
+    { class = "PRIEST",  hp = 0.4, party = true },      -- your own party
+    { class = "WARRIOR", hp = 0.8, target = true },     -- your target
+    { class = "DRUID",   hp = 0.5, style = "icon" },    -- a class icon
+    { kind = "npc",      hp = 1.0, name = "Guard" },    -- a friendly NPC
+}
 local version = C_AddOns and C_AddOns.GetAddOnMetadata and C_AddOns.GetAddOnMetadata(ADDON_NAME, "Version")
+local preview, previewAuto, previewLeft, previewTick
+
+local function LookShotsLoaded()
+    return (C_AddOns and C_AddOns.IsAddOnLoaded and C_AddOns.IsAddOnLoaded("LookShots")) and true or false
+end
+
+local function PreviewShot()                  -- LookShots has a shot of this version's preview
+    local done = type(LookShotsDB) == "table" and LookShotsDB.done
+    local byAddon = type(done) == "table" and done[ADDON_NAME]
+    local byVersion = type(byAddon) == "table" and byAddon[version or "?"]
+    return type(byVersion) == "table" and byVersion[PREVIEW_LABEL] ~= nil
+end
+
+-- The nameplate dots are drawn at the plates' scale; the preview matches it
+-- when a dot is up and that scale can be read, else it uses the UI's.
+local function PlateScale()
+    local ui = UIParent and UIParent.GetEffectiveScale and UIParent:GetEffectiveScale()
+    if not (PlainNumber(ui) and ui > 0) then return 1 end
+    for _, w in pairs(active) do
+        local ok, es = pcall(w.GetEffectiveScale, w)
+        if ok and PlainNumber(es) and es > 0 then return es / ui end
+    end
+    return 1
+end
+
+local function PaintPreview()
+    local biggest = 0
+    for i, s in ipairs(preview.samples) do
+        local spec = SAMPLES[i]
+        local kind = spec.kind or "player"
+        local r, g, b, size, atlas, mode = Look(kind, spec.class, spec.party, spec.style or db.style)
+        local showName = db.names ~= "off"
+        Paint(s, r, g, b, size, atlas, mode, showName)
+        if showName then
+            local classNames = LOCALIZED_CLASS_NAMES_MALE
+            s.name:SetText(spec.name or (classNames and classNames[spec.class]) or spec.class)
+            if db.names == "target" and not spec.target then s.name:SetAlpha(0) end
+        end
+        if mode == "fill" then
+            s.fill:SetMinMaxValues(0, 1)
+            s.fill:SetValue(spec.hp)
+        elseif mode == "bar" then
+            s.hpBar:SetMinMaxValues(0, 1)
+            s.hpBar:SetValue(spec.hp)
+            s.hp:SetAlpha((db.hpAlways or spec.hp < 1) and 1 or 0)
+        end
+        s.targetRing:SetAlpha(spec.target and 1 or 0)
+        s:SetAlpha(1)
+        s:SetFrameLevel((preview:GetFrameLevel() or 0) + (spec.target and LEVEL_TARGET or spec.party and LEVEL_GROUP or LEVEL_NORMAL))
+        s:ClearAllPoints()
+        s:SetPoint("CENTER", preview, "CENTER", (i - (#SAMPLES + 1) / 2) * PREVIEW_STEP, 0)
+        s:Show()
+        if size > biggest then biggest = size end
+    end
+    -- Room for the name above and the health line below each sample.
+    preview:SetSize(#SAMPLES * PREVIEW_STEP, biggest + 2 * 24)
+    preview:SetScale(PlateScale())
+end
+
+local function HidePreview()
+    if preview then preview:Hide() end
+    previewAuto = false
+end
+
+local function ShowPreview(auto)
+    if not db then return end
+    if not preview then
+        preview = CreateFrame("Frame", "FriendDotsPreview", UIParent)
+        preview:SetPoint("CENTER", UIParent, "CENTER", 0, 160)
+        preview:SetFrameStrata("MEDIUM")
+        preview.samples = {}
+        for i = 1, #SAMPLES do preview.samples[i] = CreateWidget(preview, true) end
+        preview:SetScript("OnUpdate", function(_, elapsed)
+            previewLeft = previewLeft - (elapsed or 0)
+            previewTick = previewTick - (elapsed or 0)
+            if previewTick <= 0 then
+                previewTick = 1
+                if previewAuto and PreviewShot() then HidePreview() return end
+            end
+            if previewLeft <= 0 then HidePreview() end
+        end)
+        ns.preview = preview
+    end
+    previewAuto = auto and true or false
+    previewLeft, previewTick = PREVIEW_SECONDS, 1
+    PaintPreview()
+    preview:Show()
+end
+
+function ns.RepaintPreview()
+    if preview and preview:IsShown() then PaintPreview() end
+end
+
+-- At login, only for the author's screenshot helper, only once per version.
+local function AutoPreview()
+    if LookShotsLoaded() and not PreviewShot() and not InCombatLockdown() then ShowPreview(true) end
+end
+
 LookShotsTargets = LookShotsTargets or {}
 LookShotsTargets[ADDON_NAME] = {
     version = version or "?",
     frames = {
-        { label = "dot", pad = 40, frame = function()
-            return FirstDot(function(w) return w.kind == "player" and not w.inParty and w ~= raised and not IconShown(w) end)
-        end },
-        { label = "party dot", pad = 40, frame = function()
-            return FirstDot(function(w) return w.inParty and w ~= raised and not IconShown(w) end)
-        end },
-        { label = "target dot", pad = 40, frame = function()
-            return FirstDot(function(w) return w == raised end)
-        end },
-        { label = "class icon", pad = 40, frame = function()
-            return FirstDot(IconShown)
-        end },
-        { label = "npc dot", pad = 40, frame = function()
-            return FirstDot(function(w) return w.kind == "npc" end)
+        { label = PREVIEW_LABEL, pad = 24, frame = function()
+            return (preview and preview:IsShown()) and preview or nil
         end },
     },
 }
@@ -906,6 +1015,7 @@ f:SetScript("OnEvent", function(_, event, arg1)
 
     elseif event == "PLAYER_REGEN_DISABLED" then
         OnCombatStart()
+        HidePreview()
 
     elseif event == "ZONE_CHANGED_NEW_AREA" or event == "ZONE_CHANGED" or event == "ZONE_CHANGED_INDOORS" then
         if CombatPlatesActive() then LaterSync(2) end
@@ -923,6 +1033,7 @@ f:SetScript("OnEvent", function(_, event, arg1)
             ApplyClick()
             SyncCombatPlates()
             RefreshAll()
+            AutoPreview()
         end)
         if CombatPlatesActive() then LaterSync(2) end   -- after BetterBlizzPlates' own check
         local platesOff = C_CVar and C_CVar.GetCVar and C_CVar.GetCVar(PLATES_CVAR) == "0"
@@ -961,7 +1072,7 @@ local function PrintHelp()
     print("  /fdots names off|target|all   -  /fdots where all|pvp (pvp = only battlegrounds and arenas)")
     print("  /fdots group (your own party: bigger dot, drawn on top)   -  /fdots npcs   -  /fdots click [on|off]")
     print("  /fdots plates (friendly player nameplates on/off)   -  /fdots combat (friendly nameplates only in combat)")
-    print("  /fdots on|off   -  /fdots reset   -  /fdots debug")
+    print("  /fdots on|off   -  /fdots reset   -  /fdots debug   -  /fdots preview (one dot of each kind, for a minute)")
     print("  /fdots config (options window)   -  /fdots minimap (minimap button on/off)")
 end
 
@@ -1060,6 +1171,10 @@ SlashCmdList.FRIENDDOTS = function(msg)
 
     elseif cmd == "config" or cmd == "options" or cmd == "opt" then
         if HasKit() then ns.Kit.Open() end
+        return
+
+    elseif cmd == "preview" then
+        if preview and preview:IsShown() then HidePreview() else ShowPreview(false) end
         return
 
     elseif cmd == "minimap" then

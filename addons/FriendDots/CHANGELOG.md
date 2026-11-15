@@ -1,5 +1,10 @@
 # Changelog
 
+## 1.4.3
+
+- `/fdots preview`: one dot of each kind (plain, party, target, class icon, NPC) in the middle of the screen for a minute, drawn with your current settings and at the nameplates' scale. A fight hides it.
+- The author's screenshot helper now gets this preview instead of the dots on nameplates: the game hides where nameplates are on screen from addons, so the helper could not find those dots in its screenshots. Without that helper nothing shows by itself.
+
 ## 1.4.2
 
 - Lists one dot of each kind (plain, party, target, class icon, NPC) for the author's screenshot helper, so the look can be checked from game screenshots. Nothing changes in game without that helper.
