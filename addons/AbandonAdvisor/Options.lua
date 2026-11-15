@@ -18,8 +18,8 @@ local function Rows()
               ns.db.target = value
               ns.Refresh()
           end },
-        { kind = "check", label = "Count low drop rates against a quest",
-          tip = "Uses Questie's drop rates. A quest whose items rarely drop still needs many kills, so it scores "
+        { kind = "check", label = "Count low drop rates",
+          tip = "Counts low drop rates against a quest, using Questie's drop rates. A quest whose items rarely drop still needs many kills, so it scores "
               .. "higher for abandoning. Does nothing without Questie. Same as /abandon drops.",
           get = Get("dropRates"),
           set = function(value)
@@ -28,7 +28,7 @@ local function Rows()
           end },
 
         { kind = "header", text = "Group" },
-        { kind = "check", label = "Suggest a quest when a group member abandons it",
+        { kind = "check", label = "Suggest group abandons",
           tip = "When a group member abandons a quest you also have, you are asked whether to abandon it too, and "
               .. "the quest scores higher. Only works for group members who use Abandon Advisor as well. "
               .. "Same as /abandon group.",
@@ -37,14 +37,15 @@ local function Rows()
               ns.db.groupSuggest = value
               ns.Refresh()
           end },
-        { kind = "check", label = "Tell my group when I abandon a quest",
-          tip = "Sends the quest to your group members' Abandon Advisor. It is an addon message: nothing shows "
+        { kind = "check", label = "Share my abandons",
+          tip = "When you abandon a quest, sends it to your group members' Abandon Advisor. It is an addon message: nothing shows "
               .. "in chat. Same as /abandon share.",
           get = Get("groupShare"), set = function(value) ns.db.groupShare = value end },
 
         { kind = "header", text = "Window" },
-        { kind = "check", label = "Open the window when the quest log is full",
-          tip = "When the game says your quest log is full, the window opens with the quests to drop first.",
+        { kind = "check", label = "Open when the log is full",
+          tip = "When the game says your quest log is full, the Abandon Advisor window opens with the quests to "
+              .. "drop first. Same as /abandon auto.",
           get = Get("autoOpen"), set = function(value) ns.db.autoOpen = value end },
         { kind = "slider", label = "Window size", min = 0.5, max = 2, step = 0.05, format = "%.2f",
           get = function() return ns.db.scale or 1 end,

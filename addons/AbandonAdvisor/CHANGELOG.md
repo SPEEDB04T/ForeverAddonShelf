@@ -1,3 +1,7 @@
+## 1.4.1
+- Options window and minimap button redrawn by the shared kit: the options are now the game's own Options rows, and the minimap button is the game's round minimap button.
+- Shorter option names so each fits on one line: "Count low drop rates", "Suggest group abandons", "Share my abandons", "Open when the log is full". The rest of each explanation is in its tip.
+
 ## 1.4.0
 - Hand-in route: your finished quests are listed in the order that makes the shortest trip from where you stand, one stop per quest giver ("Stop 2 of 4: Elwynn Forest, 300 yds"). The summary gives the whole route's length. Turn-in places come from the game's own quest pins; with Questie installed, Questie places the ones the game has no pin for. Stops on another continent come last, in order but without distances. `/abandon route` prints the route in chat.
 - Right-click a finished quest and choose Super Track: the game's quest arrow points at that stop, and once you hand it in it moves to the next stop on its own. Tracking anything else ends that; `/abandon route next` starts at the first stop, `/abandon route stop` ends it.
