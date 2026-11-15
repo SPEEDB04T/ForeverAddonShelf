@@ -1245,3 +1245,36 @@ ns.On(function(what)
     Refresh()
   end
 end)
+
+-------------------------------------------------------------------------------
+-- LookShots (a local helper that screenshots listed frames; harmless without it)
+-------------------------------------------------------------------------------
+local function WindowOn(tab, filtered)
+  return function()
+    if not win or not win:IsShown() or state.tab ~= tab then
+      return nil
+    end
+    if tab == "farm" and (state.farmItem ~= nil) ~= filtered then
+      return nil
+    end
+    return win
+  end
+end
+
+local function AddonVersion()
+  local get = (C_AddOns and C_AddOns.GetAddOnMetadata) or GetAddOnMetadata
+  local ok, v = pcall(get, ADDON, "Version")
+  return ok and type(v) == "string" and v or "unknown"
+end
+
+LookShotsTargets = LookShotsTargets or {}
+LookShotsTargets["SlutmogScout"] = {
+  version = AddonVersion(),
+  frames = {
+    { label = "window: Market", frame = WindowOn("market") },
+    { label = "window: Farm guide", frame = WindowOn("farm", false) },
+    { label = "window: one piece's farm spots", frame = WindowOn("farm", true) },
+    { label = "window: Measured", frame = WindowOn("measured") },
+    { label = "auction house button", frame = function() return ahButton end, pad = 60 },
+  },
+}

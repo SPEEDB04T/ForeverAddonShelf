@@ -1,5 +1,10 @@
 # Changelog
 
+## 1.3.3
+
+- Lists the window's tabs and the auction house button for LookShots, a local screenshot helper, so they can be
+  checked in screenshots. Without LookShots this does nothing.
+
 ## 1.3.2
 
 - The options window and the minimap button are redrawn by the shared kit: they now copy the game's own
