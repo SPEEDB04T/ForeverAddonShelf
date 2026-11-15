@@ -19,8 +19,8 @@ end
 
 local function Rows()
     return {
-        { kind = "header", text = "Frame" },
-        { kind = "choice", label = "Show the frame",
+        { kind = "header", text = "Bar" },
+        { kind = "choice", label = "Show the bar",
           tip = "The row of aura buttons. The aura that is on is checked, like on the stance bar; the one to switch to glows. "
               .. "Same as /aura show. In a fight a change waits until the fight is over.",
           options = {
@@ -29,17 +29,17 @@ local function Rows()
               { "never", "Never", "No frame. The sound and the line on screen still tell you." },
           },
           get = Get("show"), set = Set("show") },
-        { kind = "check", label = "Lock the frame in place",
+        { kind = "check", label = "Lock the bar in place",
           tip = "Unticked, you can drag the bar by any of its buttons (outside a fight).",
           get = Get("locked"), set = Set("locked") },
-        { kind = "slider", label = "Frame size", min = 0.5, max = 2, step = 0.05, format = "%.2f",
+        { kind = "slider", label = "Bar size", min = 0.5, max = 2, step = 0.05, format = "%.2f",
           get = Get("scale"),
           set = function(value)
               if InCombatLockdown() then ns.Print("can't resize the frame in a fight.") return end
               ns.Set("scale", value)
           end },
-        { kind = "slider", label = "Faded when it has nothing to say", min = 0.2, max = 1, step = 0.05, format = Percent,
-          tip = "How solid the bar is while your aura is the right one (100%: like the stance bar). It turns fully solid when it suggests a switch.",
+        { kind = "slider", label = "Fade when nothing to say", min = 0.2, max = 1, step = 0.05, format = Percent,
+          tip = "How solid the bar is while it has nothing to say, that is while your aura is the right one (100%: solid, like the stance bar). It turns fully solid when it suggests a switch.",
           get = Get("idleAlpha"), set = Set("idleAlpha") },
 
         { kind = "header", text = "Advice" },
@@ -69,13 +69,15 @@ local function Rows()
               { "high", "High", "Suggests a switch early. More suggestions." },
           },
           get = Get("sensitivity"), set = Set("sensitivity") },
-        { kind = "check", label = "Suggest the between-fights aura after a fight",
-          tip = "Unticked, the advisor only speaks up in fights.",
+        { kind = "check", label = "Suggest default after a fight",
+          tip = "Suggests your aura between fights (above) once a fight is over. Unticked, the advisor only speaks up in fights.",
           get = Get("betweenFights"), set = Set("betweenFights") },
 
-        { kind = "header", text = "When it suggests a switch in a fight" },
+        { kind = "header", text = "Alerts in a fight" },
         { kind = "check", label = "Play a sound", get = Get("sound"), set = Set("sound") },
-        { kind = "check", label = "Show a line in the middle of the screen", get = Get("banner"), set = Set("banner") },
+        { kind = "check", label = "Show a line on screen",
+          tip = "A line in the middle of the screen, with the reason, when a switch is suggested in a fight. Same as /aura banner.",
+          get = Get("banner"), set = Set("banner") },
         { kind = "check", label = "Write a line in chat", get = Get("chat"), set = Set("chat") },
 
         { kind = "header", text = "Minimap" },

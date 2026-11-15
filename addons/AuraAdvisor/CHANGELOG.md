@@ -1,5 +1,10 @@
 # Changelog
 
+## 1.1.1 (2026-11-14)
+
+- The options window and minimap button were redrawn by the shared kit: they now copy the game's own Options rows and its round minimap button.
+- Shorter option labels, so each fits on one line in the new window ("Fade when nothing to say", "Suggest default after a fight", "Show a line on screen"); the rest of each sentence is in the row's tooltip. The "Frame" section is now called "Bar".
+
 ## 1.1.0 (2026-11-14)
 
 - The frame is now a second stance bar: the game's own small action buttons at their own 30 px, 2 px apart, with no panel, heading or reason line behind or under them.
