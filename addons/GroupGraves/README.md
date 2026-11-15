@@ -37,7 +37,7 @@ A marker goes away when the member is alive again, leaves the group, or you leav
 | `/graves pvp` | Also in battlegrounds and arenas, on / off |
 | `/graves clear` | Forget every marker |
 | `/graves minimap` | Minimap button on / off |
-| `/graves on` / `off` / `reset` / `debug` | Enable, disable, defaults, bug-report info |
+| `/graves on` / `off` / `reset` / `debug` | Enable, disable, defaults, bug-report info (also messages that were not taken, and why) |
 
 ## Notes
 

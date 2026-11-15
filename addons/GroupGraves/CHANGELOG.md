@@ -1,5 +1,12 @@
 # Changelog
 
+## 1.3.0
+
+- Fixed: who sent a message is now found in the group by the whole name ("First Last", with the space). The realm part of a sender, which the server spells unlike your client (`CAMWOWUS1Realm9RPPvP` against `RPPvP`), only decides between two members with the same name. Before, your own messages coming back to you were taken for someone else's, and you could get a marker on your own corpse.
+- Names inside passed-on positions are found the same way.
+- `/graves status` and `/graves debug` count messages that were not taken, and why: the sender is not in the group, the game hid who sent them, or the game hid the group's names at the time.
+- The last 40 messages out and in are saved in `GroupGravesDB.commLog` (time, out or in, channel, sender, the group member it was found to be, what the game said to a send, the start of the message), to find out afterwards what happened in a session.
+
 ## 1.2.0
 
 - A marker is now exactly the game's own corpse marker: the same size, and nothing added to it. The class-coloured dot at its corner and the glow under the mouse are gone. Whose corpse it is shows in the tooltip (name in the class colour), or under the marker with "Names under the markers".

@@ -86,10 +86,14 @@ local function Try(fn, ...)
 end
 
 ---------------------------------------------------------------------------
--- Names. A marker is filed under the member's name, with the realm added
--- only for someone from another realm, however the game spelled it.
+-- Names. A marker is filed under the member's name as the game's group list
+-- gives it ("First Last", with the space), with the realm added only when the
+-- game gives one (someone from another realm).
 ---------------------------------------------------------------------------
 local function Squash(realm) return (realm:gsub("[%s%-']", "")) end
+local function Squeeze(text) return (text:lower():gsub("[^%w]", "")) end   -- lower-case letters and digits
+
+local mySpellings = {}             -- my realm, squeezed, each way the game spells it
 
 local function MakeKey(name, realm)
     if type(name) ~= "string" or name == "" then return nil end
@@ -106,20 +110,84 @@ local function UnitKey(unit)
     return MakeKey(name, realm)
 end
 
-local function SenderKey(sender)
-    if type(sender) ~= "string" then return nil end
-    local name, realm = sender:match("^([^%-]+)%-(.+)$")
-    return MakeKey(name or sender, realm)
-end
-
 local function Identity()
     local realm = Try(GetNormalizedRealmName) or Try(GetRealmName)
     myRealm = type(realm) == "string" and Squash(realm) or ""
+    mySpellings = {}
+    for _, read in ipairs({ GetNormalizedRealmName, GetRealmName }) do
+        local spelled = Try(read)
+        if type(spelled) == "string" and Squeeze(spelled) ~= "" then mySpellings[#mySpellings + 1] = Squeeze(spelled) end
+    end
     local name = Try(UnitName, "player")
     if type(name) == "string" and name ~= "" then myKey = name end
     local _, class = Try(UnitClass, "player")
     if type(class) == "string" then myClass = class end
 end
+
+-- Two spellings of a realm agree when one is the other, or starts or ends with it: the
+-- server writes this realm "CAMWOWUS1Realm9RPPvP" in senders while the client calls it "RPPvP".
+local function Agree(a, b)
+    if a == "" or b == "" then return false end
+    if #a < #b then a, b = b, a end
+    return a == b or a:sub(1, #b) == b or a:sub(-#b) == b
+end
+
+local function MyRealmAgrees(spelled)
+    for _, mine in ipairs(mySpellings) do
+        if Agree(spelled, mine) then return true end
+    end
+    return false
+end
+
+-- Who in the group a name from a message is: a message sender ("First Last-Realm") or a
+-- name inside a relay. Found by the name alone, the space kept; the realm only decides
+-- between members who share a name, because its spelling can't be trusted.
+-- Returns unit, key, name, or nil and why: "nobody", "hidden" (the game hides names in
+-- the group right now) or "ambiguous".
+local function Find(text)
+    if type(text) ~= "string" or text == "" then return nil, "nobody" end
+    local who, realm = text:match("^([^%-]+)%-(.*)$")
+    who = who or text
+    local spelled = realm and Squeeze(realm) or ""
+    local found, hidden = {}, false
+    local function Look(unit)
+        if not Try(UnitExists, unit) then return end
+        local name, unitRealm = Try(UnitName, unit)
+        if type(name) ~= "string" or name == "" or name == UNKNOWNOBJECT then
+            hidden = true
+            return
+        end
+        if name ~= who then return end
+        local key = MakeKey(name, unitRealm)
+        for _, c in ipairs(found) do
+            if c.key == key then return end       -- my own raid unit: already found as "player"
+        end
+        found[#found + 1] = { unit = unit, key = key, name = name,
+            realm = (type(unitRealm) == "string" and Squeeze(unitRealm) ~= "") and Squeeze(unitRealm) or nil }
+    end
+    Look("player")
+    if IsInRaid and IsInRaid() then
+        for i = 1, 40 do Look("raid" .. i) end
+    elseif IsInGroup and IsInGroup() then
+        for i = 1, 4 do Look("party" .. i) end
+    end
+    if #found == 1 then return found[1].unit, found[1].key, found[1].name end
+    if #found == 0 then return nil, hidden and "hidden" or "nobody" end
+    local pick
+    for _, c in ipairs(found) do
+        local agrees
+        if spelled == "" then agrees = c.realm == nil
+        elseif c.realm then agrees = Agree(spelled, c.realm)
+        else agrees = MyRealmAgrees(spelled) end
+        if agrees then
+            if pick then return nil, "ambiguous" end
+            pick = c
+        end
+    end
+    if pick then return pick.unit, pick.key, pick.name end
+    return nil, "ambiguous"
+end
+ns.Find = Find
 
 ---------------------------------------------------------------------------
 -- Places
@@ -276,13 +344,13 @@ end
 ---------------------------------------------------------------------------
 -- The group
 ---------------------------------------------------------------------------
-local roster = { units = {}, keys = {}, isUnit = {}, unique = {}, complete = true }
+local roster = { units = {}, keys = {}, isUnit = {}, complete = true }
 
 local function ReadRoster()
-    local r = { units = {}, keys = {}, isUnit = {}, unique = {}, complete = true }
+    local r = { units = {}, keys = {}, isUnit = {}, complete = true }
     local function Add(unit)
         if not Try(UnitExists, unit) then return end
-        local key, short = UnitKey(unit)
+        local key = UnitKey(unit)
         if not key then
             r.complete = false                    -- a name the game hides right now
             return
@@ -291,7 +359,6 @@ local function ReadRoster()
         r.units[#r.units + 1] = unit
         r.keys[key] = unit
         r.isUnit[unit] = true
-        if r.unique[short] == nil then r.unique[short] = key else r.unique[short] = false end
     end
     if IsInRaid and IsInRaid() then
         for i = 1, 40 do Add("raid" .. i) end
@@ -299,12 +366,6 @@ local function ReadRoster()
         for i = 1, 4 do Add("party" .. i) end
     end
     roster = r
-end
-
--- The name a member is filed under here, for a name that arrived in a message.
-local function RosterKey(key, short)
-    if roster.keys[key] then return key end
-    return roster.unique[short] or nil
 end
 
 local function ClassOf(unit)
@@ -470,6 +531,63 @@ local function RelayMessage(g)
         .. Fields(g.released and "G" or "D", g.map, g.x, g.y, g.at, g.class, g.inst)
 end
 
+-- The last LOG_SIZE messages out and in, saved (GroupGravesDB.commLog), so a session in
+-- the game can be read back afterwards: when, out or in, the channel, the sender as the
+-- game gave it, the group unit it was found to be ("nobody" if none), what the game said
+-- to a send, and the start of the message.
+local LOG_SIZE = 40
+
+local function Log(dir, channel, from, unit, result, text)
+    if not (db and type(db.commLog) == "table") then return end
+    local log = db.commLog
+    log[#log + 1] = {
+        at = (type(date) == "function") and date("%Y-%m-%d %H:%M:%S") or time(),
+        dir = dir, channel = tostring(channel or "?"), from = tostring(from or "?"),
+        unit = unit or "nobody", result = result,
+        text = type(text) == "string" and text:sub(1, 40) or "(hidden)",
+    }
+    while #log > LOG_SIZE do table.remove(log, 1) end
+end
+
+-- Messages that were not taken, counted per sender and reason for /graves status.
+local ignored, ignoredOrder = {}, {}
+local IGNORED_SENDERS = 10
+local WHY = {
+    nobody    = "not found in the group",
+    hidden    = "the game hid the names in the group at the time",
+    ambiguous = "more than one member has that name",
+    sender    = "the game hid who sent them",
+    text      = "the game hid what they said",
+}
+
+local function Ignore(from, why)
+    local id = from .. "\n" .. why
+    local e = ignored[id]
+    if not e then
+        if #ignoredOrder >= IGNORED_SENDERS then id = "\n" .. why; e = ignored[id] end
+        if not e then
+            e = { from = (id == "\n" .. why) and "others" or from, why = why, n = 0 }
+            ignored[id] = e
+            ignoredOrder[#ignoredOrder + 1] = id
+        end
+    end
+    e.n = e.n + 1
+end
+
+function ns.Ignored()                              -- the lines for /graves status
+    local lines = {}
+    for _, id in ipairs(ignoredOrder) do
+        local e = ignored[id]
+        local what = e.n == 1 and "1 message" or (e.n .. " messages")
+        if e.why == "sender" then
+            lines[#lines + 1] = what .. " ignored: " .. WHY.sender .. "."
+        else
+            lines[#lines + 1] = what .. " from " .. e.from .. " ignored: " .. (WHY[e.why] or e.why) .. "."
+        end
+    end
+    return lines
+end
+
 -- nil when it went out, otherwise "nogroup", "blocked" or "failed".
 local function Send(text)
     local channel = Channel()
@@ -477,9 +595,11 @@ local function Send(text)
     local blocked = CommsBlocked()
     if blocked then
         lastProblem = blocked
+        Log("out", channel, myKey, "player", "blocked", text)
         return "blocked"
     end
     local ok, result = pcall(C_ChatInfo.SendAddonMessage, COMM, text, channel)
+    Log("out", channel, myKey, "player", ok and tostring(Known(result)) or ("error: " .. tostring(result):sub(1, 60)), text)
     if ok and (result == nil or result == true or result == 0) then
         fails, lastProblem = 0, nil
         return nil
@@ -582,7 +702,7 @@ local function Split(text)
 end
 
 -- fields: parts[i] = state, then map, x, y, age, class, dungeon
-local function TakeState(key, short, parts, i, source, via)
+local function TakeState(unit, key, short, parts, i, source, via)
     local state = parts[i]
     relayAt[key] = nil                            -- no need to pass this one on any more
     local g = graves[key]
@@ -606,7 +726,6 @@ local function TakeState(key, short, parts, i, source, via)
     if age ~= age then age = 0 end
     age = max(0, min(MAX_AGE, age))
     local inst = parts[i + 6]
-    local unit = roster.keys[key]
     graves[key] = {
         key = key, name = short,
         class = ValidClass(parts[i + 5]) or (g and g.class) or (unit and ClassOf(unit)) or nil,
@@ -636,32 +755,37 @@ local function OnQuery()
     end
 end
 
+-- Who sent it is looked up in the group by name (see Find): the realm part of a sender
+-- is spelled unlike the client's own realm name, so it is never compared as it comes.
+-- "Me" is the lookup landing on "player".
 local function OnMessage(prefix, text, channel, sender)
-    if Known(prefix) ~= COMM or not db or not ns.Active() then return end
+    if Known(prefix) ~= COMM or not db then return end
     text, channel, sender = Known(text), Known(channel), Known(sender)
-    if type(text) ~= "string" or type(sender) ~= "string" then return end
-    if channel ~= "PARTY" and channel ~= "RAID" and channel ~= "INSTANCE_CHAT" then return end
     if not myKey then Identity() end
-    if not myKey then return end                  -- can't tell my own messages from others' yet
-    local senderKey, senderShort = SenderKey(sender)
-    if not senderKey or senderKey == myKey then return end
+    local unit, key, short
+    if type(sender) == "string" then unit, key, short = Find(sender) end
+    Log("in", channel, type(sender) == "string" and sender or "(hidden)", unit, nil, text)
+    if not ns.Active() then return end
+    if channel ~= "PARTY" and channel ~= "RAID" and channel ~= "INSTANCE_CHAT" then return end
+    if type(sender) ~= "string" then return Ignore("someone", "sender") end
+    if not unit then return Ignore(sender, key) end   -- key: why nobody was found
+    if unit == "player" then return end           -- my own message coming back
+    if type(text) ~= "string" then return Ignore(short, "text") end
     local parts = Split(text)
     if parts[1] ~= PROTO then return end
     local kind = parts[2]
     if kind == "Q" then
         OnQuery()
     elseif kind == "S" then
-        TakeState(RosterKey(senderKey, senderShort) or senderKey, senderShort, parts, 3, "self", nil)
+        TakeState(unit, key, short, parts, 3, "self", nil)
     elseif kind == "R" then
-        local aboutKey, aboutShort = SenderKey(parts[3])
-        if not aboutKey or aboutKey == myKey then return end
-        local key = RosterKey(aboutKey, aboutShort)
-        if not key then return end                -- not someone in my group
-        relayAt[key] = nil
-        local g = graves[key]
+        local about, aboutKey, aboutShort = Find(parts[3])
+        if not about or about == "player" then return end  -- not in my group, or me
+        relayAt[aboutKey] = nil
+        local g = graves[aboutKey]
         if g and (g.source == "self" or g.source == "seen") then return end   -- first-hand is better
         if parts[4] == "A" then return end
-        TakeState(key, aboutShort, parts, 4, "relay", senderShort)
+        TakeState(about, aboutKey, aboutShort, parts, 4, "relay", short)
     end
 end
 
@@ -776,6 +900,15 @@ local function InitDB()
         me = { state = "A" }
     end
     db.me = me
+
+    local log = {}
+    if type(db.commLog) == "table" then
+        for _, e in ipairs(db.commLog) do
+            if type(e) == "table" then log[#log + 1] = e end
+        end
+        while #log > LOG_SIZE do table.remove(log, 1) end
+    end
+    db.commLog = log
     ns.db = db
 end
 
@@ -908,6 +1041,10 @@ local function PrintStatus()
         .. "  |  corpses marked: " .. ns.Count())
 end
 
+local function PrintIgnored()
+    for _, line in ipairs(ns.Ignored()) do Print(line) end
+end
+
 local function PrintHelp()
     Print("commands:")
     print("  /graves list (the marked corpses)   -  /graves test (three test markers around you)")
@@ -937,6 +1074,7 @@ SlashCmdList.GROUPGRAVES = function(msg)
 
     if cmd == "" or cmd == "help" or cmd == "status" then
         PrintStatus()
+        PrintIgnored()
         PrintHelp()
         return
 
@@ -1004,6 +1142,8 @@ SlashCmdList.GROUPGRAVES = function(msg)
             .. ", markers: " .. total .. " (" .. ns.Count() .. " shown)"
             .. ", world map: " .. (ns.Map and ns.Map.Describe() or "Map.lua not loaded"))
         if lastProblem then Print("last message problem: " .. lastProblem) end
+        PrintIgnored()
+        Print("the last " .. #db.commLog .. " messages out and in are saved in GroupGravesDB.commLog.")
         return
 
     else

@@ -7,9 +7,11 @@
 --     options, drag: move it), which picks a free spot the first time it appears;
 --   * an options window built from a list of rows (tick boxes, choices, sliders, buttons);
 --   * the same rows as a page under Options > AddOns, when the client has that.
--- It is drawn with the game's own pieces, laid out like the game's Options rows: the portrait
--- window (ButtonFrameTemplate), the Settings check box, dropdown and stepper slider, panel
--- buttons, the game's fonts and font colours. No Blizzard frame is hooked or changed.
+-- The rows copy the game's own Options rows (Blizzard_Settings_Shared/Blizzard_SettingControls,
+-- Gethe/wow-ui-source branch forever): the same templates, sizes, anchors, list padding and
+-- tooltip. The window is the game's portrait window (ButtonFrameTemplate) with those rows in
+-- its inset; the minimap button copies the game's own round minimap button
+-- (ExternalEventURLMinimapButtonTemplate). No Blizzard frame is hooked or changed.
 -- Every template piece is looked for before use, so a client (or a test) without one still
 -- gets working rows.
 local ADDON, ns = ...
@@ -28,14 +30,22 @@ local GRAY  = FontColor(GRAY_FONT_COLOR, 0.5, 0.5, 0.5)
 local RED   = FontColor(RED_FONT_COLOR, 1, 0.125, 0.125)
 local accent = GOLD                     -- the addon's own colour, set in Setup; minimap tooltip title only
 
-local WIDTH = 540                       -- the window
-local INNER = 480                       -- the rows
-local CONTROL_X = 230                   -- where a row's control starts; its label sits left of it
-local LABEL_W = CONTROL_X - 16
-local SLIDER_W = 200
-local ROW = 30
+-- The game's Options list (Blizzard_SettingsList.lua): rows 26 tall, 9 apart, 25 in from the
+-- list, which starts 15 left of and 2 under its 50-tall header, 10 down; 20 kept for the
+-- scroll bar. The Options container is 665 wide, so a row is 635. Inside a row everything
+-- hangs off its centre: label from 37 to CENTER-85, check box and slider at CENTER-80,
+-- dropdown at CENTER-48.
+local ROW_W = 635
+local ROW_H = 26
+local SPACING = 9
+local PAD = 10                          -- list padding above the first row and below the last
+local LABEL_X = 37
+local LABEL_W = ROW_W / 2 - 85 - LABEL_X
+local CONTROL_X = ROW_W / 2 - 80        -- the fallback radios start where the controls do
+local INSET_W = ROW_W + 10 + 20         -- 10 for the row hover reaching left, 20 for the scroll bar
+local WIDTH = INSET_W + 4 + 6           -- ButtonFrameTemplate's inset sits 4 in on the left, 6 on the right
 local MAX_VIEW = 520                    -- taller windows scroll
-local PAGE_VIEW = 470                   -- the same on the Options page, under its title
+local PAGE_VIEW = 530                   -- the Options list's own view: 601 - 52 + 2, less its padding
 
 local spec                              -- what the addon passed to Kit.Setup
 local pages = {}                        -- every built set of rows (the window, the Options page)
@@ -98,40 +108,63 @@ local function Text(parent, font)
     return fs
 end
 
--- The game's tooltip layout: gold title, white body.
-local function ShowTip(owner, title, body)
-    if not (GameTooltip and body) then return end
-    GameTooltip:SetOwner(owner, "ANCHOR_RIGHT")
-    GameTooltip:SetText(title or "", GOLD[1], GOLD[2], GOLD[3])
-    GameTooltip:AddLine(body, WHITE[1], WHITE[2], WHITE[3], true)
-    GameTooltip:Show()
+-- The Options tooltip (DefaultTooltipMixin and Settings.InitTooltip): the game's SettingsTooltip
+-- to the right of what is hovered, the setting's name in white, its description in gold.
+local function Tip()
+    return SettingsTooltip or GameTooltip
+end
+
+local function AddTipLines(tip, title, body)
+    tip:AddLine(title or "", WHITE[1], WHITE[2], WHITE[3], true)
+    if body then tip:AddLine(body, GOLD[1], GOLD[2], GOLD[3], true) end
+end
+
+local function ShowTip(owner, title, body, x)
+    local tip = Tip()
+    if not (tip and title) then return end
+    tip:SetOwner(owner, "ANCHOR_RIGHT", x or 0, 0)
+    AddTipLines(tip, title, body)
+    tip:Show()
 end
 
 local function HideTip()
-    if GameTooltip then GameTooltip:Hide() end
+    local tip = Tip()
+    if tip then tip:Hide() end
 end
 
--- Tooltip on hover, added after any scripts the widget's template already has.
-local function OnHover(widget, title, body)
-    local function enter(self) ShowTip(self, title, body) end
+-- Tooltip on hover, added after any scripts the widget's template already has. `hover` is
+-- the row's hover background, shown while the mouse is over the widget.
+local function OnHover(widget, title, body, x, hover)
+    local function enter(self)
+        ShowTip(self, title, body, x)
+        if hover then hover:Show() end
+    end
+    local function leave()
+        HideTip()
+        if hover then hover:Hide() end
+    end
     if widget.HookScript and widget.GetScript and widget:GetScript("OnEnter") then
         widget:HookScript("OnEnter", enter)
-        widget:HookScript("OnLeave", HideTip)
+        widget:HookScript("OnLeave", leave)
     else
         widget:SetScript("OnEnter", enter)
-        widget:SetScript("OnLeave", HideTip)
+        widget:SetScript("OnLeave", leave)
     end
 end
 
--- The red panel button, sized to its text. Fit() resizes it for a new text.
+-- The Options button (SettingsButtonControlMixin): the red panel button, 200 wide, the
+-- template's own height. Wider only when its text would not fit. Fit() gives the width a
+-- new text needs.
+local BUTTON_W = 200
 local function PanelButton(parent, label, onClick)
     local b = CreateFrame("Button", nil, parent, "UIPanelButtonTemplate")
     function b:Fit(text)
         self:SetText(text)
         local w = Num(self.GetTextWidth and self:GetTextWidth()) or #text * 6
-        return max(96, w + 28)
+        return max(BUTTON_W, w + 28)
     end
-    b:SetSize(b:Fit(label), 22)
+    b:SetWidth(b:Fit(label))
+    if not Num(b:GetHeight()) or b:GetHeight() <= 0 then b:SetHeight(22) end   -- no template here
     b:SetScript("OnClick", function(self) if onClick then onClick(self) end end)
     return b
 end
@@ -139,13 +172,12 @@ end
 ----------------------------------------------------------------------
 -- Rows. Each builder returns the row's frame (with :Sync() when it shows
 -- a setting) and its height. Rows are pinned by their two top corners.
--- Like the game's Options rows: a gold label on the left, the control to
--- its right at CONTROL_X.
+-- Each copies the game's Options row for the same job.
 ----------------------------------------------------------------------
 local build = {}
 
-local function NewRow(parent, y, height, kind)
-    local row = CreateFrame(kind or "Frame", nil, parent)
+local function NewRow(parent, y, height)
+    local row = CreateFrame("Frame", nil, parent)
     row:SetPoint("TOPLEFT", parent, "TOPLEFT", 0, y)
     row:SetPoint("TOPRIGHT", parent, "TOPRIGHT", 0, y)
     row:SetHeight(height)
@@ -156,69 +188,101 @@ local function Changed()
     Kit.Sync()
 end
 
--- The gold label of a row. Long labels wrap; returns the row height they need.
+local function Height(fs, text, perLine)
+    local h = Num(fs:GetStringHeight())
+    if h and h >= 8 then return h end
+    -- the client can't say (a test): about 6 px a character, 13 a line
+    return 13 * max(1, math.ceil(#(text or "") * 6 / perLine))
+end
+
+-- SettingsListElementTemplate: the gold label from 37 to the row's centre - 85, and its
+-- Tooltip frame over the left of the row, which shows the row's hover background
+-- (HoverBackgroundTemplate: white at 0.1, from 10 left of the row to 5 short of its right).
+-- The game's label is one line and cuts off; ours wraps, because our labels are sentences
+-- and a cut-off label hides what the setting does. Returns the row height.
 local function Label(row, def)
-    row.label = Text(row, "GameFontNormal")
-    row.label:SetPoint("TOPLEFT", 0, -8)
+    local area = CreateFrame("Frame", nil, row)
+    area:SetPoint("TOPLEFT", row, "TOPLEFT", 0, 0)
+    area:SetPoint("BOTTOMRIGHT", row, "BOTTOM", -80, 0)
+    area:EnableMouse(true)
+    local hover = area:CreateTexture(nil, "BACKGROUND")
+    hover:SetPoint("TOPLEFT", row, "TOPLEFT", -10, 0)
+    hover:SetPoint("BOTTOMRIGHT", row, "BOTTOMRIGHT", -5, 0)
+    hover:SetColorTexture(1, 1, 1, 0.1)
+    hover:Hide()
+    row.tooltip, row.hover = area, hover
+    OnHover(area, def.label, def.tip, -10, hover)
+
+    row.label = row:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+    row.label:SetJustifyH("LEFT")
     row.label:SetWidth(LABEL_W)
-    row.label:SetJustifyV("TOP")
     row.label:SetText(def.label or "")
-    row:EnableMouse(true)
-    OnHover(row, def.label, def.tip)
-    local height = Num(row.label:GetStringHeight())
-    if not height or height < 8 then height = 13 end
-    height = max(ROW, height + 16)
+    local height = max(ROW_H, Height(row.label, def.label, LABEL_W) + 8)
+    -- the row's LEFT, held there if a fallback control below makes the row taller
+    row.label:SetPoint("LEFT", row, "TOPLEFT", LABEL_X, -height / 2)
     row:SetHeight(height)
     return height
 end
 
+-- SettingsListSectionHeaderTemplate: 45 tall, the title in GameFontHighlightLarge at 7, -16.
 function build.header(parent, y, def)
-    local top = y < 0 and 14 or 2       -- room above every header but the first
-    local row = NewRow(parent, y, top + 26)
-    row.text = Text(row, "GameFontHighlightLarge")
-    row.text:SetPoint("TOPLEFT", 0, -top)
-    row.text:SetText(def.text or "")
-    return row, top + 26
-end
-
-function build.note(parent, y, def)
-    local row = NewRow(parent, y, ROW)
-    row.text = Text(row, "GameFontHighlightSmall")
-    row.text:SetPoint("TOPLEFT", 0, -4)
-    row.text:SetWidth(INNER)
-    row.text:SetSpacing(2)
+    local row = NewRow(parent, y, 45)
+    row.text = row:CreateFontString(nil, "OVERLAY", "GameFontHighlightLarge")
+    row.text:SetJustifyH("LEFT")
     row.text:SetJustifyV("TOP")
+    row.text:SetPoint("TOPLEFT", 7, -16)
     row.text:SetText(def.text or "")
-    -- A wrapped line is about 80 characters at this width; used when the client can't say.
-    local height = Num(row.text:GetStringHeight())
-    if not height or height < 8 then height = 13 * math.ceil(#(def.text or "") / 80) end
-    row:SetHeight(height + 10)
-    return row, height + 10
+    return row, 45
 end
 
+-- A line of text. The Options list's text-only row (SettingsAddOnDisabledLabelTemplate) starts
+-- at 37, 0; ours is in the small white font and wraps across the row.
+local NOTE_W = ROW_W - 2 * LABEL_X
+function build.note(parent, y, def)
+    local row = NewRow(parent, y, ROW_H)
+    row.text = row:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+    row.text:SetJustifyH("LEFT")
+    row.text:SetJustifyV("TOP")
+    row.text:SetPoint("TOPLEFT", LABEL_X, 0)
+    row.text:SetWidth(NOTE_W)
+    row.text:SetText(def.text or "")
+    local height = Height(row.text, def.text, NOTE_W) + 2
+    row:SetHeight(height)
+    return row, height
+end
+
+-- SettingsCheckboxControlTemplate: the label, and SettingsCheckboxTemplate (30x29, minimal
+-- check box art, its own hover background and tooltip) at the row's centre - 80.
 function build.check(parent, y, def)
-    local row = NewRow(parent, y, ROW, "Button")
+    local row = NewRow(parent, y, ROW_H)
     local height = Label(row, def)
-    local box = FromTemplate("CheckButton", row, "MinimalCheckboxArtTemplate")
-        or CreateFrame("CheckButton", nil, row, "UICheckButtonTemplate")
+    local box = FromTemplate("CheckButton", row, "SettingsCheckboxTemplate")
+    local own = box and type(box.Init) == "function" and type(box.SetTooltipFunc) == "function"
+    if box and not own then box:Hide(); box = nil end
+    if not box then
+        box = FromTemplate("CheckButton", row, "MinimalCheckboxArtTemplate")
+            or CreateFrame("CheckButton", nil, row, "UICheckButtonTemplate")
+        box:SetSize(30, 29)
+    end
     row.box = box
-    box:SetSize(30, 29)
-    box:SetPoint("TOPLEFT", row, "TOPLEFT", CONTROL_X - 5, 0)
+    box:SetPoint("LEFT", row, "CENTER", -80, 0)
+    if own then
+        pcall(box.Init, box, false, function() AddTipLines(Tip(), def.label, def.tip) end)
+    else
+        OnHover(box, def.label, def.tip, 0, row.hover)
+    end
     function row:Sync()
         local ok, on = Run(def.get)
         box:SetChecked(ok and on and true or false)
     end
-    local function Toggle()
+    box:SetScript("OnClick", function()
         local ok, on = Run(def.get)
         if ok then
             Run(def.set, not on)
             Sound(SOUNDKIT and (on and SOUNDKIT.IG_MAINMENU_OPTION_CHECKBOX_OFF or SOUNDKIT.IG_MAINMENU_OPTION_CHECKBOX_ON))
         end
         Changed()
-    end
-    box:SetScript("OnClick", Toggle)
-    row:SetScript("OnClick", Toggle)    -- the label toggles it too
-    OnHover(box, def.label, def.tip)
+    end)
     return row, height
 end
 
@@ -230,7 +294,7 @@ local function Flow(row, items, left, top, line, gap)
     local x, y = left, top
     for _, item in ipairs(items) do
         local w = Width(item)
-        if x > left and x + w > INNER then
+        if x > left and x + w > ROW_W then
             x, y = left, y - line
         end
         item:ClearAllPoints()
@@ -250,16 +314,33 @@ local function Option(def, option)
     return option[1], option[2] or tostring(option[1]), option[3] or def.tip
 end
 
--- A choice is the game's dropdown with one radio line per option.
-local function Dropdown(row, def)
-    local dd = FromTemplate("DropdownButton", row, "WowStyle1DropdownTemplate")
-    if not (dd and type(dd.SetupMenu) == "function") then
-        if dd then dd:Hide() end
-        return
+-- SettingsDropdownControlTemplate: the label, and SettingsDropdownWithButtonsTemplate (the
+-- 220-wide dropdown between its two arrow steppers) at the row's centre - 48, 3 up. One radio
+-- line per option. Without that template, the bare dropdown where its middle would be.
+local function DropdownControl(row)
+    local control = FromTemplate("Frame", row, "SettingsDropdownWithButtonsTemplate")
+    if control and Has(control, "Dropdown") and type(control.Dropdown.SetupMenu) == "function" then
+        control:SetPoint("LEFT", row, "CENTER", -48, 3)
+        control.Dropdown:SetWidth(220)
+        row.control = control
+        return control.Dropdown
     end
+    if control then control:Hide() end
+    for _, template in ipairs({ "WowStyle2DropdownTemplate", "WowStyle1DropdownTemplate" }) do
+        local dd = FromTemplate("DropdownButton", row, template)
+        if dd and type(dd.SetupMenu) == "function" then
+            dd:SetWidth(220)
+            dd:SetPoint("LEFT", row, "CENTER", -48 + 1.5, 3)   -- centred in the 223-wide control
+            return dd
+        end
+        if dd then dd:Hide() end
+    end
+end
+
+local function Dropdown(row, def)
+    local dd = DropdownControl(row)
+    if not dd then return end
     row.dropdown = dd
-    dd:SetWidth(min(220, INNER - CONTROL_X))
-    dd:SetPoint("TOPLEFT", row, "TOPLEFT", CONTROL_X, -3)
     dd:SetupMenu(function(_, root)
         for _, option in ipairs(def.options) do
             local value, text, tip = Option(def, option)
@@ -272,7 +353,7 @@ local function Dropdown(row, def)
             end
         end
     end)
-    OnHover(dd, def.label, def.tip)
+    OnHover(dd, def.label, def.tip, 0)
     function row:Sync()
         if dd.IsMenuOpen and dd:IsMenuOpen() then return end   -- it updates itself on a pick
         if dd.GenerateMenu then dd:GenerateMenu() end
@@ -300,13 +381,14 @@ local function Radios(row, def, height)
             Run(def.set, value)
             Changed()
         end)
-        OnHover(r, def.label, tip)
+        OnHover(r, def.label, tip, 0)
         row.chips[#row.chips + 1] = r
     end
-    if ItemsWidth(row.chips, 0) <= INNER - CONTROL_X then
-        height = max(height, Flow(row, row.chips, CONTROL_X, -7, 22, 0) + 8)
+    if ItemsWidth(row.chips, 0) <= ROW_W - CONTROL_X then
+        local used = Flow(row, row.chips, CONTROL_X, -5, 22, 0)
+        height = max(height, used + 4)
     else
-        height = height - 4 + Flow(row, row.chips, 12, -(height - 4), 22, 0)   -- under the label
+        height = height + Flow(row, row.chips, LABEL_X, -height, 22, 0) + 4   -- under the label
     end
     function row:Sync()
         local ok, now = Run(def.get)
@@ -316,7 +398,7 @@ local function Radios(row, def, height)
 end
 
 function build.choice(parent, y, def)
-    local row = NewRow(parent, y, ROW)
+    local row = NewRow(parent, y, ROW_H)
     local height = Label(row, def)
     if not Dropdown(row, def) then height = Radios(row, def, height) end
     row:SetHeight(height)
@@ -328,8 +410,10 @@ local function Format(def, value)
     return (def.format or "%d"):format(value)
 end
 
+-- SettingsSliderControlTemplate: the label, and MinimalSliderWithSteppersTemplate, 250 wide,
+-- at the row's centre - 80, 3 up, its tooltip to the right of the bar (20 out).
 function build.slider(parent, y, def)
-    local row = NewRow(parent, y, ROW)
+    local row = NewRow(parent, y, ROW_H)
     local height = Label(row, def)
     local step = def.step or 1
     local function Clamp(v) return max(def.min, min(def.max, v)) end
@@ -363,14 +447,14 @@ function build.slider(parent, y, def)
     if w and type(w.Init) == "function" and Has(w, "Slider") and Has(w, "RightText")
         and Has(mixin, "Event") and Has(mixin, "Label") then
         row.control, row.slider, row.value = w, w.Slider, w.RightText
-        w:SetWidth(SLIDER_W)
-        w:SetPoint("LEFT", row, "TOPLEFT", CONTROL_X, -15)
+        w:SetWidth(250)
+        w:SetPoint("LEFT", row, "TOPLEFT", ROW_W / 2 - 80, -height / 2 + 3)
         local steps = max(1, floor((def.max - def.min) / step + 0.5))
         row.syncing = true
         w:Init(Saved(), def.min, def.max, steps, { [mixin.Label.Right] = Shown })
         row.syncing = false
         w:RegisterCallback(mixin.Event.OnValueChanged, function(_, value) OnValue(value) end, row)
-        OnHover(w.Slider, def.label, def.tip)
+        OnHover(w.Slider, def.label, def.tip, 20)
         function row:Sync()
             self.syncing = true
             w:SetValue(Saved())
@@ -383,8 +467,8 @@ function build.slider(parent, y, def)
     if w then w:Hide() end
     local s = FromTemplate("Slider", row, "UISliderTemplate") or CreateFrame("Slider", nil, row)
     row.slider = s
-    s:SetPoint("LEFT", row, "TOPLEFT", CONTROL_X, -15)
-    s:SetSize(SLIDER_W - 40, 17)
+    s:SetPoint("LEFT", row, "TOPLEFT", ROW_W / 2 - 80, -height / 2 + 3)
+    s:SetSize(250 - 40, 17)
     s:SetOrientation("HORIZONTAL")
     s:EnableMouse(true)
     s:SetMinMaxValues(def.min, def.max)
@@ -400,14 +484,16 @@ function build.slider(parent, y, def)
         self.value:SetText(Shown(now))
     end
     s:SetScript("OnValueChanged", function(_, value) OnValue(value) end)
-    OnHover(s, def.label, def.tip)
+    OnHover(s, def.label, def.tip, 20)
     return row, height
 end
 
+-- SettingButtonControlTemplate without a label: one button to a 26-tall row, at 37 (where the
+-- label would start), the rows 9 apart.
 function build.buttons(parent, y, def)
-    local row = NewRow(parent, y, ROW)
+    local row = NewRow(parent, y, ROW_H)
     row.buttons = {}
-    for _, b in ipairs(def.buttons) do
+    for i, b in ipairs(def.buttons) do
         local pb
         pb = PanelButton(row, b.label, function(self)
             -- A button that throws something away asks for a second click.
@@ -438,29 +524,33 @@ function build.buttons(parent, y, def)
             pb:Fit(b.label)
             pb:SetWidth(max(asked, Num(pb:GetWidth()) or 0))
         end
-        OnHover(pb, b.label, b.tip)
+        OnHover(pb, b.label, b.tip, -10)
+        local top = (i - 1) * (ROW_H + SPACING)
+        pb:SetPoint("LEFT", row, "TOPLEFT", LABEL_X, -top - ROW_H / 2)
         row.buttons[#row.buttons + 1] = pb
     end
-    local height = Flow(row, row.buttons, 0, -4, 28, 8) + 2
+    local height = max(1, #row.buttons) * (ROW_H + SPACING) - SPACING
     row:SetHeight(height)
     return row, height
 end
 
--- Builds `rows` into `parent` (INNER wide). Returns a page: its widgets and its height.
+-- Builds `rows` into `parent` (ROW_W wide) like the game's list: PAD above the first row and
+-- below the last, SPACING between. Returns a page: its widgets and its height.
 local function BuildPage(parent, rows)
     local page = { widgets = {}, height = 0 }
-    local y = 0
+    local y = -PAD
     for _, def in ipairs(rows) do
         local builder = build[def.kind]
         if builder then
             local ok, row, height = Run(builder, parent, y, def)
             if ok and row then
                 page.widgets[#page.widgets + 1] = row
-                y = y - (height or ROW)
+                y = y - (height or ROW_H) - SPACING
             end
         end
     end
-    page.height = -y
+    if #page.widgets > 0 then y = y + SPACING end
+    page.height = -y + PAD
     pages[#pages + 1] = page
     return page
 end
@@ -491,7 +581,7 @@ local function Place(host, content, left, top, height, view)
         local sf = FromTemplate("ScrollFrame", host, "ScrollFrameTemplate")
         if sf and type(sf.SetScrollChild) == "function" then
             sf:SetPoint("TOPLEFT", host, "TOPLEFT", left, top)
-            sf:SetSize(INNER, view)
+            sf:SetSize(ROW_W, view)
             content:SetParent(sf)
             content:ClearAllPoints()
             content:SetPoint("TOPLEFT", sf, "TOPLEFT", 0, 0)
@@ -510,15 +600,6 @@ end
 -- The options window: the game's portrait window, the addon's icon in
 -- the portrait, the rows in the inset.
 ----------------------------------------------------------------------
-local function Version()
-    local version = spec.version
-    if not version and C_AddOns and C_AddOns.GetAddOnMetadata then
-        local ok, v = pcall(C_AddOns.GetAddOnMetadata, ADDON, "Version")
-        if ok and Readable(v) and type(v) == "string" and v ~= "" then version = v end
-    end
-    return version
-end
-
 -- The game's portrait window; on a client without it, the plain framed window, then the
 -- dialog border.
 local DIALOG_BACKDROP = {
@@ -576,21 +657,17 @@ local function CreateWindow()
             close:SetScript("OnClick", function() f:Hide() end)
         end
     end
-    local version = Version()
-    if version then
-        f.version = Text(f, "GameFontDisableSmall")
-        if portrait then f.version:SetPoint("TOPLEFT", 66, -36) else f.version:SetPoint("TOPLEFT", 18, -30) end
-        f.version:SetText("Version " .. version)
-    end
     f:SetScript("OnShow", function() Sound(SOUNDKIT and SOUNDKIT.IG_CHARACTER_INFO_OPEN) end)
     f:SetScript("OnHide", function() Sound(SOUNDKIT and SOUNDKIT.IG_CHARACTER_INFO_CLOSE) end)
 
-    -- In the portrait window the rows go in its inset, which starts 60 below the top (under
-    -- the portrait) and ends 4 above the bottom. Otherwise under the title.
-    local host, left, top, below = f, 18, -50, 22
-    if portrait and Has(f, "Inset") then host, left, top, below = f.Inset, 16, -14, 20 end
+    -- In the portrait window the rows go in its inset (4 in on the left, 60 below the top,
+    -- under the portrait; 6 in on the right and 4 above the bottom with the button bar
+    -- hidden), 10 in so a row's hover background meets the inset's edge, and the list's own
+    -- padding above and below. Otherwise under the title.
+    local host, left, top, below = f, 18, -30, 14
+    if portrait and Has(f, "Inset") then host, left, top, below = f.Inset, 10, 0, 4 end
     f.content = CreateFrame("Frame", nil, f)
-    f.content:SetSize(INNER, 10)
+    f.content:SetSize(ROW_W, 10)
     local page = BuildPage(f.content, Rows())
     local shown
     shown, f.scroll = Place(host, f.content, left, top, page.height, MAX_VIEW)
@@ -626,28 +703,25 @@ function Kit.Toggle()
     if Kit.IsOpen() then Kit.Close() else Kit.Open() end
 end
 
--- The same rows as a page under Options > AddOns, laid out like the game's own pages: the big
--- title, the divider under it, the rows below. Skipped quietly on a client without it.
+-- The same rows as a page under Options > AddOns, laid out like the game's own pages
+-- (SettingsListTemplate): the title in GameFontHighlightHuge at 7, -22 of the 50-tall header,
+-- the divider at its foot, the rows where the list puts them (10 in, 52 down, then the
+-- list's padding). Skipped quietly on a client without it.
 local function RegisterPage()
     if not (Settings and Settings.RegisterCanvasLayoutCategory and Settings.RegisterAddOnCategory) then return end
     local panel = CreateFrame("Frame")
     panel.name = spec.title
     panel:Hide()
-    panel.title = Text(panel, "GameFontHighlightHuge")
+    panel.title = panel:CreateFontString(nil, "ARTWORK", "GameFontHighlightHuge")
+    panel.title:SetJustifyH("LEFT")
     panel.title:SetPoint("TOPLEFT", 7, -22)
     panel.title:SetText(spec.title)
-    local version = Version()
-    if version then
-        panel.version = Text(panel, "GameFontDisableSmall")
-        panel.version:SetPoint("BOTTOMLEFT", panel.title, "BOTTOMRIGHT", 10, 2)
-        panel.version:SetText("Version " .. version)
-    end
     panel.divider = panel:CreateTexture(nil, "ARTWORK")
     if panel.divider.SetAtlas then panel.divider:SetAtlas("Options_HorizontalDivider", true) end
     panel.divider:SetPoint("TOP", 0, -50)
 
     panel.content = CreateFrame("Frame", nil, panel)
-    panel.content:SetSize(INNER, 10)
+    panel.content:SetSize(ROW_W, 10)
     local rows = Rows()
     if spec.openOptions then
         rows = {
@@ -656,7 +730,7 @@ local function RegisterPage()
         }
     end
     local page = BuildPage(panel.content, rows)
-    panel.scroll = select(2, Place(panel, panel.content, 24, -66, page.height, PAGE_VIEW))
+    panel.scroll = select(2, Place(panel, panel.content, 10, -52, page.height, PAGE_VIEW + 2 * PAD))
     panel:SetScript("OnShow", function() Kit.Sync() end)
     local category = Settings.RegisterCanvasLayoutCategory(panel, spec.title)
     Settings.RegisterAddOnCategory(category)
@@ -664,10 +738,13 @@ local function RegisterPage()
 end
 
 ----------------------------------------------------------------------
--- Minimap button: the game's tracking-button art (round background,
--- the addon's icon, the gold ring, the round highlight).
+-- Minimap button: a copy of this client's own round minimap button
+-- (ExternalEventURLMinimapButtonTemplate, Blizzard_Minimap/Shared, with
+-- the Camelot border from Blizzard_Minimap/Camelot/Minimap.lua): 32x32,
+-- the icon 34x34 in a round mask, the 42x42 frame ring over it, the icon
+-- sinking 1 right and 1 down while pressed. No highlight texture, as there.
 ----------------------------------------------------------------------
-local BUTTON, RIM = 31, 5               -- LibDBIcon's size; the centre sits 5 outside the rim
+local BUTTON, RIM = 32, 5               -- the centre sits 5 outside the rim
 local SPOTS = { 225, 195, 255, 165, 285, 135, 315, 105, 345, 75, 15, 45 }
 local GAP = 22                          -- degrees two buttons need between them
 
@@ -781,38 +858,43 @@ local function CreateButton()
     b:SetSize(BUTTON, BUTTON)
     b:SetFrameStrata("MEDIUM")
     b:SetFrameLevel(8)
-    b:SetHighlightTexture("Interface\\Minimap\\UI-Minimap-ZoomButton-Highlight")
     b:RegisterForClicks("LeftButtonUp", "RightButtonUp")
     b:RegisterForDrag("LeftButton")
-    local background = b:CreateTexture(nil, "BACKGROUND")
-    background:SetSize(24, 24)
-    background:SetPoint("CENTER")
-    background:SetTexture("Interface\\Minimap\\UI-Minimap-Background")
     b.icon = b:CreateTexture(nil, "ARTWORK")
-    b.icon:SetSize(18, 18)
+    b.icon:SetSize(34, 34)
     b.icon:SetPoint("CENTER")
     b.icon:SetTexture(spec.icon)
-    b.icon:SetTexCoord(0.07, 0.93, 0.07, 0.93)
-    local ring = b:CreateTexture(nil, "OVERLAY")
-    ring:SetSize(50, 50)
-    ring:SetPoint("TOPLEFT")
-    ring:SetTexture("Interface\\Minimap\\MiniMap-TrackingBorder")
+    pcall(function()
+        local mask = b:CreateMaskTexture()
+        mask:SetTexture("Interface\\CharacterFrame\\TempPortraitAlphaMask", "CLAMPTOBLACKADDITIVE", "CLAMPTOBLACKADDITIVE")
+        mask:SetAllPoints(b)
+        b.icon:AddMaskTexture(mask)
+        b.mask = mask
+    end)
+    b.border = b:CreateTexture(nil, "OVERLAY")
+    b.border:SetSize(42, 42)
+    b.border:SetPoint("CENTER")
+    local ATLAS = "UI-HUD-Minimap-Frame-Cycle"
+    local hasAtlas = C_Texture and type(C_Texture.GetAtlasInfo) == "function" and select(2, pcall(C_Texture.GetAtlasInfo, ATLAS))
+    if type(hasAtlas) == "table" and b.border.SetAtlas then
+        b.border:SetAtlas(ATLAS)
+    else
+        b.border:SetTexture("Interface\\Common\\RingBorder")   -- the template's own file
+    end
 
-    -- pressed: the icon sinks a little, like the game's own minimap buttons
-    b:SetScript("OnMouseDown", function(self)
+    -- pressed: the icon sinks 1 right and 1 down (OnButtonStateChanged in the game's mixin)
+    local function Press(self, down)
         self.icon:ClearAllPoints()
-        self.icon:SetPoint("CENTER", 1, -1)
-    end)
-    b:SetScript("OnMouseUp", function(self)
-        self.icon:ClearAllPoints()
-        self.icon:SetPoint("CENTER")
-    end)
+        self.icon:SetPoint("CENTER", down and 1 or 0, down and -1 or 0)
+    end
+    b:SetScript("OnMouseDown", function(self) Press(self, true) end)
+    b:SetScript("OnMouseUp", function(self) Press(self, false) end)
     b:SetScript("OnClick", function(_, mouseButton) Kit.Click(mouseButton) end)
     b:SetScript("OnEnter", function(self) if not self.dragging then Run(ButtonTooltip, self) end end)
-    b:SetScript("OnLeave", HideTip)
+    b:SetScript("OnLeave", function() if GameTooltip then GameTooltip:Hide() end end)
     b:SetScript("OnDragStart", function(self)
         self.dragging = true
-        HideTip()
+        if GameTooltip then GameTooltip:Hide() end
         self:SetScript("OnUpdate", function(me)
             local angle = CursorAngle()
             if angle then
@@ -830,6 +912,7 @@ local function CreateButton()
         Store().angle = self.angle
         PlaceButton()
     end)
+    b:SetScript("OnHide", function(self) Press(self, false) end)
 
     local store = Store()
     b.angle = Num(store.angle)
@@ -890,7 +973,7 @@ end
 
 ----------------------------------------------------------------------
 -- Setup. Call it once the saved settings are loaded.
---   title, icon, accent = { r, g, b }, version (optional), print = function(msg)
+--   title, icon, accent = { r, g, b }, print = function(msg)
 --   db = function() return <saved settings table> end
 --   rows = { ... } or a function returning them
 --   click = function() end      left-click (default: open the options), clickHint = "..."
