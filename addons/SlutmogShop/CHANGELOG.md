@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.10.5
+
+- Mailbox mode no longer lists your own emotes (/hello and the like) as visitors. It now knows them by the game's "You ..." wording and by your character, not only by name.
+- Button labels fit their buttons: each button is as wide as its text, and the big Send emote button shortens to "Send emote" when a long name would push it out of the window.
+- The emote preview can take two lines instead of running off the window; the help line at the bottom wraps too.
+
 ## 1.10.4
 
 - Mailbox: somebody who only targets you can be answered only in the first ten seconds, and only while they still have you targeted. After that their Emote button is greyed out and they leave the big button. If they target you again, the ten seconds start over.

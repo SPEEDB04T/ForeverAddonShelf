@@ -103,6 +103,23 @@ local function Me()
     return ok and Readable(name) and type(name) == "string" and name or nil
 end
 
+-- Makes a button wide enough for its label (at least w0, at most wmax). Returns the width.
+local function Fit(b, w0, wmax)
+    local tw
+    if b.GetTextWidth then
+        local ok, x = pcall(b.GetTextWidth, b)
+        if ok and type(x) == "number" then tw = x end
+    end
+    local w = w0
+    if tw then w = math.max(w0, math.ceil(tw) + 24) end
+    if wmax then w = math.min(w, wmax) end
+    b:SetWidth(w)
+    return w, tw and tw + 24 <= (wmax or math.huge)
+end
+M.Fit = Fit
+
+local CTA_W = 430 - 28          -- the row of big buttons, inside the window
+
 -- The full name of a unit ("Name" or "Name-Realm"), or nil.
 local function NameOf(unit)
     if type(UnitName) ~= "function" then return nil end
@@ -287,6 +304,7 @@ Sync = function()
             row.age:SetText(Ago(now - v.at))
             if v.reply then
                 row.emote:SetText("Emote")
+                Fit(row.emote, 62)
                 SetReply(row.emote, v)
                 row.emote:SetEnabled(CanReply(v, now))
                 row.emote:Show()
@@ -299,6 +317,7 @@ Sync = function()
             if v.pitch then
                 local pitched = v.pitchedAt and now - v.pitchedAt < PITCH_GAP
                 row.pitch:SetText(pitched and "Whispered" or "Whisper")
+                Fit(row.pitch, 72)
                 row.pitch:SetEnabled(not pitched and offer ~= nil)
                 row.pitch:Show()
             else
@@ -321,14 +340,22 @@ Sync = function()
         cta.line:SetText((NORMAL_FONT_COLOR_CODE or "") .. "Your emote:" .. (NORMAL_FONT_COLOR_CODE and "|r" or "") .. " "
             .. (Me() or "You") .. " " .. (Line(v) or ""))
         cta.line:Show()
-        cta.emote:SetText("Send emote to " .. who)
-        SetReply(cta.emote, v)
-        cta.emote:Show()
+        local pitched = v.pitchedAt and now - v.pitchedAt < PITCH_GAP
+        local canPitch = (v.pitch and offer ~= nil and not pitched) and true or false
         cta.again.visitor = v
         cta.again:Show()
-        local pitched = v.pitchedAt and now - v.pitchedAt < PITCH_GAP
         cta.pitch.visitor = v
-        cta.pitch:SetShown((v.pitch and offer ~= nil and not pitched) and true or false)
+        cta.pitch:SetShown(canPitch)
+        -- the row of big buttons must fit the window: the send button gets what is left
+        local room = CTA_W - Fit(cta.again, 90) - 6 - (canPitch and (Fit(cta.pitch, 110) + 6) or 0)
+        cta.emote:SetText("Send emote to " .. who)
+        local _, fits = Fit(cta.emote, 150, room)
+        if not fits then
+            cta.emote:SetText("Send emote")
+            Fit(cta.emote, 150, room)
+        end
+        SetReply(cta.emote, v)
+        cta.emote:Show()
     else
         cta.text:SetText(#visitors == 0 and "Nobody yet. Stand where they can see you." or "Nobody is waiting for an answer.")
         cta.text:SetFontObject(GameFontDisableLarge or GameFontDisable)
@@ -341,7 +368,7 @@ Sync = function()
         cta.pitch:Hide()
     end
     frame.status:SetText(manual and "No emotes back by itself here: the replies are your click."
-        or "Send emote: says the line above as an /e emote. Whisper price: your ware and price.")
+        or "Send emote says the line above as an emote. Whisper price whispers your ware.")
     Fade()
 end
 M.Sync = function() Sync() end
@@ -409,11 +436,24 @@ local function ReplyFor(text)
     return DEFAULT_REPLY
 end
 
-local function OnEmote(text, sender)
+-- Was it your own emote? The game shows those to you too ("You greet everyone with a hearty hello!").
+-- The name check alone missed them, so the wording and the sender's GUID count as well.
+local function Mine(text, sender, guid)
+    local me = Me()
+    if me and Short(sender) == me then return true end
+    if text:match("^You ") then return true end
+    if guid ~= nil and Readable(guid) and type(UnitGUID) == "function" then
+        local ok, mine = pcall(UnitGUID, "player")
+        if ok and Readable(mine) and mine ~= nil and mine == guid then return true end
+    end
+    return false
+end
+M.Mine = Mine
+
+local function OnEmote(text, sender, guid)
     if not (Readable(text) and Readable(sender) and type(text) == "string" and type(sender) == "string") then return end
     if sender == "" then return end
-    local me = Me()
-    if me and Short(sender) == me then
+    if Mine(text, sender, guid) then
         -- your own emote, as the game showed it: whoever it names has their answer ("You wink at Bob.")
         local hit = false
         for _, v in ipairs(visitors) do
@@ -539,7 +579,7 @@ function M.Pitch(v)
     return true
 end
 
-local TOP = 116                 -- title, who is waiting, the line, the big button
+local TOP = 130                 -- title, who is waiting, the line (two lines at most), the big button
 
 local function Build()
     if frame then return frame end
@@ -580,13 +620,15 @@ local function Build()
     cta.line = Text(f, "GameFontHighlight")       -- the reply as it will read in chat, in the emote colour
     cta.line:SetPoint("TOPLEFT", f, "TOPLEFT", 16, -56)
     cta.line:SetPoint("RIGHT", f, "RIGHT", -16, 0)
+    if cta.line.SetWordWrap then cta.line:SetWordWrap(true) end
+    if cta.line.SetMaxLines then pcall(cta.line.SetMaxLines, cta.line, 2) end
     do
         local c = ChatTypeInfo and ChatTypeInfo.EMOTE
         if c and c.r then cta.line:SetTextColor(c.r, c.g, c.b) else cta.line:SetTextColor(1, 0.5, 0.25) end
     end
     cta.line:Hide()
     cta.emote = ReplyButton(f, "Send emote", 190, 30)
-    cta.emote:SetPoint("TOPLEFT", f, "TOPLEFT", 14, -78)
+    cta.emote:SetPoint("TOPLEFT", f, "TOPLEFT", 14, -92)
     cta.emote:SetScript("OnEnter", ReplyTip)
     cta.emote:SetScript("OnLeave", HideTip)
     cta.again = Button(f, "Other line", 90, 30)
@@ -636,10 +678,13 @@ local function Build()
     end
     f.empty = Text(f, "GameFontDisable")
     f.empty:SetPoint("TOPLEFT", f, "TOPLEFT", 16, -TOP - 6)
+    f.empty:SetPoint("RIGHT", f, "RIGHT", -16, 0)
+    if f.empty.SetWordWrap then f.empty:SetWordWrap(true) end
     f.empty:SetText("Whoever emotes at you, whispers you or targets you shows up here.")
     f.status = Text(f, "GameFontHighlightSmall")
     f.status:SetPoint("BOTTOMLEFT", f, "BOTTOMLEFT", 14, 16)
     f.status:SetPoint("RIGHT", f, "RIGHT", -92, 0)
+    if f.status.SetWordWrap then f.status:SetWordWrap(true) end
     f.dance = Button(f, "Dance", 72)
     f.dance:SetPoint("BOTTOMRIGHT", f, "BOTTOMRIGHT", -12, 12)
     f.dance:SetScript("OnClick", function() Emote("DANCE") end)
@@ -660,9 +705,9 @@ function M.Start()
     end
     if not events then
         events = CreateFrame("Frame")
-        events:SetScript("OnEvent", function(_, event, text, sender)
+        events:SetScript("OnEvent", function(_, event, text, sender, ...)
             if not on then return end
-            if event == "CHAT_MSG_TEXT_EMOTE" then OnEmote(text, sender) else OnWhisper(text, sender) end
+            if event == "CHAT_MSG_TEXT_EMOTE" then OnEmote(text, sender, (select(10, ...))) else OnWhisper(text, sender) end
         end)
     end
     pcall(events.RegisterEvent, events, "CHAT_MSG_TEXT_EMOTE")
