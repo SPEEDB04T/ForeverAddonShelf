@@ -1,5 +1,10 @@
 # Changelog
 
+## 1.3.2
+
+- The shared ads are rewritten once more, this time in the shop's own voice: a shameless boutique owner writing straight-faced ad copy. No forced game puns. "Tired of being respected for your personality?", "Refunds if nobody looks. We have never paid one.", "Barely worn. That's how it's worn.", "Not what you'd wear to meet his mother. What you'd wear to meet his father."
+- The game only comes in where it fits by itself. Each piece now has 16 to 24 ads.
+
 ## 1.3.1
 
 - The shared ads (the ones for any piece, for each armor type, for legs and chests and for level ranges) are rewritten again, after a hostile review of every line. Each one now turns on an everyday word with a dirty second meaning: "Only thing that's gone down on you all week is the server?", "Cleared every instance in the game and nobody's been in yours?", "At 40 everyone gets a mount. In [piece] you might be one.", "Bind on Equip. Bring rope."
