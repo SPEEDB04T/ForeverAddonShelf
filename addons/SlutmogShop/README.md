@@ -6,13 +6,13 @@ Advertise your slutmog wares with one click. Each ad names your shop and the nex
 
 ## Ready-made ads
 
-Every piece on the slutmog list (the 148 items Slutmog Scout lists) comes with 16 to 23 ready-made ads. Some describe how the piece looks, some speak to the buyer as a player (plate at 40, repair bills, the healer, the mailbox, showing off gold). Suggestive, never explicit. For example:
+Every piece on the slutmog list (the 148 items Slutmog Scout lists) comes with 11 to 16 ready-made ads. They say plainly what the piece shows, or talk straight to the player who wants their character to look hot. Suggestive, never explicit. For example:
 
 > Keep getting ganked, never getting camped? Give them a reason to stay. [Tyrant's Legplates], 10 gold pieces at Smuttanie's Necessities.
 
-> Wear it, point at the floor and see who kneels. [Tyrant's Legplates], 10 gold pieces at Smuttanie's Necessities.
+> Want your character to look hot instead of well geared? [Tyrant's Legplates], 10 gold pieces at Smuttanie's Necessities.
 
-> It's a metal thong. We can call it legplates if the guards ask. Smuttanie's Necessities has [Lord's Legguards] for 15 gold pieces.
+> It's a metal thong. Both legs are bare from hip to boot. Smuttanie's Necessities has [Lord's Legguards] for 15 gold pieces.
 
 A piece's ads take turns, each used once before any repeats. Wares that are not on the list use your own openers and ad lines (below). `/slutshop ads [item]` shows a piece's ads filled in; **Options > Which ads** picks ready-made ads only (the default), ready-made and your own by turns, or only your own.
 

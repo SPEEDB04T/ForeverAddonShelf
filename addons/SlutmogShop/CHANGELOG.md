@@ -1,5 +1,10 @@
 # Changelog
 
+## 1.3.4
+
+- The ads are plain now. Three hostile reviews went over every line (does it fit how the game really works, does it read as trying too hard, would a buyer care) and most of the jokes did not survive. What is left says what the piece shows ("Long trousers with both hips cut out. Ankles covered, hips bare.") or talks straight to the player who wants it ("Want your character to look hot instead of well geared?", "Your tier set is ugly. Mog over it.").
+- Gone: lines that got the game wrong (character creation, the login screen, benches, armor that swings), the made-up shop staff, and the tacked-on punchlines. Each piece has 11 to 16 ads.
+
 ## 1.3.3
 
 - New ads that talk to the person who buys this, the player behind the character: "You'll be looking at her from behind for 300 hours. Choose the view.", "You didn't roll a female character for the casting animations.", "If you're still reading this, you're the customer.", "'It's for the collection.' Of course it is." Fifteen of them, mixed in with the rest; seven weaker lines are gone.
