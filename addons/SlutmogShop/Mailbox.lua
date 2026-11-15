@@ -1,11 +1,14 @@
--- Slutmog Shop: mailbox mode. For standing around a city mailbox in your wares: the shop emotes
--- back at people who emote at you, keeps a list of who looked, emoted and whispered, and gives
--- each of them a one-click reply. /slutshop mailbox turns it on; closing its window turns it off.
+-- Slutmog Shop: mailbox mode. For standing around a city mailbox in your wares: the shop keeps a
+-- list of who looked at you, emoted at you and whispered you, puts the one who is waiting for an
+-- answer on a big button at the top, and gives everybody a one-click reply. /slutshop mailbox (or
+-- /smog mailbox) turns it on; closing its window turns it off.
 --
--- What it does by itself is emotes only, and few of them (one per person every two minutes, one
--- every six seconds at most). It never whispers or speaks without a click: the pitch is a button,
--- and only for somebody who emoted at you or whispered you first. If the game refuses emotes from
--- addons, the emote buttons in the list do the same thing with a click.
+-- A reply button is a secure button: the click targets that person and does the emote, so the
+-- emote really goes at them ("You wink at Bob."). The game does not let an addon target anybody
+-- without a click, so what the shop does by itself is the dance and a try at emoting back (which
+-- reaches the person only where the game allows it), and few of those: one per person every two
+-- minutes, one every six seconds at most. It never whispers or speaks without a click: the pitch
+-- is a button, and only for somebody who emoted at you or whispered you first.
 local ADDON, ns = ...
 local M = {}
 ns.Mailbox = M
@@ -16,6 +19,12 @@ local LOOK_GAP = 900            -- ... at somebody who only looked
 local GLOBAL_GAP = 6            -- seconds between any two emotes by itself
 local PITCH_GAP = 600           -- seconds before the same person can be pitched again
 local KEEP = 20                 -- visitors remembered (this session only; nothing is saved)
+local WAIT = 300                -- seconds somebody counts as waiting for an answer
+local FADE_FROM, FADE_TO = 60, 300      -- a row fades between these ages...
+local FADE_MIN, DONE_ALPHA = 0.35, 0.55 -- ... down to this; an answered row is dimmed to this at once
+local LOOK_KEEP, KEEP_FOR = 600, 1800   -- seconds a looker / an emoter or whisperer stays listed
+local RELOOK = 120              -- somebody who looks again after this long is new again
+local ALERT_GAP = 3             -- seconds between two alert sounds
 
 -- Their emote, by a word in its text, and what goes back. First match wins.
 local REPLIES = {
@@ -30,6 +39,11 @@ local REPLIES = {
 -- Nothing goes back to these.
 local RUDE = { "spit", "rude", "slap", "insult", "mock", "taunt", "pity", "puke", "fart", "disgust", "threaten", "angry", "bonk" }
 local DEFAULT_REPLY = { nil, "WINK", "Wink" }
+-- The big button's words, by emote.
+local PHRASE = {
+    BLUSH = "Blush at %s", WINK = "Wink at %s", FLIRT = "Flirt with %s", CURTSEY = "Curtsey to %s", DANCE = "Dance with %s",
+    WAVE = "Wave at %s", HUG = "Hug %s", GIGGLE = "Giggle at %s", THANK = "Thank %s",
+}
 
 -- The pitch, in the shop owner's voice. {item} and {price} are the ware whose turn it is.
 M.PITCHES = {
@@ -41,13 +55,23 @@ M.PITCHES = {
 
 local on = false
 local frame, events
-local visitors = {}             -- newest first: { name, what, at, reply = { word, token, label }, pitch = bool, pitchedAt, emotedAt }
+-- newest first: { name, kind = "look"|"emote"|"whisper", what, at, seen, reply = { word, token, label }, pitch = bool,
+--                 pitchedAt, emotedAt (by itself), doneAt (answered: a click, or the game showed the emote going at them) }
+local visitors = {}
 local lastAuto = -1e9
+local lastAlert = -1e9
 local manual = false            -- the game refused an emote from the addon: buttons only
 local pitchTurn = 0
+local pending = false           -- the buttons could not be set in combat: again when it ends
+local hideLater = false         -- the window could not be hidden in combat
+local Sync
 
 local function Now()
     return type(GetTime) == "function" and GetTime() or 0
+end
+
+local function InCombat()
+    return type(InCombatLockdown) == "function" and InCombatLockdown() and true or false
 end
 
 local function Readable(v)
@@ -65,16 +89,50 @@ local function Me()
     return ok and Readable(name) and type(name) == "string" and name or nil
 end
 
--- Sends an emote. Returns false when the game would not have it.
+-- The full name of a unit ("Name" or "Name-Realm"), or nil.
+local function NameOf(unit)
+    if type(UnitName) ~= "function" then return nil end
+    local ok, name, realm = pcall(UnitName, unit)
+    if not (ok and Readable(name) and type(name) == "string" and name ~= "") then return nil end
+    if Readable(realm) and type(realm) == "string" and realm ~= "" then name = name .. "-" .. realm end
+    return name
+end
+
+-- A unit the game knows this person by right now (your target, or a nameplate in view), or nil.
+local function UnitFor(name)
+    if type(UnitExists) ~= "function" then return nil end
+    local function Is(unit)
+        local ok, there = pcall(UnitExists, unit)
+        if not (ok and Readable(there) and there) then return false end
+        local full = NameOf(unit)
+        return full ~= nil and (full == name or Short(full) == name or full == Short(name))
+    end
+    if Is("target") then return "target" end
+    for i = 1, 40 do
+        if Is("nameplate" .. i) then return "nameplate" .. i end
+    end
+    return nil
+end
+
+-- Sends an emote from the addon. Returns false when the game would not have it.
 local function Emote(token, name)
+    local at = name and (UnitFor(name) or name) or nil
     local fn = C_ChatInfo and C_ChatInfo.PerformEmote
     if type(fn) == "function" then
-        local ok, res = pcall(fn, token, name)
+        local ok, res = pcall(fn, token, at)
         return ok and res ~= false
     end
-    if type(DoEmote) == "function" then return (pcall(DoEmote, token, name)) end
+    if type(DoEmote) == "function" then return (pcall(DoEmote, token, at)) end
     return false
 end
+
+-- What a reply button's click runs: target that person, then the emote. They stay your target,
+-- which also shows you who it went to. Nil for a name that cannot go into a macro.
+local function Macro(v)
+    if not (v and v.reply and type(v.name) == "string") or v.name == "" or v.name:find("[%s%c/|;%[%]]") then return nil end
+    return "/cleartarget\n/targetexact " .. v.name .. "\n/" .. v.reply[2]:lower()
+end
+M.Macro = Macro
 
 local function Find(name)
     for i, v in ipairs(visitors) do
@@ -82,50 +140,173 @@ local function Find(name)
     end
 end
 
--- Somebody did something: to the top of the list.
-local function Visit(name, what, reply, pitch)
+-- Waiting for an answer: something came from them, a reply fits, and no answer went back since.
+local function Waiting(v, now)
+    return v.reply ~= nil and (not v.doneAt or v.doneAt < v.at) and now - v.at < WAIT
+end
+M.Waiting = function(v) return Waiting(v, Now()) end
+
+local function Alert()
+    local now = Now()
+    if now - lastAlert < ALERT_GAP then return end
+    lastAlert = now
+    if type(PlaySound) == "function" then pcall(PlaySound, (SOUNDKIT and SOUNDKIT.TELL_MESSAGE) or 3081) end
+    if type(FlashClientIcon) == "function" then pcall(FlashClientIcon) end
+end
+
+-- Somebody did something: to the top of the list, waiting for an answer again.
+local function Visit(name, kind, what, reply, pitch)
     local v, i = Find(name)
     if v then table.remove(visitors, i) else v = { name = name } end
-    v.what, v.at = what, Now()
+    v.kind, v.what, v.at = kind, what, Now()
     if reply ~= nil then v.reply = reply or nil end
     v.pitch = v.pitch or pitch or false
     table.insert(visitors, 1, v)
     while #visitors > KEEP do table.remove(visitors) end
+    if v.reply then Alert() end
     return v
 end
 
-local function Sync()
+-- Too old to matter: off the list.
+local function Prune()
+    local now = Now()
+    for i = #visitors, 1, -1 do
+        local v = visitors[i]
+        local last = math.max(v.at, v.seen or 0, v.doneAt or 0)
+        if now - last > (v.kind == "look" and LOOK_KEEP or KEEP_FOR) then table.remove(visitors, i) end
+    end
+end
+
+local function Ago(sec)
+    if sec < 10 then return "now" end
+    if sec < 60 then return "<1m" end
+    return math.floor(sec / 60) .. "m"
+end
+
+local function What(v, now)
+    if v.kind == "look" then
+        return (v.seen and now - v.seen < 5) and "is looking at you" or "looked at you"
+    end
+    return v.what
+end
+
+-- How bright a row is: new ones fade in, answered ones are dimmed, old ones fade out.
+local function Alpha(v, now)
+    local age = now - v.at
+    if Waiting(v, now) then
+        return age < 0.4 and math.max(0.2, age / 0.4) or 1
+    end
+    local a = (v.doneAt and v.doneAt >= v.at) and DONE_ALPHA or 1
+    if age > FADE_FROM then
+        local t = math.min(1, (age - FADE_FROM) / (FADE_TO - FADE_FROM))
+        a = math.min(a, 1 - t * (1 - FADE_MIN))
+    end
+    return a
+end
+M.Alpha = function(v) return Alpha(v, Now()) end
+
+-- Puts a visitor (or nobody) on a reply button.
+local function SetReply(b, v)
+    b.visitor = v
+    if b.plain then return end
+    b:SetAttribute("macrotext", (v and Macro(v)) or "")
+end
+
+-- Who the big button is for: of those waiting, the one waiting longest, so nobody is skipped.
+local function Next(now)
+    local pick
+    for _, v in ipairs(visitors) do
+        if Waiting(v, now) then pick = v end
+    end
+    return pick
+end
+M.Next = function() return Next(Now()) end
+
+local function Fade()
     if not (frame and frame:IsShown()) then return end
     local now = Now()
+    for r = 1, ROWS do
+        local v = visitors[r]
+        if v then frame.rows[r]:SetAlpha(Alpha(v, now)) end
+    end
+    -- the big button pulses the way the game pulses a button that wants a click: its highlight, on and off
+    local b = frame.cta.emote
+    if b:IsShown() and b.visitor and math.floor(now * 2) % 2 == 0 then b:LockHighlight() else b:UnlockHighlight() end
+end
+
+Sync = function()
+    if not (frame and frame:IsShown()) then return end
+    if InCombat() then          -- secure buttons cannot be touched in combat
+        pending = true
+        return
+    end
+    pending = false
+    local now = Now()
+    local offer = ns.WareOffer()
     for r = 1, ROWS do
         local row, v = frame.rows[r], visitors[r]
         if v then
             row.name:SetText(Short(v.name))
-            row.what:SetText(v.what)
+            row.what:SetText(What(v, now))
+            row.age:SetText(Ago(now - v.at))
             if v.reply then
                 row.emote:SetText(v.reply[3])
+                SetReply(row.emote, v)
                 row.emote:Show()
+                row.done:SetShown((v.doneAt and v.doneAt >= v.at) and true or false)
             else
+                SetReply(row.emote, nil)
                 row.emote:Hide()
+                row.done:Hide()
             end
             if v.pitch then
-                local done = v.pitchedAt and now - v.pitchedAt < PITCH_GAP
-                row.pitch:SetText(done and "Pitched" or "Pitch")
-                row.pitch:SetEnabled(not done and ns.WareOffer() ~= nil)
+                local pitched = v.pitchedAt and now - v.pitchedAt < PITCH_GAP
+                row.pitch:SetText(pitched and "Pitched" or "Pitch")
+                row.pitch:SetEnabled(not pitched and offer ~= nil)
                 row.pitch:Show()
             else
                 row.pitch:Hide()
             end
             row:Show()
         else
+            SetReply(row.emote, nil)
             row:Hide()
         end
     end
     frame.empty:SetShown(#visitors == 0)
-    frame.status:SetText(manual and "The game wants a click for emotes here: use the buttons."
-        or "Emoting back by itself. Whispers and pitches wait for your click.")
+
+    -- the big button: whoever is waiting
+    local cta, v = frame.cta, Next(now)
+    if v then
+        local who = Short(v.name)
+        cta.text:SetText(v.kind == "emote" and v.what or (who .. " " .. What(v, now)))
+        cta.text:SetFontObject(GameFontNormalLarge or GameFontNormal)
+        cta.emote:SetText((PHRASE[v.reply[2]] or (v.reply[3] .. ": %s")):format(who))
+        SetReply(cta.emote, v)
+        cta.emote:Show()
+        local pitched = v.pitchedAt and now - v.pitchedAt < PITCH_GAP
+        cta.pitch.visitor = v
+        cta.pitch:SetShown((v.pitch and offer ~= nil and not pitched) and true or false)
+    else
+        cta.text:SetText(#visitors == 0 and "Nobody yet. Stand where they can see you." or "Nobody is waiting for an answer.")
+        cta.text:SetFontObject(GameFontDisableLarge or GameFontDisable)
+        SetReply(cta.emote, nil)
+        cta.emote:Hide()
+        cta.pitch.visitor = nil
+        cta.pitch:Hide()
+    end
+    frame.status:SetText(manual and "The game wants a click for every emote here."
+        or "A click targets them and emotes. Whispers only on Pitch.")
+    Fade()
 end
-M.Sync = Sync
+M.Sync = function() Sync() end
+
+-- They got their answer.
+local function Done(v)
+    if not v then return end
+    v.doneAt = Now()
+    Sync()
+end
 
 -- An emote by itself, if the limits allow. The dance comes back a few seconds later.
 local function Auto(v, gap)
@@ -159,11 +340,23 @@ end
 
 local function OnEmote(text, sender)
     if not (Readable(text) and Readable(sender) and type(text) == "string" and type(sender) == "string") then return end
+    if sender == "" then return end
     local me = Me()
-    if sender == "" or (me and Short(sender) == me) then return end
+    if me and Short(sender) == me then
+        -- your own emote, as the game showed it: whoever it names has their answer ("You wink at Bob.")
+        local hit = false
+        for _, v in ipairs(visitors) do
+            if text:find(Short(v.name), 1, true) and not (v.doneAt and v.doneAt >= v.at) then
+                v.doneAt = Now()
+                hit = true
+            end
+        end
+        if hit then Sync() end
+        return
+    end
     if not text:lower():find("%f[%a]you%f[%A]") then return end        -- only what is aimed at you
     local reply = ReplyFor(text)
-    local v = Visit(sender, text, reply, true)
+    local v = Visit(sender, "emote", text, reply, true)
     if reply then Auto(v, PERSON_GAP) end
     Sync()
 end
@@ -171,47 +364,73 @@ end
 local function OnWhisper(text, sender)
     if not (Readable(text) and Readable(sender) and type(text) == "string" and type(sender) == "string") or sender == "" then return end
     local seen = Find(sender)
-    Visit(sender, "whispered: " .. text, (seen and seen.reply) or DEFAULT_REPLY, true)
+    Visit(sender, "whisper", "whispered: " .. text, (seen and seen.reply) or DEFAULT_REPLY, true)
     Sync()
 end
 
 -- Who has you targeted: read off the nameplates in view (they must be shown for this to see anybody).
 local function Look()
     if type(UnitExists) ~= "function" or type(UnitIsUnit) ~= "function" then return end
-    local changed = false
+    local now = Now()
     for i = 1, 40 do
         local unit = "nameplate" .. i
         local ok, hit = pcall(function()
             return UnitExists(unit) and UnitIsPlayer(unit) and UnitIsUnit(unit .. "target", "player")
         end)
         if ok and Readable(hit) and hit then
-            local okName, name, realm = pcall(UnitName, unit)
-            if okName and Readable(name) and type(name) == "string" then
-                if Readable(realm) and type(realm) == "string" and realm ~= "" then name = name .. "-" .. realm end
+            local name = NameOf(unit)
+            if name then
                 local v = Find(name)
                 if not v then
-                    v = Visit(name, "has you targeted", DEFAULT_REPLY, false)
-                    changed = true
+                    v = Visit(name, "look", nil, DEFAULT_REPLY, false)
+                elseif v.kind == "look" and now - math.max(v.at, v.seen or 0) > RELOOK then
+                    v = Visit(name, "look", nil, nil, false)      -- looked away and came back
                 end
-                if not v.emotedAt and Auto(v, LOOK_GAP) then changed = true end
+                v.seen = now
+                Auto(v, LOOK_GAP)
             end
         end
     end
-    if changed then Sync() end
 end
 
 local function Tick()
     if not on then return end
     Look()
+    Prune()
     Sync()
     C_Timer.After(2, Tick)
 end
 
-local function Button(parent, label, w)
+local function Button(parent, label, w, h)
     local ok, b = pcall(CreateFrame, "Button", nil, parent, "UIPanelButtonTemplate")
     if not (ok and b) then b = CreateFrame("Button", nil, parent) end
-    b:SetSize(w, 20)
+    b:SetSize(w, h or 20)
     b:SetText(label)
+    return b
+end
+
+-- A reply button: the game's panel button, secure, so its click may target. Where the client has
+-- no such template it is a plain button that emotes from the addon.
+local function ReplyButton(parent, label, w, h)
+    local ok, b = pcall(CreateFrame, "Button", nil, parent, "SecureActionButtonTemplate,UIPanelButtonTemplate")
+    if ok and b then
+        b:SetSize(w, h or 20)
+        b:SetText(label)
+        pcall(b.RegisterForClicks, b, "AnyDown", "AnyUp")
+        b:SetAttribute("type", "macro")
+        b:SetAttribute("macrotext", "")
+        b:SetScript("PostClick", function(self, _, down)
+            if down then return end         -- the click acts on the press or on the release: answered after both
+            Done(self.visitor)
+        end)
+    else
+        b = Button(parent, label, w, h)
+        b.plain = true
+        b:SetScript("OnClick", function(self)
+            local v = self.visitor
+            if v and v.reply and Emote(v.reply[2], v.name) then Done(v) end
+        end)
+    end
     return b
 end
 
@@ -221,6 +440,28 @@ local function Text(parent, font)
     fs:SetJustifyH("LEFT")
     if fs.SetWordWrap then fs:SetWordWrap(false) end
     return fs
+end
+
+local function PitchTip(self)
+    if not GameTooltip then return end
+    GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
+    GameTooltip:SetText("Pitch")
+    GameTooltip:AddLine("Whispers this person one line about the ware whose turn it is, with its price. "
+        .. "Only for somebody who emoted at you or whispered you first, and once in ten minutes.", 1, 0.82, 0, true)
+    GameTooltip:Show()
+end
+
+local function ReplyTip(self)
+    local v = self.visitor
+    if not (GameTooltip and v and v.reply) then return end
+    GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
+    GameTooltip:SetText(v.reply[3] .. ": " .. Short(v.name))
+    GameTooltip:AddLine("Targets them and does the emote. They stay your target.", 1, 0.82, 0, true)
+    GameTooltip:Show()
+end
+
+local function HideTip()
+    if GameTooltip then GameTooltip:Hide() end
 end
 
 function M.Pitch(v)
@@ -237,22 +478,25 @@ function M.Pitch(v)
         return false
     end
     v.pitchedAt = now
+    if v.kind == "whisper" then v.doneAt = now end      -- a whisper is answered by the pitch
     Sync()
     return true
 end
+
+local TOP = 94                  -- title, the line about who is waiting, the big button
 
 local function Build()
     if frame then return frame end
     local ok, f = pcall(CreateFrame, "Frame", "SlutmogShopMailbox", UIParent, "BasicFrameTemplateWithInset")
     if not (ok and f) then f = CreateFrame("Frame", "SlutmogShopMailbox", UIParent) end
     frame = f
-    f:SetSize(400, 78 + ROWS * ROW_H)
+    f:SetSize(430, TOP + ROWS * ROW_H + 46)
     f:SetPoint("RIGHT", UIParent, "RIGHT", -120, 60)
     f:SetClampedToScreen(true)
     f:SetMovable(true)
     f:EnableMouse(true)
     f:RegisterForDrag("LeftButton")
-    f:SetScript("OnDragStart", function(self) self:StartMoving() end)
+    f:SetScript("OnDragStart", function(self) if not InCombat() then self:StartMoving() end end)
     f:SetScript("OnDragStop", function(self) self:StopMovingOrSizing() end)
     if type(f.TitleText) == "table" then f.TitleText:SetText("On the mailbox") end
     if type(f.CloseButton) ~= "table" then
@@ -263,43 +507,68 @@ local function Build()
         end
     end
     f:SetScript("OnHide", function() M.Stop(true) end)
+    local since = 0
+    f:SetScript("OnUpdate", function(_, elapsed)
+        since = since + (elapsed or 0)
+        if since < 0.1 then return end
+        since = 0
+        Fade()
+    end)
+
+    -- who is waiting, and the one big button for them
+    local cta = {}
+    f.cta = cta
+    cta.text = Text(f, "GameFontNormalLarge")
+    cta.text:SetPoint("TOPLEFT", f, "TOPLEFT", 16, -34)
+    cta.text:SetPoint("RIGHT", f, "RIGHT", -16, 0)
+    cta.emote = ReplyButton(f, "Wink", 190, 30)
+    cta.emote:SetPoint("TOPLEFT", f, "TOPLEFT", 14, -56)
+    cta.emote:SetScript("OnEnter", ReplyTip)
+    cta.emote:SetScript("OnLeave", HideTip)
+    cta.pitch = Button(f, "Pitch", 90, 30)
+    cta.pitch:SetPoint("LEFT", cta.emote, "RIGHT", 6, 0)
+    cta.pitch:SetScript("OnClick", function(self) M.Pitch(self.visitor) end)
+    cta.pitch:SetScript("OnEnter", PitchTip)
+    cta.pitch:SetScript("OnLeave", HideTip)
+    cta.emote:Hide()
+    cta.pitch:Hide()
 
     f.rows = {}
     for r = 1, ROWS do
         local row = CreateFrame("Frame", nil, f)
         row:SetHeight(ROW_H)
-        row:SetPoint("TOPLEFT", f, "TOPLEFT", 12, -30 - (r - 1) * ROW_H)
-        row:SetPoint("TOPRIGHT", f, "TOPRIGHT", -12, -30 - (r - 1) * ROW_H)
+        row:SetPoint("TOPLEFT", f, "TOPLEFT", 12, -TOP - (r - 1) * ROW_H)
+        row:SetPoint("TOPRIGHT", f, "TOPRIGHT", -12, -TOP - (r - 1) * ROW_H)
         row.pitch = Button(row, "Pitch", 62)
         row.pitch:SetPoint("RIGHT", row, "RIGHT", 0, 0)
-        row.emote = Button(row, "Wink", 66)
+        row.emote = ReplyButton(row, "Wink", 66)
         row.emote:SetPoint("RIGHT", row.pitch, "LEFT", -4, 0)
+        row.emote:SetScript("OnEnter", ReplyTip)
+        row.emote:SetScript("OnLeave", HideTip)
+        row.done = row:CreateTexture(nil, "ARTWORK")        -- the game's ready-check tick: answered
+        row.done:SetTexture("Interface\\RaidFrame\\ReadyCheck-Ready")
+        row.done:SetSize(14, 14)
+        row.done:SetPoint("RIGHT", row.emote, "LEFT", -4, 0)
+        row.done:Hide()
+        row.age = Text(row, "GameFontDisableSmall")
+        row.age:SetJustifyH("RIGHT")
+        row.age:SetWidth(28)
+        row.age:SetPoint("RIGHT", row.done, "LEFT", -4, 0)
         row.name = Text(row, "GameFontNormal")
         row.name:SetPoint("LEFT", row, "LEFT", 0, 0)
         row.name:SetWidth(84)
         row.what = Text(row, "GameFontHighlightSmall")
         row.what:SetPoint("LEFT", row.name, "RIGHT", 6, 0)
-        row.what:SetPoint("RIGHT", row.emote, "LEFT", -6, 0)
-        row.emote:SetScript("OnClick", function()
-            local v = visitors[r]
-            if v and v.reply and Emote(v.reply[2], v.name) then v.emotedAt = Now() end
-        end)
+        row.what:SetPoint("RIGHT", row.age, "LEFT", -6, 0)
         row.pitch:SetScript("OnClick", function() M.Pitch(visitors[r]) end)
-        row.pitch:SetScript("OnEnter", function(self)
-            if not GameTooltip then return end
-            GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
-            GameTooltip:SetText("Pitch")
-            GameTooltip:AddLine("Whispers this person one line about the ware whose turn it is, with its price. "
-                .. "Only for somebody who emoted at you or whispered you first, and once in ten minutes.", 1, 0.82, 0, true)
-            GameTooltip:Show()
-        end)
-        row.pitch:SetScript("OnLeave", function() if GameTooltip then GameTooltip:Hide() end end)
+        row.pitch:SetScript("OnEnter", PitchTip)
+        row.pitch:SetScript("OnLeave", HideTip)
         row:Hide()
         f.rows[r] = row
     end
     f.empty = Text(f, "GameFontDisable")
-    f.empty:SetPoint("TOPLEFT", f, "TOPLEFT", 16, -40)
-    f.empty:SetText("Nobody yet. Whoever emotes at you, whispers you or targets you shows up here.")
+    f.empty:SetPoint("TOPLEFT", f, "TOPLEFT", 16, -TOP - 6)
+    f.empty:SetText("Whoever emotes at you, whispers you or targets you shows up here.")
     f.status = Text(f, "GameFontHighlightSmall")
     f.status:SetPoint("BOTTOMLEFT", f, "BOTTOMLEFT", 14, 16)
     f.status:SetPoint("RIGHT", f, "RIGHT", -92, 0)
@@ -316,6 +585,10 @@ function M.Start()
         ns.Print("mailbox mode needs the game's timers, and this client has none.")
         return false
     end
+    if InCombat() then
+        ns.Print("mailbox mode cannot start in combat. Try again after the fight.")
+        return false
+    end
     local ok, err = pcall(Build)
     if not ok then
         ns.Print("the mailbox window could not be built: " .. tostring(err))
@@ -324,17 +597,27 @@ function M.Start()
     if not events then
         events = CreateFrame("Frame")
         events:SetScript("OnEvent", function(_, event, text, sender)
+            if event == "PLAYER_REGEN_ENABLED" then
+                if hideLater and frame then
+                    hideLater = false
+                    frame:Hide()
+                elseif pending then
+                    Sync()
+                end
+                return
+            end
             if not on then return end
             if event == "CHAT_MSG_TEXT_EMOTE" then OnEmote(text, sender) else OnWhisper(text, sender) end
         end)
+        pcall(events.RegisterEvent, events, "PLAYER_REGEN_ENABLED")
     end
     pcall(events.RegisterEvent, events, "CHAT_MSG_TEXT_EMOTE")
     pcall(events.RegisterEvent, events, "CHAT_MSG_WHISPER")
-    on, manual = true, false
+    on, manual, hideLater = true, false, false
     frame:Show()
     Emote("DANCE")
     Tick()
-    ns.Print("mailbox mode is on. Close its window to turn it off.")
+    ns.Print("mailbox mode is on. Click the big button to answer whoever is waiting. Close the window to turn it off.")
     return true
 end
 
@@ -345,7 +628,9 @@ function M.Stop(fromHide)
         pcall(events.UnregisterEvent, events, "CHAT_MSG_TEXT_EMOTE")
         pcall(events.UnregisterEvent, events, "CHAT_MSG_WHISPER")
     end
-    if frame and not fromHide then frame:Hide() end
+    if frame and not fromHide then
+        if InCombat() then hideLater = true else frame:Hide() end   -- its buttons are secure: not in combat
+    end
     ns.Print("mailbox mode is off.")
 end
 

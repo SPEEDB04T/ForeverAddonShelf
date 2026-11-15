@@ -1,5 +1,16 @@
 # Changelog
 
+## 1.9.0
+
+Mailbox mode, reworked.
+
+- Fixed: the Wink button did not wink at the person. A reply button now targets that person and then does the emote, in one click ("You wink at Bob."). They stay your target, so you see who it went to.
+- A big button at the top for whoever is waiting for an answer, with what they did above it ("Bob blows you a kiss." / "Wink at Bob"). It pulses, and moves on to the next person once you click. Whoever has waited longest comes first.
+- A sound, and the game's taskbar icon flashes, when somebody new looks at you, emotes at you or whispers you.
+- Answered people get a tick and their row dims. Rows fade as they get old; lookers leave the list after ten minutes, emoters and whisperers after thirty. Each row shows how long ago it was.
+- Somebody who only targets you is listed as "is looking at you" while they do, and "looked at you" after.
+- The game showing your own emote going at somebody ("You wink at Bob.") counts as their answer, however you did it.
+
 ## 1.8.1
 
 - Fixed: the "run you through Deadmines" line came up for high-level pieces. Lines about a level or a place people outgrow now only come up for pieces of about that level: Deadmines for pieces up to level 25, "Mog it at 20" up to 20, "Hit 40 and finally allowed to wear plate" for level 40 to 49 plate.
