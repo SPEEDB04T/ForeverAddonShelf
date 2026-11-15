@@ -552,11 +552,11 @@ end
 ----------------------------------------------------------------------
 -- Slash commands
 ----------------------------------------------------------------------
--- Kit.lua and Options.lua are separate files; if one is missing (a /reload right after an
--- update that added it), say so instead of erroring.
+-- Kit.lua and Options.lua are separate files; if one is missing (an update that added it,
+-- before the next /reload), say so instead of erroring.
 local function HasKit()
     if ns.Kit and ns.Options then return true end
-    ns.Print("the options window and the minimap button appear after you restart the game once.")
+    ns.Print("the options window and the minimap button appear after one more /reload.")
     return false
 end
 

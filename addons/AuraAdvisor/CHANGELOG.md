@@ -1,5 +1,9 @@
 # Changelog
 
+## 1.2.1 (2026-11-15)
+
+- If the options window or minimap button isn't there yet right after an update, the message now says a /reload brings it (it used to say to restart the game).
+
 ## 1.2.0 (2026-11-15)
 
 - No bar of its own any more. The aura to switch to now glows on the game's own stance bar, and on any action bar button that holds it, with the game's proc glow.
