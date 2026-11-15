@@ -1,5 +1,22 @@
 # Changelog
 
+## 1.4.1
+
+Leg detection fixed: bare thighs count again.
+
+- 1.4.0 read the lower half of the upper leg as "the knee" and barely counted it, so hot pants,
+  briefs and loincloths that leave the thigh bare dropped off the list, while long mail leggings with a
+  little skin at the hip stayed on.
+- Now the bare thigh counts fully. The pelvis counts a quarter, because bare skin there mostly shows the
+  body's own underwear. The strip at the knee counts a little, and the shins still don't count.
+- Back on the list (26): Bandit Pants, Mail Combat and Captain's Leggings, Warden's Woolies, Sentinel
+  Trousers, Peerless Leggings, the Pridelord group, War Paint, Outrunner's, Grunt's, Spiked Chain,
+  Bloodspattered Loincloth, Burnt Leather Breeches, Bard's Trousers, Tracker's, Sentry's, Steadfast,
+  Abyssal Leather and Insignia Leggings.
+- Off the list (11), all covering the thigh: Myrmidon's, Mercurial, Ebonhold, Crusader's, Jazeraint,
+  Revenant, Templar, Chief Brigadier, Engraved, Masterwork and Ornate.
+- Seafarer's Pantaloons stays off. The list now has 166 pieces.
+
 ## 1.4.0
 
 Better detection, and rare pieces listed under their worth.
