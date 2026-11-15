@@ -25,23 +25,42 @@ for slot, el in pairs(ns.ELEMENTS) do slotByLetter[el.letter] = slot end
 ----------------------------------------------------------------------
 -- Small helpers
 ----------------------------------------------------------------------
--- Player names. On this realm a name is two words ("First Last"): never cut
--- or reject one at a space. The realm is spelled two ways at once: the client
--- calls it "RPPvP" (GetNormalizedRealmName) while senders from the server
--- carry "CAMWOWUS1Realm9RPPvP", so a name is never matched by its realm
--- suffix or by Ambiguate. Every name is found by looking it up in the group
--- (see G.FindUnit); the realm only breaks a tie between two equal names.
+-- Player names. On Forever a name is two words, and UnitName returns them as
+-- two values: UnitName("player") gives "Bunglfart", "Dunglode", the surname
+-- in the slot the game uses for a realm. The sender of an addon or chat
+-- message arrives as "Bunglfart Dunglode" (a space, no realm). The second
+-- value may also be a real realm (a player from another realm): which it is
+-- can't be told, so nothing here guesses. The realm is also spelled two ways
+-- ("RPPvP" from GetNormalizedRealmName, "CAMWOWUS1Realm9RPPvP" from the
+-- server), so a name is never matched by Ambiguate. Every name is found by
+-- looking it up in the group (G.FindUnit); a realm only breaks a tie.
 local function UsableName(name)
     return not issecret(name) and type(name) == "string" and name ~= ""
 end
 
--- the name as the roster gives it: UnitName, plus "-realm" only when the game
--- gives one (players from another realm); this is the member table's key
+-- both values of UnitName: first, and second (surname or realm) or nil
+local function UnitParts(unit)
+    local ok, first, second = pcall(UnitName, unit)
+    if not ok or issecret(first) or issecret(second) or not UsableName(first) then return nil end
+    if type(second) ~= "string" or second == "" then second = nil end
+    return first, second
+end
+
+-- the member table's key and the name shown: "First Last", rebuilt from
+-- UnitName alone on both sides, or the single name when there is no second
 local function FullUnitName(unit)
-    local ok, name, realm = pcall(UnitName, unit)
-    if not ok or issecret(name) or issecret(realm) or not UsableName(name) then return nil end
-    if type(realm) == "string" and realm ~= "" then name = name .. "-" .. realm end
-    return name
+    local first, second = UnitParts(unit)
+    if not first then return nil end
+    return second and (first .. " " .. second) or first
+end
+G.UnitKey = FullUnitName
+
+-- for the comm log: the unit and exactly what UnitName gave for it
+local function UnitLabel(unit)
+    if not unit then return nil end
+    local first, second = UnitParts(unit)
+    if not first then return unit end
+    return ("%s(%s|%s)"):format(unit, first, second or "")
 end
 
 -- lower-case letters and digits only, to compare realm spellings
@@ -90,30 +109,57 @@ end
 -- Which group unit a name from the server or from a message belongs to.
 -- Returns the unit, or nil and "hidden" (the game hides the name, or it is
 -- not text) or "nobody" (no one in the group has that name).
+-- does raw spell this candidate: equal, or the candidate and then "-realm"?
+-- returns the realm part (or "") when it does
+local function Spells(raw, c)
+    if raw == c then return "" end
+    if #raw > #c + 1 and raw:sub(1, #c + 1) == c .. "-" then return raw:sub(#c + 2) end
+    return nil
+end
+
 function G.FindUnit(raw)
     if not UsableName(raw) then return nil, "hidden" end
-    -- realms have no "-" in a name, names never do: the first "-" splits them
-    local who, suffix = raw:match("^([^%-]+)%-(.+)$")
-    who = who or raw
-    local found = {}
+    local units = {}
     for _, unit in ipairs(GroupUnits()) do
-        local ok, name, realm = pcall(UnitName, unit)
-        if ok and not issecret(name) and not issecret(realm) and name == who then
-            found[#found + 1] = { unit = unit, realm = (type(realm) == "string" and realm ~= "") and realm or nil }
+        local first, second = UnitParts(unit)
+        if first then units[#units + 1] = { unit = unit, first = first, second = second } end
+    end
+    -- spell(u) gives the candidate spelling and the realm it implies (nil = ours)
+    local function pass(spell)
+        local found = {}
+        for _, u in ipairs(units) do
+            local c, realm = spell(u)
+            local suffix = c and Spells(raw, c)
+            if suffix then found[#found + 1] = { unit = u.unit, suffix = suffix, realm = realm, plain = not u.second } end
+        end
+        return found
+    end
+    -- 1. "First Last" (the server's spelling of a sender on Forever)
+    local found = pass(function(u) if u.second then return u.first .. " " .. u.second, nil end end)
+    -- 2. the first name alone (the second value is then a realm, or absent)
+    if #found == 0 then found = pass(function(u) return u.first, u.second end) end
+    -- 3. a name from a client on an ordinary realm that sent ours as
+    --    "Name Realm": only when the rest really is our own realm
+    if #found == 0 then
+        for _, u in ipairs(units) do
+            if not u.second and raw:sub(1, #u.first + 1) == u.first .. " " and RealmFits(raw:sub(#u.first + 2), nil) then
+                found[#found + 1] = { unit = u.unit, suffix = "", plain = true }
+            end
         end
     end
     if #found == 0 then return nil, "nobody" end
     if #found > 1 then
         for _, c in ipairs(found) do
-            if suffix then
-                if RealmFits(suffix, c.realm) then return c.unit end
-            elseif not c.realm then
+            if c.suffix ~= "" then
+                if RealmFits(c.suffix, c.realm) then return c.unit end
+            elseif c.plain then
                 return c.unit
             end
         end
     end
     return found[1].unit
 end
+G.UnitLabel = UnitLabel
 
 -- the member-table key for a unit: the roster's own name for it
 local function KeyFor(unit)
@@ -562,7 +608,8 @@ local function Flush()
         return
     end
     local ok, result = pcall(C_ChatInfo.SendAddonMessage, PREFIX, msg, channel)
-    ns.CommLog({ dir = "out", channel = channel, code = ok and (result == nil and "nil" or result) or "error", msg = msg })
+    ns.CommLog({ dir = "out", channel = channel, from = ns.playerName, unit = UnitLabel("player"),
+        code = ok and (result == nil and "nil" or result) or "error", msg = msg })
     if not ok then
         -- the game rejects this very message (too long, malformed): after a few
         -- tries give up on it, so everything behind it is not stuck for good
@@ -946,7 +993,9 @@ function G.OnAddonMessage(prefix, text, channel, sender)
     -- the sender is looked up among the group's units by name, never by
     -- its realm suffix (see the note at FullUnitName)
     local unit, why = G.FindUnit(sender)
-    ns.CommLog({ dir = "in", channel = channel, from = sender, unit = (unit == "player" and "me") or unit or why, msg = text })
+    -- the raw sender and the unit it landed on, with what UnitName gave for it
+    ns.CommLog({ dir = "in", channel = channel, from = sender,
+        unit = (unit == "player" and ("me " .. UnitLabel("player"))) or UnitLabel(unit) or why, msg = text })
     if not unit then
         Ignore(sender, why, channel, text)
         return

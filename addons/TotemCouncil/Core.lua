@@ -567,7 +567,8 @@ local function Init()
 
     local _, class = UnitClass("player")
     ns.isShaman = (class == "SHAMAN")
-    ns.playerName = UnitName("player")
+    -- "First Last": UnitName gives the surname as a second value on Forever
+    ns.playerName = ns.Group.UnitKey("player") or UnitName("player")
     ns.inCombat = InCombatLockdown() and true or false
 
     -- drop plan entries that no longer mean anything

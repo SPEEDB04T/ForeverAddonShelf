@@ -1,5 +1,10 @@
 # Changelog
 
+## 1.3.2
+
+- Fixed: Totem Council users still could not see each other. On Forever the game gives a character's name in two parts (first name and surname), while messages arrive with the full name, so every message, even your own, was matched to nobody and dropped. Names are now matched in both forms and shown as "First Last" everywhere (group plan, chat, Announce).
+- The saved message log also records exactly how the game spelled each name, to check this in a real group.
+
 ## 1.3.1
 
 - The addon's own frames (totem bar, group plan, accept box, totem menu) are listed for the developer's screenshot helper, so they can be checked against the game's UI. Nothing changes for players.
