@@ -6,7 +6,7 @@ Advertise your slutmog wares with one click. Each ad names your shop and the nex
 
 ## Ready-made ads
 
-Every piece on the slutmog list (the 166 items Slutmog Scout knows) comes with 17 to 29 ready-made ads. Some describe how the piece looks, some speak to the buyer as a player (plate at 40, repair bills, the healer, the mailbox, showing off gold). Suggestive, never explicit. For example:
+Every piece on the slutmog list (the 166 items Slutmog Scout knows) comes with 18 to 27 ready-made ads. Some describe how the piece looks, some speak to the buyer as a player (plate at 40, repair bills, the healer, the mailbox, showing off gold). Suggestive, never explicit. For example:
 
 > Keep getting ganked, never getting camped? Give them a reason to stay. [Tyrant's Legplates], 10 gold pieces at Smuttanie's Necessities.
 

@@ -1,5 +1,12 @@
 # Changelog
 
+## 1.3.1
+
+- The shared ads (the ones for any piece, for each armor type, for legs and chests and for level ranges) are rewritten again, after a hostile review of every line. Each one now turns on an everyday word with a dirty second meaning: "Only thing that's gone down on you all week is the server?", "Cleared every instance in the game and nobody's been in yours?", "At 40 everyone gets a mount. In [piece] you might be one.", "Bind on Equip. Bring rope."
+- Gone: the /follow line, lines built on terms nobody says, spell-name references with nothing dirty in them, and lines that only described the piece where a dirtier one fits.
+- No line plays a low level as a young age; the level 6 vest is now sold for your bank alt.
+- Votes from 1.3.0 stay. A line that was reworded counts as a new line.
+
 ## 1.3.0
 
 - Yes and No buttons next to Post ad, in place of Skip. Yes keeps the line shown and moves to the next one. No drops that ready-made line from your ads for good, for every piece that shares it. Post ad posts it as before, and the addon counts how often each line went out. Your votes are saved, so the good and bad lines can be told apart and the next rewrite can follow them.
