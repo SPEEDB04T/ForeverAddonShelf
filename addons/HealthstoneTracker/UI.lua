@@ -6,24 +6,42 @@ local issecret = ns.issecret
 local UI = {}
 ns.UI = UI
 
-local WHITE = "Interface\\Buttons\\WHITE8X8"
-local WIDTH, PAD, TITLE_H, ROW_H, MAX_ROWS = 178, 6, 18, 16, 25
-
-local COLOR = {
-    has     = { 0.40, 0.92, 0.45 },
-    given   = { 0.62, 0.82, 0.62 },
-    none    = { 1.00, 0.32, 0.26 },
-    used    = { 1.00, 0.62, 0.22 },
-    unknown = { 0.62, 0.62, 0.62 },
-    cooling = { 1.00, 0.85, 0.30 },
-    gold    = { 1.00, 0.82, 0.00 },
-    canRes  = { 0.45, 0.90, 1.00 },
+-- The window looks like one of the game's tooltips: tooltip border and
+-- background, gold title, white values, the quest log's row highlight.
+local BACKDROP = {
+    bgFile = "Interface\\Tooltips\\UI-Tooltip-Background",
+    edgeFile = "Interface\\Tooltips\\UI-Tooltip-Border",
+    tile = true, tileSize = 16, edgeSize = 16,
+    insets = { left = 4, right = 4, top = 4, bottom = 4 },
 }
+local ROW_HIGHLIGHT = "Interface\\QuestFrame\\UI-QuestTitleHighlight"
+local DIVIDER = "Interface\\Common\\UI-TooltipDivider-Transparent"
+local WIDTH, PAD, TITLE_H, ROW_H, MAX_ROWS = 190, 10, 18, 16, 25
+
+-- The game's own font colours; the numbers are only for a client without them.
+local function GameColor(name, r, g, b)
+    local c = _G[name]
+    if type(c) == "table" and type(c.r) == "number" then return { c.r, c.g, c.b } end
+    return { r, g, b }
+end
+local COLOR = {
+    has     = GameColor("GREEN_FONT_COLOR", 0.1, 1.0, 0.1),
+    given   = GameColor("DIM_GREEN_FONT_COLOR", 0.251, 0.753, 0.251),
+    none    = GameColor("RED_FONT_COLOR", 1.0, 0.1, 0.1),
+    used    = GameColor("ORANGE_FONT_COLOR", 1.0, 0.5, 0.25),
+    unknown = GameColor("GRAY_FONT_COLOR", 0.5, 0.5, 0.5),
+    cooling = GameColor("YELLOW_FONT_COLOR", 1.0, 1.0, 0.0),
+    gold    = GameColor("NORMAL_FONT_COLOR", 1.0, 0.82, 0.0),
+    white   = GameColor("HIGHLIGHT_FONT_COLOR", 1.0, 1.0, 1.0),
+    canRes  = GameColor("LIGHTBLUE_FONT_COLOR", 0.53, 0.67, 1.0),
+}
+local HINT = COLOR.unknown      -- grey explanation lines in tooltips
+local ACTION = COLOR.has        -- green "Click: ..." lines, as the game's tooltips do
 -- the soulstone item, next to the buff icon in ns.SOUL_ICON
 local SOUL_ITEM_ICON = "Interface\\Icons\\INV_Misc_Orb_04"
-local SOUL_GAP = 4      -- space above the soulstone part
+local SOUL_GAP = 8      -- space above the soulstone part, with the divider in it
 
-local frame, title, count, note
+local frame, title, count, note, divider
 local rows = {}
 local soulRows = {}
 
@@ -34,7 +52,11 @@ end
 local function ClassColor(class)
     local c = class and ((CUSTOM_CLASS_COLORS and CUSTOM_CLASS_COLORS[class]) or (RAID_CLASS_COLORS and RAID_CLASS_COLORS[class]))
     if c then return c.r, c.g, c.b end
-    return 0.85, 0.85, 0.85
+    return COLOR.white[1], COLOR.white[2], COLOR.white[3]
+end
+
+local function AddLine(text, c, wrap)
+    GameTooltip:AddLine(text, c[1], c[2], c[3], wrap)
 end
 
 local function Offline(m)
@@ -92,14 +114,14 @@ local function RowTooltip(row)
     if m.isPlayer then
         -- nothing to add
     elseif m.hasAddon then
-        GameTooltip:AddLine("Has Healthstone Tracker " .. tostring(m.version or ""), 0.6, 0.6, 0.6)
+        AddLine("Has Healthstone Tracker " .. tostring(m.version or ""), HINT)
     else
-        GameTooltip:AddLine("No addon: worked out from trades and uses seen.", 0.6, 0.6, 0.6, true)
+        AddLine("No addon: worked out from trades and uses seen.", HINT, true)
     end
     local soul = ns.Group.DescribeSoul(m)
-    if soul then GameTooltip:AddLine("Has a " .. soul .. ".", 0.72, 0.55, 1, true) end
+    if soul then AddLine("Has a " .. soul .. ".", COLOR.white, true) end
     if ns.isWarlock and ns.db.clickTrade and not m.isPlayer and not m.demo then
-        GameTooltip:AddLine("Click: open a trade and offer your healthstone.", 1, 0.82, 0)
+        AddLine("Click: open a trade and offer your healthstone.", ACTION)
     end
     GameTooltip:Show()
 end
@@ -108,10 +130,10 @@ local function TitleTooltip(self)
     if not GameTooltip then return end
     local have, need, unknown, total = ns.Group.Summary()
     GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
-    GameTooltip:AddLine("Healthstone Tracker")
-    GameTooltip:AddLine(("%d of %d have one, %d need one, %d not known."):format(have, total, need, unknown), 1, 1, 1, true)
-    GameTooltip:AddLine("Players with the addon report their own bags. The others are worked out from trades and uses seen.", 0.6, 0.6, 0.6, true)
-    GameTooltip:AddLine("Drag to move. Right-click: list everyone / only the missing. /hst help for more.", 1, 0.82, 0, true)
+    AddLine("Healthstone Tracker", COLOR.gold)
+    AddLine(("%d of %d have one, %d need one, %d not known."):format(have, total, need, unknown), COLOR.white, true)
+    AddLine("Players with the addon report their own bags. The others are worked out from trades and uses seen.", HINT, true)
+    AddLine("Drag to move. Right-click: list everyone / only the missing. /hst help for more.", ACTION, true)
     GameTooltip:Show()
 end
 
@@ -120,21 +142,19 @@ local function SoulTooltip(row)
     local m, kind = row.member, row.kind
     GameTooltip:SetOwner(row, "ANCHOR_RIGHT")
     if kind == "head" then
-        GameTooltip:AddLine("Soulstones")
-        GameTooltip:AddLine("Who carries a soulstone and for how long, then each warlock's own stone: ready, on cooldown, or none in the bags.", 1, 1, 1, true)
-        GameTooltip:AddLine("Read from everyone's buffs, so it works for players without the addon. /hst soul hides this part.", 0.6, 0.6, 0.6, true)
+        AddLine("Soulstones", COLOR.gold)
+        AddLine("Who carries a soulstone and for how long, then each warlock's own stone: ready, on cooldown, or none in the bags.", COLOR.white, true)
+        AddLine("Read from everyone's buffs, so it works for players without the addon. /hst soul hides this part.", HINT, true)
     elseif m then
         local r, g, b = ClassColor(m.class)
         GameTooltip:AddLine(m.name, r, g, b)
         if kind == "holder" then
             local text = ns.Group.DescribeSoul(m)
-            if text then GameTooltip:AddLine("Has a " .. text .. ".", 1, 1, 1, true) end
-            if row.dead then
-                GameTooltip:AddLine("Dead: can use it to come back to life.", COLOR.canRes[1], COLOR.canRes[2], COLOR.canRes[3], true)
-            end
+            if text then AddLine("Has a " .. text .. ".", COLOR.white, true) end
+            if row.dead then AddLine("Dead: can use it to come back to life.", COLOR.canRes, true) end
         else
             local text = ns.Group.DescribeSoulStone(m)
-            GameTooltip:AddLine(text:sub(1, 1):upper() .. text:sub(2) .. ".", 1, 1, 1, true)
+            AddLine(text:sub(1, 1):upper() .. text:sub(2) .. ".", COLOR.white, true)
         end
     end
     GameTooltip:Show()
@@ -169,9 +189,13 @@ local function NewRow()
     local row = CreateFrame("Button", nil, frame)
     row:SetHeight(ROW_H)
 
+    -- the quest log's highlight under the line the mouse is on
     local hl = row:CreateTexture(nil, "HIGHLIGHT")
-    hl:SetAllPoints(row)
-    hl:SetColorTexture(1, 1, 1, 0.08)
+    hl:SetPoint("TOPLEFT", row, "TOPLEFT", -2, 0)
+    hl:SetPoint("BOTTOMRIGHT", row, "BOTTOMRIGHT", 2, 0)
+    hl:SetTexture(ROW_HIGHLIGHT)
+    hl:SetBlendMode("ADD")
+    hl:SetAlpha(0.6)
 
     local icon = row:CreateTexture(nil, "ARTWORK")
     icon:SetSize(ROW_H - 3, ROW_H - 3)
@@ -287,6 +311,15 @@ local function DrawSouls(top)
         soulRows[i].member, soulRows[i].kind = nil, nil
         soulRows[i]:Hide()
     end
+    -- the tooltip's divider line between the healthstones and the soulstones
+    if used > 0 then
+        divider:ClearAllPoints()
+        divider:SetPoint("TOPLEFT", frame, "TOPLEFT", PAD - 2, -(top + 1))
+        divider:SetPoint("TOPRIGHT", frame, "TOPRIGHT", -(PAD - 2), -(top + 1))
+        divider:Show()
+    else
+        divider:Hide()
+    end
     return used > 0 and (SOUL_GAP + used * ROW_H) or 0
 end
 
@@ -321,9 +354,19 @@ function UI.Create()
         end
     end)
     if frame.SetBackdrop then
-        frame:SetBackdrop({ bgFile = WHITE, edgeFile = WHITE, edgeSize = 1 })
-        frame:SetBackdropColor(0.05, 0.04, 0.07, 0.82)
-        frame:SetBackdropBorderColor(0, 0, 0, 1)
+        frame:SetBackdrop(BACKDROP)
+        -- the colours the game gives its own tooltips
+        local bg, edge = TOOLTIP_DEFAULT_BACKGROUND_COLOR, TOOLTIP_DEFAULT_COLOR
+        if type(bg) == "table" and bg.r then
+            frame:SetBackdropColor(bg.r, bg.g, bg.b, 0.9)
+        else
+            frame:SetBackdropColor(0.09, 0.09, 0.19, 0.9)
+        end
+        if type(edge) == "table" and edge.r then
+            frame:SetBackdropBorderColor(edge.r, edge.g, edge.b, 1)
+        else
+            frame:SetBackdropBorderColor(1, 1, 1, 1)
+        end
     end
 
     local icon = frame:CreateTexture(nil, "ARTWORK")
@@ -332,13 +375,18 @@ function UI.Create()
     icon:SetTexture(ns.DEFAULT_ICON)
     icon:SetTexCoord(0.08, 0.92, 0.08, 0.92)
 
-    title = frame:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+    title = frame:CreateFontString(nil, "OVERLAY", "GameFontNormal")
     title:SetPoint("LEFT", icon, "RIGHT", 4, 0)
     title:SetText("Healthstones")
 
     count = frame:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
-    count:SetPoint("TOPRIGHT", frame, "TOPRIGHT", -PAD, -PAD - 1)
+    count:SetPoint("TOPRIGHT", frame, "TOPRIGHT", -PAD, -PAD - 2)
     count:SetJustifyH("RIGHT")
+
+    divider = frame:CreateTexture(nil, "ARTWORK")
+    divider:SetHeight(8)
+    divider:SetTexture(DIVIDER)
+    divider:Hide()
 
     -- one line under the list: "+3 more", or "everyone has one"
     note = frame:CreateFontString(nil, "OVERLAY", "GameFontDisableSmall")
@@ -374,7 +422,7 @@ function UI.Refresh()
             row.member = m
             local r, g, b = ClassColor(m.class)
             local off = Offline(m)
-            if off then r, g, b = 0.5, 0.5, 0.5 end
+            if off then r, g, b = COLOR.unknown[1], COLOR.unknown[2], COLOR.unknown[3] end
             row.name:SetText(m.name .. (off and " (offline)" or ""))
             row.name:SetTextColor(r, g, b)
             local text, color = StateText(m, st, cd)

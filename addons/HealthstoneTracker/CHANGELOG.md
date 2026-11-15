@@ -1,5 +1,10 @@
 # Changelog
 
+## 1.3.0
+
+- The window now looks like one of the game's tooltips: tooltip border and background instead of the flat dark box, a gold title, the quest log's highlight under the line the mouse is on, and the tooltip divider above the soulstones.
+- All text uses the game's own colours (green, red, orange, yellow, grey, gold, white, light blue) instead of picked ones, in the window, its tooltips and the error line in chat.
+
 ## 1.2.1
 
 - Fixed: healthstone and soulstone states were not shared with the group on ordinary realms. The addon read a realm setting ("this realm blocks addon messages") that has nothing to do with messages inside a group, and sent nothing. It now sends, and `/hst status` shows the game's answer if a message is ever refused.

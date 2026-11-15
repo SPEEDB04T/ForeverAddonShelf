@@ -2,7 +2,7 @@
 local ADDON, ns = ...
 local issecret = ns.issecret
 
-ns.VERSION = "1.2.1"
+ns.VERSION = "1.3.0"
 do
     local get = C_AddOns and C_AddOns.GetAddOnMetadata
     if get then
@@ -40,7 +40,8 @@ function ns.Safe(f, ...)
     if not seenErrors[msg] and errorCount < 5 then
         seenErrors[msg] = true
         errorCount = errorCount + 1
-        ns.Print("|cffff6060error:|r " .. msg)
+        local red = (RED_FONT_COLOR and RED_FONT_COLOR.GenerateHexColorMarkup) and RED_FONT_COLOR:GenerateHexColorMarkup() or "|cffff2020"
+        ns.Print(red .. "error:|r " .. msg)
     end
     return false
 end
