@@ -15,7 +15,7 @@
 -- works too). A reminder in your own chat says when it is time for the next one.
 local ADDON, ns = ...
 
-ns.VERSION = "1.3.5"
+ns.VERSION = "1.3.6"
 ns.TITLE = "Slutmog Shop"
 ns.ICON = "Interface\\Icons\\INV_Misc_Coin_02"
 ns.ACCENT = { 0.96, 0.55, 0.78 }
@@ -690,7 +690,7 @@ end
 -- pools for its look, its armor type, its slot and its level range, plus a share of the ads that
 -- fit any piece. {color} is the piece's own colour words, put in here.
 ---------------------------------------------------------------------------
-local GENERAL_SHARE = 6
+local GENERAL_SHARE = 11
 local flat = setmetatable({}, { __mode = "k" })     -- a piece's entry -> its ads, built once
 
 local function BuildAds(id, entry)

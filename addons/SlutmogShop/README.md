@@ -6,11 +6,11 @@ Advertise your slutmog wares with one click. Each ad names your shop and the nex
 
 ## Ready-made ads
 
-Every piece on the slutmog list (the 148 items Slutmog Scout lists) comes with 11 to 16 ready-made ads. They say plainly what the piece shows, or talk straight to the player who wants their character to look hot. Suggestive, never explicit. For example:
+Every piece on the slutmog list (the 148 items Slutmog Scout lists) comes with 12 to 16 ready-made ads. They say what the piece shows, or wink at the player who wants their character to look hot. Suggestive, never explicit. For example:
 
 > Keep getting ganked, never getting camped? Give them a reason to stay. [Tyrant's Legplates], 10 gold pieces at Smuttanie's Necessities.
 
-> Want your character to look hot instead of well geared? [Tyrant's Legplates], 10 gold pieces at Smuttanie's Necessities.
+> Gets you inspected. Then whispered. [Tyrant's Legplates], 10 gold pieces at Smuttanie's Necessities.
 
 > It's a metal thong. Both legs are bare from hip to boot. Smuttanie's Necessities has [Lord's Legguards] for 15 gold pieces.
 

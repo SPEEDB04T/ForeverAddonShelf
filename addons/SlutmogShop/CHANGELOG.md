@@ -1,5 +1,12 @@
 # Changelog
 
+## 1.3.6
+
+- Ads reworked from the Yes/No votes on the review page. The 31 lines voted No are gone: the flat "shows skin" lines, the class call-outs and the digs at your current gear.
+- The 8 lines voted Yes stay, and every piece now gets all of them that fit it.
+- Five new lines in the same vein, each passed by a fact check and a hostile buyer review: Goldshire, night elves, duel requests, free lockboxes and the Ironforge bank.
+- Fewer ads per piece (12 to 16), none of them filler.
+
 ## 1.3.5
 
 - Mail is sold to hunters and shamans only. The ads no longer pitch it to warriors and paladins below 40, who will outgrow it: nobody buys a look for armor they are about to replace.
