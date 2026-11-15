@@ -27,8 +27,17 @@ local ART    = "Interface\\AddOns\\ManaPinata\\Art\\Pinata"
 local LEVEL  = 6                       -- frame level above the nameplate
 local SWING_DEGREES, SWING_SECONDS = 9, 1.6
 local DROP_SECONDS = 0.22
-local BAR_COLOR   = { 0.16, 0.50, 1.00 }                          -- mana blue
+local MANA_BLUE   = { 0, 0, 1 }                                   -- the game's mana bar, if PowerBarColor is missing
 local BAR_TEXTURE = "Interface\\TargetingFrame\\UI-StatusBar"     -- when the bar's own can't be copied
+
+-- The colour the game paints mana bars with, so the health bar reads as "mana".
+local function ManaColor()
+    local c = type(PowerBarColor) == "table" and PowerBarColor.MANA
+    if type(c) == "table" and type(c.r) == "number" and type(c.g) == "number" and type(c.b) == "number" then
+        return c.r, c.g, c.b
+    end
+    return MANA_BLUE[1], MANA_BLUE[2], MANA_BLUE[3]
+end
 
 -- Judgement of Wisdom: the debuff ranks and the IDs other aura addons list
 -- under the same name. An ID that is never a debuff costs nothing here. IDs
@@ -191,7 +200,8 @@ local function CopyFill(tex, fill)
         tex:SetTexture(file)
     end)
     if not copied then tex:SetTexture(BAR_TEXTURE) end
-    tex:SetVertexColor(BAR_COLOR[1], BAR_COLOR[2], BAR_COLOR[3], 1)
+    local r, g, b = ManaColor()
+    tex:SetVertexColor(r, g, b, 1)
 end
 
 local function BarArt(owner, fill)

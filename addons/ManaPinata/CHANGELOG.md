@@ -1,5 +1,10 @@
 # Changelog
 
+## 1.0.1
+
+- The blue health bar uses the game's own mana-bar blue, so it looks like a mana bar.
+- The options window and minimap button follow the game's own look.
+
 ## 1.0.0
 
 First version.
