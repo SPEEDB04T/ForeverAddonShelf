@@ -1,5 +1,12 @@
 # Changelog
 
+## 1.4.1
+
+- Ads reworked from the second round of Yes/No votes. The 17 lines voted No are gone, the first five Smuttanie name lines among them.
+- 21 new general lines in the vein of the ones voted Yes: favours you get for the look, Goldshire, and true things about the player.
+- "Hit your 40s and the gentlemen don't stare like they used to?" is now an ad for every plate piece, not only Tyrant's Legplates.
+- Three new name lines, tied to Goldshire, for a shop with "Smuttanie" in its name.
+
 ## 1.4.0
 
 - Many more ads: 45 that fit any piece, and every piece now gets all of them. The descriptions written for single looks are gone; they never worked as well as the general lines.
