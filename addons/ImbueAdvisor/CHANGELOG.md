@@ -1,3 +1,6 @@
+## 1.4.2
+- Lists its frames (the hand buttons and the open list) for LookShots, a screenshot helper on the developer's machine, so the frames can be checked in game. Nothing changes for players.
+
 ## 1.4.1
 - The options window and the minimap button are redrawn by the shared kit: they now copy the game's own Options rows and its round minimap button.
 - Three option names are shorter so each fits on one line; the rest of the sentence is in the option's tooltip.

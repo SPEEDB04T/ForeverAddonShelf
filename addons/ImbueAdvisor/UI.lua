@@ -589,6 +589,19 @@ function UI.PrintReport()
     if not st.mhWeapon then ns.Print("no main-hand weapon equipped.") end
 end
 
+-- LookShots (a screenshot helper on the developer's machine only) takes one picture of each
+-- frame listed here the first time it shows. Nothing happens when it is not installed.
+LookShotsTargets = LookShotsTargets or {}
+LookShotsTargets["ImbueAdvisor"] = {
+    version = ns.VERSION,
+    frames = {
+        { label = "hand buttons", frame = function() return UI.frame end },
+        -- the open list, with enough room around it to show the hand buttons above or below it
+        { label = "list of other imbues", pad = 56,
+          frame = function() return UI.frame and UI.frame.list:IsShown() and UI.frame.list or nil end },
+    },
+}
+
 function UI.PrintDebug()
     local res = ns.result
     if not res then ns.Print("nothing calculated yet.") return end
