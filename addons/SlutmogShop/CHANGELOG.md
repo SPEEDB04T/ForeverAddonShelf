@@ -1,5 +1,13 @@
 # Changelog
 
+## 1.4.0
+
+- Many more ads: 45 that fit any piece, and every piece now gets all of them. The descriptions written for single looks are gone; they never worked as well as the general lines.
+- Five lines that play on the name Smuttanie. They only go out while the shop's name has "Smuttanie" in it.
+- A ware on the auction house is advertised as such. Open the auction house once and the shop notes which of your wares are up for sale and at what buyout. Such a ware counts as in stock, its ads end with "on the auction house" and its buyout, and its row in the shop window says "On the auction house". A ware in your bags keeps the direct endings.
+- A piece from the slutmog list found among your auctions goes on the shelf by itself, at its buyout price.
+- The note about an auction is dropped after two days, or the next time you open the auction house and it is no longer there.
+
 ## 1.3.6
 
 - Ads reworked from the Yes/No votes on the review page. The 31 lines voted No are gone: the flat "shows skin" lines, the class call-outs and the digs at your current gear.

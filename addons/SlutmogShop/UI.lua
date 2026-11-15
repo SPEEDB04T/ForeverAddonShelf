@@ -308,7 +308,8 @@ local function SyncRows()
         local _, _, _, _, _, texture = ns.ItemInfo(w.link or w.id)
         r.icon:SetTexture(texture or EMPTY_SLOT)
         local n = ns.Count(w)
-        local out = n ~= nil and n <= 0
+        local onAH = n ~= nil and n <= 0 and ns.OnAH(w.id) ~= nil
+        local out = n ~= nil and n <= 0 and not onAH
         if w.link then
             r.name:SetText(out and ns.WareName(w) or w.link)
         else
@@ -325,6 +326,9 @@ local function SyncRows()
         end
         if n == nil then
             r.stock:SetText("")
+        elseif onAH then
+            r.stock:SetText("On the auction house")
+            r.stock:SetTextColor(wr, wg, wb)
         elseif out then
             r.stock:SetText("none left")
             r.stock:SetTextColor(gr, gg, gb)

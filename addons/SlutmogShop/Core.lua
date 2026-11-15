@@ -15,7 +15,7 @@
 -- works too). A reminder in your own chat says when it is time for the next one.
 local ADDON, ns = ...
 
-ns.VERSION = "1.3.6"
+ns.VERSION = "1.4.0"
 ns.TITLE = "Slutmog Shop"
 ns.ICON = "Interface\\Icons\\INV_Misc_Coin_02"
 ns.ACCENT = { 0.96, 0.55, 0.78 }
@@ -376,9 +376,31 @@ function ns.Count(w)
     return seen
 end
 
+-- Your own auctions, as the auction house showed them the last time it was open: item id ->
+-- { price = buyout for one, at = when seen }. An auction runs two days at most, so older notes go.
+local AH_LIFE = 48 * 3600
+function ns.OnAH(id)
+    if not (db and id) or type(db.ah) ~= "table" then return nil end
+    local a = db.ah[id]
+    if type(a) ~= "table" then return nil end
+    if type(a.at) ~= "number" or time() - a.at > AH_LIFE then
+        db.ah[id] = nil
+        return nil
+    end
+    return a
+end
+
+-- Where a ware is for the buyer: "bags" (you hand it over) or "ah" (it is up on the auction house).
+function ns.Where(w)
+    local n = ns.Count(w)
+    if n and n > 0 then return "bags" end
+    if w and ns.OnAH(w.id) then return "ah" end
+    return "bags"
+end
+
 local function InStock(w)
     local n = ns.Count(w)
-    return n == nil or n > 0
+    return n == nil or n > 0 or (w ~= nil and ns.OnAH(w.id) ~= nil)
 end
 ns.InStock = InStock
 
@@ -519,6 +541,43 @@ function ns.ScanBags(all)
             one and "it" or "each", one and "it stays" or "they stay"))
         Changed()
     end
+    return #added
+end
+
+-- Reads your own auctions (the auction house must be open). A piece from the slutmog list that is
+-- up for sale goes on the shelf by itself, priced at its buyout. Returns how many it put there.
+function ns.ScanAuctions()
+    if not db or type(GetNumAuctionItems) ~= "function" or type(GetAuctionItemInfo) ~= "function" then return 0 end
+    local ok, n = pcall(GetNumAuctionItems, "owner")
+    if not ok or not Readable(n) or type(n) ~= "number" then return 0 end
+    local found, added, now = {}, {}, time()
+    for i = 1, n do
+        local r = { pcall(GetAuctionItemInfo, "owner", i) }
+        local count, buyout, sold, id = r[4], r[11], r[17], r[18]
+        if r[1] and Readable(id) and type(id) == "number" and not (Readable(sold) and sold == 1) then
+            if not (Readable(count) and type(count) == "number" and count > 0) then count = 1 end
+            if not (Readable(buyout) and type(buyout) == "number") then buyout = 0 end
+            local each = math.floor(buyout / count)
+            local old = found[id]
+            if not old or (each > 0 and (old.price == 0 or each < old.price)) then found[id] = { price = each, at = now } end
+            local link
+            if type(GetAuctionItemLink) == "function" then
+                local lok, v = pcall(GetAuctionItemLink, "owner", i)
+                if lok and Readable(v) and type(v) == "string" then link = v end
+            end
+            local key = link and WareKey(link)
+            if db.autoAdd and key and ns.ItemAds(id) and not ns.FindWare(link) and not db.passed[key] then
+                db.wares[#db.wares + 1] = { id = id, link = link, price = each, unpriced = each <= 0 or nil }
+                added[#added + 1] = link
+            end
+        end
+    end
+    db.ah = found
+    if #added > 0 then
+        Print(("found %s among your auctions and put %s on the shelf at the buyout price."):format(
+            table.concat(added, ", "), #added == 1 and "it" or "them"))
+    end
+    Changed()
     return #added
 end
 
@@ -668,7 +727,8 @@ local function WareFields(fields, w)
     fields.item, fields.price, fields.level = nil, nil, nil
     if not w then return end
     fields.item = w.link
-    fields.price = ns.PriceText(w.price)
+    local a = ns.Where(w) == "ah" and ns.OnAH(w.id)
+    fields.price = ns.PriceText(a and a.price > 0 and a.price or w.price)
     fields.level = LevelOf(w)
 end
 
@@ -680,7 +740,7 @@ local function NoStockWhy()
         return "your wares have no price yet. Click one in the shop window (/slutshop) and give it a price."
     end
     if db.stockOnly then
-        return "none of your wares is in your bags or bank (untick \"Only wares I still have\" in the options to advertise them anyway)."
+        return "none of your wares is in your bags, your bank or on the auction house (untick \"Only wares I still have\" in the options to advertise them anyway)."
     end
     return "the game has not loaded your wares' item links yet. Try again in a moment."
 end
@@ -690,11 +750,10 @@ end
 -- pools for its look, its armor type, its slot and its level range, plus a share of the ads that
 -- fit any piece. {color} is the piece's own colour words, put in here.
 ---------------------------------------------------------------------------
-local GENERAL_SHARE = 11
-local flat = setmetatable({}, { __mode = "k" })     -- a piece's entry -> its ads, built once
+local flat = setmetatable({}, { __mode = "k" })     -- a piece's entry -> its ads, built once per shop name
 
-local function BuildAds(id, entry)
-    local list, seen = { src = {} }, {}
+local function BuildAds(id, entry, shop)
+    local list, seen = { src = {}, shop = shop }, {}
     local color = type(entry.color) == "string" and entry.color or nil
     local function Add(ad)
         if type(ad) ~= "string" then return end
@@ -715,12 +774,21 @@ local function BuildAds(id, entry)
         for _, name in ipairs(entry.pools) do
             local pool = pools[name]
             if type(pool) == "table" then
-                if name == "general" then
-                    for k = 0, min(GENERAL_SHARE, #pool) - 1 do Add(pool[(id + k) % #pool + 1]) end
-                else
-                    for _, ad in ipairs(pool) do Add(ad) end
-                end
+                for _, ad in ipairs(pool) do Add(ad) end
             end
+        end
+    end
+    -- A pool called shop_<word> is for a shop with that word in its name: lines that play on the name.
+    local names = {}
+    for name in pairs(pools) do
+        if type(name) == "string" and name:sub(1, 5) == "shop_" and #name > 5 and shop:find(name:sub(6), 1, true) then
+            names[#names + 1] = name
+        end
+    end
+    table.sort(names)
+    for _, name in ipairs(names) do
+        if type(pools[name]) == "table" then
+            for _, ad in ipairs(pools[name]) do Add(ad) end
         end
     end
     return list
@@ -731,9 +799,10 @@ function ns.ItemAds(id)
     if type(all) ~= "table" or type(id) ~= "number" then return nil end
     local entry = all[id]
     if type(entry) ~= "table" then return nil end
+    local shop = db and type(db.shop) == "string" and db.shop:lower() or ""
     local list = flat[entry]
-    if not list then
-        list = BuildAds(id, entry)
+    if not list or list.shop ~= shop then
+        list = BuildAds(id, entry, shop)
         flat[entry] = list
     end
     if #list > 0 then return list end
@@ -748,6 +817,24 @@ function ns.ItemAdCount()
     return n
 end
 
+-- An ad that names neither price nor shop gets an ending, by where the ware is. The endings take
+-- turns too; one that makes the ad too long for a chat message gives way to the next.
+local function Ended(ad, fields, where, turn)
+    if ad:find("{price}", 1, true) or ad:find("{shop}", 1, true) then
+        local text, miss = Fill(ad, fields)
+        if not miss and #text <= CHAT_LIMIT then return text end
+        return nil
+    end
+    local tails = type(ns.AD_TAILS) == "table" and (ns.AD_TAILS[where] or ns.AD_TAILS.bags)
+    if type(tails) ~= "table" or #tails == 0 then tails = { " {item}, {price} at {shop}." } end
+    for k = 0, #tails - 1 do
+        local text, miss = Fill(ad .. tails[(turn + k) % #tails + 1], fields)
+        if not miss and #text <= CHAT_LIMIT then return text end
+    end
+    return nil
+end
+ns.Ended = Ended
+
 -- The next ready-made ad for the ware due next, or nil when it has none (or none fits).
 local function ComposeItemAd(offer, shop)
     local wi = offer[1]
@@ -757,12 +844,13 @@ local function ComposeItemAd(offer, shop)
     local fields = { shop = shop }
     WareFields(fields, w)
     local key = "item:" .. w.id
+    local where = ns.Where(w)
     for _, ai in ipairs(DeckOrder(key, #ads)) do
         local src = ads.src and ads.src[ai] or ads[ai]
         if db.votes[src] ~= "no" then
-            local text, miss = Fill(ads[ai], fields)
-            if not miss and #text <= CHAT_LIMIT then
-                return { text = text, kind = "item", deck = key, decks = #ads, ad = ai, ware = wi, last = wi, wares = 1,
+            local text = Ended(ads[ai], fields, where, ai)
+            if text then
+                return { text = text, kind = "item", where = where, deck = key, decks = #ads, ad = ai, ware = wi, last = wi, wares = 1,
                          src = src, vote = db.votes[src] }
             end
         end
@@ -1244,7 +1332,8 @@ local function ShowAds(rest)
     local fields = { shop = ns.ShopName(), item = shown, price = w and not w.unpriced and ns.PriceText(w.price) or "(your price)",
                      level = LevelOf({ link = (w and w.link) or link, id = id }) or "?" }
     Print(("%d ready-made ads for %s:"):format(#ads, shown))
-    for k, ad in ipairs(ads) do Say(("  %d. %s"):format(k, (Fill(ad, fields)))) end
+    local where = w and ns.Where(w) or "bags"
+    for k, ad in ipairs(ads) do Say(("  %d. %s"):format(k, Ended(ad, fields, where, k) or (Fill(ad, fields)))) end
 end
 
 local function Slash(msg)
@@ -1315,7 +1404,8 @@ local function Slash(msg)
         Print("your wares:")
         for i, w in ipairs(db.wares) do
             local n = ns.Count(w)
-            local stock = n == nil and "" or (n > 0 and (" (" .. n .. " in stock)") or " (none left)")
+            local stock = n == nil and "" or (n > 0 and (" (" .. n .. " in stock)")
+                or (ns.OnAH(w.id) and " (on the auction house)" or " (none left)"))
             if DEFAULT_CHAT_FRAME and DEFAULT_CHAT_FRAME.AddMessage then
                 DEFAULT_CHAT_FRAME:AddMessage(("  %d. %s %s%s"):format(i, w.link or ns.WareName(w),
                     w.unpriced and "no price yet" or ns.PriceText(w.price), stock))
@@ -1366,14 +1456,14 @@ function SlutmogShop_Toggle() ToggleWindow() end
 local stockSeen
 local function StockKey()
     local parts = {}
-    for i, w in ipairs(db.wares) do parts[i] = InStock(w) and "1" or "0" end
+    for i, w in ipairs(db.wares) do parts[i] = InStock(w) and ns.Where(w):sub(1, 1) or "0" end
     return table.concat(parts)
 end
 
 local events = CreateFrame("Frame")
 ns.events = events
 -- One event this client does not know must not stop the rest from registering.
-for _, ev in ipairs({ "ADDON_LOADED", "PLAYER_LOGIN", "GET_ITEM_INFO_RECEIVED", "BAG_UPDATE_DELAYED",
+for _, ev in ipairs({ "ADDON_LOADED", "PLAYER_LOGIN", "GET_ITEM_INFO_RECEIVED", "BAG_UPDATE_DELAYED", "AUCTION_OWNED_LIST_UPDATE",
                       "CHANNEL_UI_UPDATE", "CHAT_MSG_CHANNEL", "CHAT_MSG_SAY", "CHAT_MSG_YELL", "CHAT_MSG_GUILD" }) do
     pcall(events.RegisterEvent, events, ev)
 end
@@ -1406,6 +1496,9 @@ events:SetScript("OnEvent", function(_, event, ...)
         elseif ns.UI and ns.UI.RefreshStock then
             pcall(ns.UI.RefreshStock)
         end
+    elseif event == "AUCTION_OWNED_LIST_UPDATE" then
+        ns.ScanAuctions()
+        stockSeen = StockKey()
     elseif event == "CHANNEL_UI_UPDATE" then
         Changed()
     else
