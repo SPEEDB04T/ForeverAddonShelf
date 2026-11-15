@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.0.4
+
+- Fixed: calls did not reach the rest of the group. The server writes your realm one way in a message's sender and the game another way, and the addon compared the two and quietly threw the message away. It now finds who sent a message by their name in your group.
+- Fixed: "kneel before my target" and "/kneelall me" never named anyone, because names on this realm have a space and the addon refused names with a space. The one knelt to stays standing again.
+- `/kneelall status` now says how many messages were ignored and why, and shows the last addon messages sent and received. The last 40 are kept in the saved settings.
+
 ## 1.0.3
 
 - The countdown is now an exact copy of the game's zone name: same place on screen, same size and lettering, the line under it in the same colour as the name, and the same half-second fade-in and two-second fade-out.

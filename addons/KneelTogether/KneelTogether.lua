@@ -62,7 +62,7 @@ local db
 local floor, ceil, max, min = math.floor, math.ceil, math.max, math.min
 local issecret = issecretvalue
 
-local VERSION = "1.0.3"
+local VERSION = "1.0.4"
 if C_AddOns and C_AddOns.GetAddOnMetadata then
     local ok, v = pcall(C_AddOns.GetAddOnMetadata, ADDON_NAME, "Version")
     if ok and type(v) == "string" and v ~= "" and not (issecret and issecret(v)) then VERSION = v end
@@ -90,29 +90,43 @@ end
 ---------------------------------------------------------------------------
 -- Names and the group
 ---------------------------------------------------------------------------
--- "Name-MyRealm" -> "Name"; players from other realms keep their realm.
-local function Short(name)
-    if type(name) ~= "string" or name == "" then return nil end
-    local short = Ask(Ambiguate, name, "none")
-    if type(short) == "string" and short ~= "" then return short end
-    return name
-end
+-- Names on this realm are two words ("First Last"), and the server spells the
+-- realm in a sender ("CAMWOWUS1Realm9RPPvP") unlike GetNormalizedRealmName()
+-- ("RPPvP"). So a sender is never compared as a string: it is looked up in the
+-- group by name, the realm only breaks a tie (see pitfalls.md, "Who sent an
+-- addon message").
 
-local function FullName(unit)
-    local name, realm = Ask(UnitFullName, unit)
-    if type(name) ~= "string" or name == "" then
-        name, realm = Ask(UnitName, unit)
-    end
+-- A unit's name as the roster gives it: "First Last", or "First Last-Realm"
+-- when the game gives a realm (another realm). The key for everything.
+local function Key(unit)
+    local name, realm = Ask(UnitName, unit)
     if type(name) ~= "string" or name == "" then return nil end
-    if type(realm) ~= "string" or realm == "" then realm = Ask(GetNormalizedRealmName) end
     if type(realm) == "string" and realm ~= "" then return name .. "-" .. realm end
     return name
 end
 
-local function ShortOf(unit) return Short(FullName(unit)) end
-local function Me() return ShortOf("player") end
+local function Me() return Key("player") end
 
 local function InGroup() return Ask(IsInGroup) and true or false end
+
+-- lower-case letters and digits only, for comparing realm spellings
+local function Squeeze(s)
+    return type(s) == "string" and s:lower():gsub("[^%w]", "") or ""
+end
+
+local function RealmAgrees(a, b)
+    a, b = Squeeze(a), Squeeze(b)
+    if a == "" or b == "" then return false end
+    return a == b or a:sub(-#b) == b or b:sub(-#a) == a or a:sub(1, #b) == b or b:sub(1, #a) == a
+end
+
+local function MyRealmAgrees(realm)
+    return RealmAgrees(realm, Ask(GetNormalizedRealmName)) or RealmAgrees(realm, Ask(GetRealmName))
+end
+
+local function IsMe(unit)
+    return unit == "player" or Ask(UnitIsUnit, unit, "player") == true
+end
 
 local function GroupUnits()
     local units = {}
@@ -129,21 +143,69 @@ local function GroupUnits()
     return units
 end
 
-local function UnitOf(short)
+-- A sender or a name out of a message -> the group unit it is, or nil.
+-- "First Last-Any Realm": the part before the first "-" is the name (space and
+-- all); one group member with that name is the one, whatever the realm says.
+local function UnitOf(full)
+    if type(full) ~= "string" or full == "" then return nil end
+    local who, realm = full:match("^(.-)%-(.*)$")
+    if not who or who == "" then who, realm = full, nil end
+    local hits = {}
     for _, unit in ipairs(GroupUnits()) do
-        if ShortOf(unit) == short then return unit end
+        local name, urealm = Ask(UnitName, unit)
+        if name == who then
+            if type(urealm) ~= "string" or urealm == "" then urealm = nil end
+            hits[#hits + 1] = { unit = unit, realm = urealm }
+        end
     end
+    if #hits <= 1 then return hits[1] and hits[1].unit end
+    for _, hit in ipairs(hits) do                   -- the same name twice: the realm decides
+        if realm then
+            if hit.realm and RealmAgrees(hit.realm, realm) then return hit.unit end
+            if not hit.realm and MyRealmAgrees(realm) then return hit.unit end
+        elseif not hit.realm then
+            return hit.unit
+        end
+    end
+    return hits[1].unit
 end
 
 local function Ranked(unit)
     return Ask(UnitIsGroupLeader, unit) == true or Ask(UnitIsGroupAssistant, unit) == true
 end
 
--- A player name out of a message: letters (any alphabet), an optional realm.
+-- A player name out of a message: any letters, spaces kept ("First Last"),
+-- an optional realm. No control characters, ";" or "|".
 local function CleanName(name)
-    if type(name) ~= "string" or name == "" or #name > 80 then return nil end
-    if name:find("[%c%s;|]") then return nil end
+    if type(name) ~= "string" or #name > 80 then return nil end
+    name = name:match("^%s*(.-)%s*$")
+    if name == "" or name:find("[%c;|]") then return nil end
     return name
+end
+
+---------------------------------------------------------------------------
+-- What went over the wire, kept in the saved settings (last 40 lines), and
+-- the senders that could not be found in the group
+---------------------------------------------------------------------------
+local LOG_SIZE = 40
+local ignored = {}          -- [raw sender or "(hidden)"] = how many messages
+ns.ignored = ignored
+
+local function Stamp()
+    local s = Ask(date, "%H:%M:%S")
+    if type(s) == "string" then return s end
+    return ("%.1f"):format(Ask(GetTime) or 0)
+end
+
+local function Log(dir, channel, sender, who, code, msg)
+    if not (db and type(db.commLog) == "table") then return end
+    local log = db.commLog
+    log[#log + 1] = {
+        at = Stamp(), dir = dir, channel = tostring(channel or "-"), sender = tostring(sender or "-"),
+        unit = tostring(who or "-"), code = tostring(code == nil and "-" or code),
+        msg = type(msg) == "string" and msg:sub(1, 40) or "(hidden)",
+    }
+    while #log > LOG_SIZE do table.remove(log, 1) end
 end
 
 ---------------------------------------------------------------------------
@@ -185,8 +247,12 @@ local function Send(msg)
     local channel = Channel()
     if not channel then return false, "you are not in a group" end
     if not (C_ChatInfo and C_ChatInfo.SendAddonMessage) then return false, "this client has no addon messages" end
-    if ChatLocked() then return false, "the game locks chat here right now (a boss fight, usually)" end
+    if ChatLocked() then
+        Log("out", channel, nil, nil, "chat locked", msg)
+        return false, "the game locks chat here right now (a boss fight, usually)"
+    end
     local ok, result = pcall(C_ChatInfo.SendAddonMessage, COMM, msg, channel)
+    Log("out", channel, nil, nil, not ok and "error" or (Plain(result) and result or "hidden"), msg)
     if not ok then return false, "the game refused the message" end
     if not Plain(result) or result == 0 or result == true then return true end
     if REFUSED[result] then return false, REFUSED[result] end
@@ -386,7 +452,8 @@ local function Lag()
     return min(500, ms) / 1000
 end
 
-local function StartCall(from, id, moveKey, delay, toward, mine)
+-- from: the caller's roster name; unit: their group unit (nil for my own calls).
+local function StartCall(from, id, moveKey, delay, toward, mine, unit)
     if mine then
         local own = myCalls[id]
         if own then
@@ -394,8 +461,7 @@ local function StartCall(from, id, moveKey, delay, toward, mine)
             own.heard = true
         end
     else
-        local unit = UnitOf(from)
-        if not unit then return end                 -- not someone in my group
+        if not unit then return end
         if db.obey == "off" then
             Send("A;" .. id .. ";off")
             return
@@ -407,8 +473,10 @@ local function StartCall(from, id, moveKey, delay, toward, mine)
     end
     local call = { id = id, caller = from, move = moveKey, mine = mine }
     if moveKey == "K" and toward then
-        call.toward = Short(toward)
-        call.forMe = call.toward ~= nil and call.toward == Me()
+        -- my own roster's spelling of that player; someone outside the group keeps the name sent
+        local towardUnit = UnitOf(toward)
+        call.toward = (towardUnit and Key(towardUnit)) or toward
+        call.forMe = towardUnit ~= nil and IsMe(towardUnit)
     end
     call.fireAt = GetTime() + max(0, delay - (delay >= 1 and Lag() or 0))
     pending = call
@@ -422,11 +490,12 @@ end
 ---------------------------------------------------------------------------
 -- Messages in
 ---------------------------------------------------------------------------
-local function OnCall(from, rest)
+local function OnCall(from, unit, rest)
     local id, moveKey, delay, toward = rest:match("^(%w+);(%a);(%d+);(.*)$")
     if not id or not MOVES[moveKey] then return end
     delay = min(MAX_DELAY, tonumber(delay) or 0)
-    StartCall(from, id, moveKey, delay, CleanName(toward), from == Me())
+    local mine = IsMe(unit)
+    StartCall(from, id, moveKey, delay, CleanName(toward), mine, not mine and unit or nil)
 end
 
 local function OnCancel(from, id)
@@ -456,13 +525,33 @@ local function OnHere(from, rest)
     if version then roll.have[from] = { version = version, obey = obey } end
 end
 
+local function Ignore(sender, why)
+    ignored[sender] = ignored[sender] or { count = 0 }
+    ignored[sender].count = ignored[sender].count + 1
+    ignored[sender].why = why
+end
+
 local function OnMessage(prefix, msg, channel, sender)
-    if not (Plain(prefix) and Plain(msg) and Plain(channel) and Plain(sender)) then return end
-    if prefix ~= COMM or type(msg) ~= "string" or not CHANNELS[channel] then return end
-    local from = Short(sender)
-    if not from then return end
+    if not Plain(prefix) or prefix ~= COMM then return end
+    if not (Plain(msg) and Plain(channel)) then
+        Log("in", Plain(channel) and channel, Plain(sender) and sender or "(hidden)", nil, "unreadable", nil)
+        return
+    end
+    if type(msg) ~= "string" or not CHANNELS[channel] then return end
+    if not Plain(sender) or type(sender) ~= "string" or sender == "" then
+        Ignore("(hidden)", "the game hid who sent it")
+        Log("in", channel, "(hidden)", "nobody", nil, msg)
+        return
+    end
+    local unit = UnitOf(sender)
+    local from = unit and Key(unit)
+    Log("in", channel, sender, from or "nobody", nil, msg)
+    if not from then
+        Ignore(sender, "not found in the group")
+        return
+    end
     local kind, rest = msg:match("^(%a);?(.*)$")
-    if kind == "C" then OnCall(from, rest)
+    if kind == "C" then OnCall(from, unit, rest)
     elseif kind == "X" then OnCancel(from, rest)
     elseif kind == "A" then OnAnswer(from, rest)
     elseif kind == "Q" then OnRollCall()
@@ -486,7 +575,7 @@ local function Summary(call)
     local move = MOVES[call.move]
     local did, total, didnt = 0, 0, {}
     for _, unit in ipairs(GroupUnits()) do
-        local name = ShortOf(unit)
+        local name = Key(unit)
         if name and name ~= call.toward then
             total = total + 1
             local result = call.answers[name]
@@ -535,12 +624,13 @@ function ns.Call(moveKey, delay, before)
         return
     end
 
+    -- sent as UnitName gives it: "First Last", plus the realm only when the game gives one
     local toward
     if moveKey == "K" then
         if before == "me" then
-            toward = FullName("player")
+            toward = Key("player")
         elseif Ask(UnitExists, "target") and Ask(UnitIsPlayer, "target") then
-            toward = FullName("target")
+            toward = Key("target")
         end
     end
     toward = CleanName(toward)
@@ -554,7 +644,7 @@ function ns.Call(moveKey, delay, before)
     end
 
     -- Noted before it is sent: the call and the first answers can come back at once.
-    local call = { id = id, move = moveKey, answers = {}, toward = moveKey == "K" and Short(toward) or nil }
+    local call = { id = id, move = moveKey, answers = {}, toward = moveKey == "K" and toward or nil }
     myCalls[id] = call
     local ok, why = Send(("C;%s;%s;%d;%s"):format(id, moveKey, delay, toward or ""))
     if not ok then
@@ -623,7 +713,7 @@ function ns.RollCall()
             roll = nil
             local have, without = {}, {}
             for _, unit in ipairs(GroupUnits()) do
-                local name = ShortOf(unit)
+                local name = Key(unit)
                 local entry = name and mine.have[name]
                 if entry then
                     local note = entry.obey == "off" and " (ignores calls)"
@@ -651,6 +741,8 @@ local function InitDB()
         if type(db[key]) ~= type(value) or (CHOICES[key] and not CHOICES[key][db[key]]) then db[key] = value end
     end
     db.delay = max(0, min(MAX_DELAY, floor(db.delay)))
+    if type(db.commLog) ~= "table" then db.commLog = {} end
+    while #db.commLog > LOG_SIZE do table.remove(db.commLog, 1) end
     ns.db = db
 end
 
@@ -716,6 +808,23 @@ local function PrintStatus()
         .. "  |  group chat line " .. (db.announce and "on" or "off")
         .. "  |  I kneel for " .. OBEY_WORDS[db.obey])
     if ns.messageError then Print("a message could not be read: " .. ns.messageError) end
+    for sender, entry in pairs(ignored) do
+        Print(entry.count .. " message" .. (entry.count == 1 and "" or "s") .. " from " .. sender
+            .. " ignored: " .. entry.why .. ".")
+    end
+    local log = db.commLog or {}
+    if #log > 0 then
+        Print("last addon messages (all " .. #log .. " are saved in KneelTogetherDB.commLog):")
+        local function Safe(s) return (tostring(s):gsub("|", "||")) end     -- no chat codes from a message
+        for i = max(1, #log - 4), #log do
+            local e = log[i]
+            if e.dir == "out" then
+                print(("  %s out %s: %s (result %s)"):format(e.at, e.channel, Safe(e.msg), e.code))
+            else
+                print(("  %s in %s from %s = %s: %s"):format(e.at, e.channel, Safe(e.sender), Safe(e.unit), Safe(e.msg)))
+            end
+        end
+    end
 end
 
 local function PrintHelp()

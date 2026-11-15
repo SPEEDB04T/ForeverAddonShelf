@@ -24,7 +24,7 @@ For WoW Forever (Interface 16001).
 | `/kneelall check` | Who in the group has the addon, and who ignores calls |
 | `/kneelall config` | The options window (also: right-click the minimap button, or Options > AddOns) |
 | `/kneelall obey anyone` / `lead` / `off` | Whose calls move your character |
-| `/kneelall minimap` / `reset` / `status` / `help` | Minimap button on or off, defaults, current settings, the command list |
+| `/kneelall minimap` / `reset` / `status` / `help` | Minimap button on or off, defaults, current settings (plus ignored messages and the last addon messages sent and received), the command list |
 
 A left-click on the minimap button calls the kneel.
 
