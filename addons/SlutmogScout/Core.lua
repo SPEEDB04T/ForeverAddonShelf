@@ -47,27 +47,48 @@ ns.Num = Num
 -------------------------------------------------------------------------------
 -- Money
 -------------------------------------------------------------------------------
--- dim = true gives the same text in grey (used for prices that are not current).
+-- Written the way the game writes money: white amounts with the gold, silver
+-- and copper coin icons (letters in colourblind mode), shortened to gold only
+-- from 100 gold up. dim = true gives the amounts in grey (used for prices
+-- that are not current).
+ns.COIN = {
+  g = "|TInterface\\MoneyFrame\\UI-GoldIcon:0:0:2:0|t",
+  s = "|TInterface\\MoneyFrame\\UI-SilverIcon:0:0:2:0|t",
+  c = "|TInterface\\MoneyFrame\\UI-CopperIcon:0:0:2:0|t",
+}
+local function CoinLetters()
+  local ok, on = pcall(function()
+    return GetCVarBool and GetCVarBool("colorblindMode")
+  end)
+  return ok and on == true
+end
+local function GreyHex()
+  return ns.GREY_HEX or "ff808080"
+end
 function ns.Money(copper, dim)
   if not copper then
-    return "|cff777777-|r"
+    return "|c" .. GreyHex() .. "-|r"
   end
   copper = math.floor(copper + 0.5)
   local g = math.floor(copper / 10000)
   local s = math.floor((copper % 10000) / 100)
   local c = copper % 100
+  local letters = CoinLetters()
+  local function coin(n, unit)
+    return tostring(n) .. (letters and unit or ns.COIN[unit])
+  end
   local text
   if g >= 100 then
-    text = ("|cffffd100%s|rg"):format(BreakUpLargeNumbers and BreakUpLargeNumbers(g) or g)
+    text = coin(BreakUpLargeNumbers and BreakUpLargeNumbers(g) or g, "g")
   elseif g > 0 then
-    text = ("|cffffd100%d|rg |cffc7c7cf%d|rs"):format(g, s)
+    text = coin(g, "g") .. " " .. coin(s, "s")
   elseif s > 0 then
-    text = ("|cffc7c7cf%d|rs |cffeda55f%d|rc"):format(s, c)
+    text = coin(s, "s") .. " " .. coin(c, "c")
   else
-    text = ("|cffeda55f%d|rc"):format(c)
+    text = coin(c, "c")
   end
   if dim then
-    text = "|cff999999" .. text:gsub("|c%x%x%x%x%x%x%x%x", ""):gsub("|r", "") .. "|r"
+    text = "|c" .. GreyHex() .. text .. "|r"
   end
   return text
 end
@@ -1128,7 +1149,7 @@ local function OnTooltipItem(tooltip, data)
   tooltip:AddLine("|cffff66aaSlutmog|r: " .. (it.look or "revealing"), 1, 1, 1, true)
   local info = ns.Price(id)
   if info.low then
-    tooltip:AddDoubleLine("Lowest in your last scan", ns.Money(info.low) .. (" |cff999999(%d listed in all)|r"):format(info.qty or 0))
+    tooltip:AddDoubleLine("Lowest in your last scan", ns.Money(info.low) .. (" |c%s(%d listed in all)|r"):format(GreyHex(), info.qty or 0))
   elseif info.value then
     if info.qty ~= nil then
       tooltip:AddDoubleLine("Not listed in your last scan. Typical lowest price", ns.Money(info.value))
@@ -1138,9 +1159,9 @@ local function OnTooltipItem(tooltip, data)
     end
   end
   if it.src == "fishing" then
-    tooltip:AddLine(it.srcNote or "Fished up, not a mob drop.", 0.7, 0.9, 0.7, true)
+    tooltip:AddLine(it.srcNote or "Fished up, not a mob drop.", 1, 1, 1, true)
   elseif it.inst then
-    tooltip:AddLine("Drops in " .. it.inst .. " (dungeon).", 0.7, 0.9, 0.7, true)
+    tooltip:AddLine("Drops in " .. it.inst .. " (dungeon).", 1, 1, 1, true)
   else
     local spots = ns.SpotsForItem(id, 2)
     if #spots > 0 then
@@ -1149,7 +1170,7 @@ local function OnTooltipItem(tooltip, data)
       for _, s in ipairs(spots) do
         names[#names + 1] = ns.SpotLabel(s.spot)
       end
-      tooltip:AddLine(("Farm (rule of thumb): level %d-%d mobs, e.g. %s"):format(lo, hi, table.concat(names, "; ")), 0.7, 0.9, 0.7, true)
+      tooltip:AddLine(("Farm (rule of thumb): level %d-%d mobs, e.g. %s"):format(lo, hi, table.concat(names, "; ")), 1, 1, 1, true)
     end
   end
 end

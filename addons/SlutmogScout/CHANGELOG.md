@@ -1,5 +1,16 @@
 # Changelog
 
+## 1.3.0
+
+The window now looks like the game's own auction house list.
+
+- Rows use the auction house's striped row background and its row highlight, instead of flat colour.
+- Item icons have the auction house's small icon border.
+- Column headers are the game's column header tabs, with the auction house's sort arrow.
+- Market, Farm guide and Measured are the game's tabs along the bottom of the window.
+- Prices are written with the gold, silver and copper coin icons (coin letters in colourblind mode).
+- Text uses the game's colours: gold titles and labels, white values, grey hints, and the game's item quality colours.
+
 ## 1.2.0
 
 Options window and minimap button.

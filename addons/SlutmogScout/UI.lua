@@ -1,7 +1,73 @@
 -- Slutmog Scout: window (Market, Farm guide and Measured tabs) and the auction house button
 local ADDON, ns = ...
 
+-- Fallback only: the game's own item quality colours, used when the game's
+-- table cannot be read.
 local QUALITY_HEX = { [0] = "ff9d9d9d", [1] = "ffffffff", [2] = "ff1eff00", [3] = "ff0070dd", [4] = "ffa335ee", [5] = "ffff8000" }
+
+-------------------------------------------------------------------------------
+-- Game look: colours and art the game itself uses (its auction house list).
+-------------------------------------------------------------------------------
+local function ColorRGB(c, r, g, b)
+  if type(c) == "table" and type(c.r) == "number" then
+    return c.r, c.g, c.b
+  end
+  return r, g, b
+end
+local GOLD = { ColorRGB(NORMAL_FONT_COLOR, 1, 0.82, 0) }
+local WHITE = { ColorRGB(HIGHLIGHT_FONT_COLOR, 1, 1, 1) }
+local GREY = { ColorRGB(GRAY_FONT_COLOR, 0.5, 0.5, 0.5) }
+local GREY_HEX = ("ff%02x%02x%02x"):format(GREY[1] * 255, GREY[2] * 255, GREY[3] * 255)
+ns.GREY_HEX = GREY_HEX
+
+local function Grey(text)
+  return "|c" .. GREY_HEX .. tostring(text) .. "|r"
+end
+
+local function QualityHex(q)
+  if C_Item and C_Item.GetItemQualityColor then
+    local ok, _, _, _, hex = pcall(C_Item.GetItemQualityColor, q)
+    if ok and type(hex) == "string" and #hex == 8 then
+      return hex
+    end
+  end
+  return QUALITY_HEX[q] or QUALITY_HEX[2]
+end
+
+local atlasKnown = {}
+local function HasAtlas(name)
+  if atlasKnown[name] == nil then
+    local ok, info = pcall(function()
+      return C_Texture and C_Texture.GetAtlasInfo and C_Texture.GetAtlasInfo(name)
+    end)
+    atlasKnown[name] = ok and info ~= nil and info ~= false
+  end
+  return atlasKnown[name]
+end
+
+-- Puts game art on a texture: the atlas when this client has it, else the
+-- file. Returns false (and hides the texture) when neither is available, so
+-- a missing piece of art never turns into a flat colour.
+local function SetArt(tex, atlas, file)
+  if atlas and HasAtlas(atlas) then
+    tex:SetAtlas(atlas)
+    return true
+  end
+  if file then
+    tex:SetTexture(file)
+    return true
+  end
+  tex:Hide()
+  return false
+end
+
+local function TryCreate(kind, name, parent, template)
+  local ok, f = pcall(CreateFrame, kind, name, parent, template)
+  if ok and f then
+    return f
+  end
+  return nil
+end
 local ARMOR_ORDER = { "all", "cloth", "leather", "mail", "plate" }
 local ARMOR_LABEL = { all = "All", cloth = "Cloth", leather = "Leather", mail = "Mail", plate = "Plate", other = "Other" }
 local SLOT_LABEL = { chest = "chest", legs = "legs", shoulder = "shoulders", waist = "belt", hands = "gloves", feet = "boots", head = "head", wrist = "bracers", back = "cloak", other = "" }
@@ -28,13 +94,19 @@ local COLS = {
 local COL_GAP = 8
 local ICON_W = 20
 
+local TAB_DEFS = { { "market", "Market", 80 }, { "farm", "Farm guide", 90 }, { "measured", "Measured", 90 } }
+local TAB_INDEX = {}
+for i, def in ipairs(TAB_DEFS) do
+  TAB_INDEX[def[1]] = i
+end
+
 local state = { tab = "market", armor = "all", listedOnly = false, sortKey = "value", sortAsc = false, farmItem = nil }
 local win, marketView, farmView, measuredView, statusText, scanButton, farmHeader, farmClear, listedCheck, listedText
 local tabButtons, armorButtons, headerText = {}, {}, {}
 
 local function ItemName(id, it)
   it = it or ns.ITEMS[id] or (ns.db.custom[id]) or {}
-  return ("|c%s%s|r"):format(QUALITY_HEX[it.q or 2] or QUALITY_HEX[2], it.name or ("Item " .. id))
+  return ("|c%s%s|r"):format(QualityHex(it.q or 2), it.name or ("Item " .. id))
 end
 
 local function ItemIcon(id)
@@ -108,54 +180,57 @@ function ns.FillItemTooltip(tip, id)
     return
   end
   local info = ns.Price(id)
+  local g1, g2, g3 = GOLD[1], GOLD[2], GOLD[3]
+  local w1, w2, w3 = WHITE[1], WHITE[2], WHITE[3]
+  local e1, e2, e3 = GREY[1], GREY[2], GREY[3]
   tip:AddLine(" ")
-  tip:AddLine("|cffff66aaSlutmog|r: " .. (it.look or "revealing"), 1, 1, 1, true)
+  tip:AddLine("|cffff66aaSlutmog|r: " .. (it.look or "revealing"), w1, w2, w3, true)
   if info.low then
-    tip:AddDoubleLine("Lowest in your last scan", ns.Money(info.low) .. (" |cff999999(%d listed in all)|r"):format(info.qty or 0), 1, 0.82, 0, 1, 1, 1)
+    tip:AddDoubleLine("Lowest in your last scan", ns.Money(info.low) .. " " .. Grey(("(%d listed in all)"):format(info.qty or 0)), g1, g2, g3, w1, w2, w3)
   end
   if info.value then
-    tip:AddDoubleLine("Typical lowest price (" .. (info.source or "?") .. ")", ns.Money(info.value, not info.low), 1, 0.82, 0, 1, 1, 1)
+    tip:AddDoubleLine("Typical lowest price (" .. (info.source or "?") .. ")", ns.Money(info.value, not info.low), g1, g2, g3, w1, w2, w3)
   else
-    tip:AddLine("No price yet. Scan at the auction house.", 0.6, 0.6, 0.6)
+    tip:AddLine("No price yet. Scan at the auction house.", e1, e2, e3)
   end
   if info.seenPct then
-    tip:AddDoubleLine("Listed in", ("%d%% of your scans"):format(Pct(info.seenPct)), 1, 0.82, 0, 1, 1, 1)
+    tip:AddDoubleLine("Listed in", ("%d%% of your scans"):format(Pct(info.seenPct)), g1, g2, g3, w1, w2, w3)
   end
   if not info.low and info.lastSeen then
-    tip:AddDoubleLine("Last seen", Ago(info.lastSeen) .. " at " .. ns.Money(info.lastMin), 1, 0.82, 0, 1, 1, 1)
+    tip:AddDoubleLine("Last seen", Ago(info.lastSeen) .. " at " .. ns.Money(info.lastMin), g1, g2, g3, w1, w2, w3)
   end
   tip:AddLine(" ")
   if it.src == "fishing" then
-    tip:AddLine(it.srcNote or "Fished up, not a mob drop.", 0.7, 0.9, 0.7, true)
+    tip:AddLine(it.srcNote or "Fished up, not a mob drop.", w1, w2, w3, true)
   else
     local spots = ns.SpotsForItem(id, 5)
     local lo, hi, measured = ns.MobRange(it)
     if it.inst then
-      tip:AddLine("Drops in " .. it.inst .. " (dungeon).", 0.7, 0.9, 0.7, true)
+      tip:AddLine("Drops in " .. it.inst .. " (dungeon).", w1, w2, w3, true)
     elseif measured then
-      tip:AddLine(("Level %d-%d mobs (rule of thumb, widened by your own drops). Best level matches:"):format(lo, hi), 0.7, 0.9, 0.7, true)
+      tip:AddLine(("Level %d-%d mobs (rule of thumb, widened by your own drops). Best level matches:"):format(lo, hi), w1, w2, w3, true)
     else
-      tip:AddLine(("Probably a world drop from about level %d-%d mobs (rule of thumb). Best level matches:"):format(lo, hi), 0.7, 0.9, 0.7, true)
+      tip:AddLine(("Probably a world drop from about level %d-%d mobs (rule of thumb). Best level matches:"):format(lo, hi), w1, w2, w3, true)
     end
     for _, s in ipairs(spots) do
-      tip:AddDoubleLine("  " .. ns.SpotLabel(s.spot), ("%d-%d"):format(s.spot.lo, s.spot.hi), 1, 1, 1, 0.7, 0.7, 0.7)
+      tip:AddDoubleLine("  " .. ns.SpotLabel(s.spot), ("%d-%d"):format(s.spot.lo, s.spot.hi), w1, w2, w3, e1, e2, e3)
     end
   end
   local drops = ns.Drops(id)
   if drops then
     tip:AddLine(" ")
-    tip:AddLine("Dropped for you in:", 1, 0.4, 0.67)
+    tip:AddLine("Dropped for you in:", g1, g2, g3)
     for _, d in ipairs(SortedCounts(drops)) do
-      tip:AddDoubleLine("  " .. d.name, "x" .. d.n, 1, 1, 1, 1, 1, 1)
+      tip:AddDoubleLine("  " .. d.name, "x" .. d.n, w1, w2, w3, w1, w2, w3)
     end
     local seen = ns.db.dropLvl[id]
     if type(seen) == "table" and seen.lo then
-      tip:AddLine(("  from level %d-%d mobs"):format(seen.lo, seen.hi), 0.7, 0.7, 0.7)
+      tip:AddLine(("  from level %d-%d mobs"):format(seen.lo, seen.hi), e1, e2, e3)
     end
   end
   tip:AddLine(" ")
-  tip:AddLine("Click: where to farm it. Ctrl-click: try it on.", 0.5, 0.5, 0.5)
-  tip:AddLine("Shift-click: link in chat. Right-click: search the auction house.", 0.5, 0.5, 0.5)
+  tip:AddLine("Click: where to farm it. Ctrl-click: try it on.", e1, e2, e3)
+  tip:AddLine("Shift-click: link in chat. Right-click: search the auction house.", e1, e2, e3)
 end
 
 local function ShowItemTooltip(owner, id)
@@ -246,16 +321,28 @@ local function CreateList(parent, rowHeight, buildRow)
   return list
 end
 
+-- Row background and hover highlight, as in the game's auction house list:
+-- alternating stripes, and its row highlight on rows that can be clicked.
 -- noHover: rows that cannot be clicked get no hover highlight.
 local function AddStripe(row, noHover)
   local bg = row:CreateTexture(nil, "BACKGROUND")
   bg:SetAllPoints()
-  bg:SetColorTexture(1, 1, 1, 0.04)
   row.stripe = bg
   if not noHover then
     local hl = row:CreateTexture(nil, "HIGHLIGHT")
     hl:SetAllPoints()
-    hl:SetColorTexture(1, 0.4, 0.67, 0.15)
+    if SetArt(hl, "auctionhouse-ui-row-highlight", "Interface\\QuestFrame\\UI-QuestTitleHighlight") then
+      hl:SetBlendMode("ADD")
+    end
+  end
+end
+
+local function SetStripe(row, i)
+  if HasAtlas("auctionhouse-rowstripe-1") then
+    row.stripe:SetAtlas(i % 2 == 1 and "auctionhouse-rowstripe-1" or "auctionhouse-rowstripe-2")
+    row.stripe:Show()
+  else
+    row.stripe:Hide()
   end
 end
 
@@ -268,9 +355,19 @@ local function BuildMarketRow(parent)
   row.smogRow = true
   row:RegisterForClicks("LeftButtonUp", "RightButtonUp")
   AddStripe(row)
+  -- icon framed like the auction house's small item icons
   row.icon = row:CreateTexture(nil, "ARTWORK")
-  row.icon:SetSize(16, 16)
-  row.icon:SetPoint("LEFT", 2, 0)
+  row.icon:SetSize(14, 14)
+  row.icon:SetPoint("LEFT", 3, 0)
+  local border = row:CreateTexture(nil, "OVERLAY")
+  border:SetSize(16, 16)
+  border:SetPoint("CENTER", row.icon, "CENTER")
+  if not HasAtlas("auctionhouse-itemicon-small-border") then
+    border:Hide()
+    row.icon:SetSize(16, 16)
+  else
+    border:SetAtlas("auctionhouse-itemicon-small-border")
+  end
   row.cells = {}
   local x = ICON_W + 2
   for _, col in ipairs(COLS) do
@@ -341,29 +438,44 @@ end
 
 local function RefreshMarket()
   for _, col in ipairs(COLS) do
-    local arrow = ""
-    if state.sortKey == col.key then
-      arrow = state.sortAsc and " ^" or " v"
+    -- sort arrow as in the auction house: its arrow art, flipped for the
+    -- other direction; a text arrow only where the art is missing
+    local h = headerText[col.key]
+    local arrow = h.arrow
+    local sorted = state.sortKey == col.key
+    h.arrowState = sorted and (state.sortAsc and "asc" or "desc") or nil
+    if arrow then
+      h:SetText(col.label)
+      h.UpdateArrowPos()
+      arrow:SetShown(sorted)
+      if sorted then
+        if state.sortAsc then
+          arrow:SetTexCoord(0, 1, 1, 0)
+        else
+          arrow:SetTexCoord(0, 1, 0, 1)
+        end
+      end
+    else
+      h:SetText(col.label .. (sorted and (state.sortAsc and " ^" or " v") or ""))
     end
-    headerText[col.key]:SetText(col.label .. arrow)
   end
   local data = MarketData()
   marketView.list:SetCount(#data)
   for i, d in ipairs(data) do
     local row = marketView.list.rows[i]
     row.id = d.id
-    row.stripe:SetShown(i % 2 == 0)
+    SetStripe(row, i)
     row.icon:SetTexture(ItemIcon(d.id))
     local c = row.cells
-    c.name:SetText(ItemName(d.id, d.it) .. (d.it.custom and " |cff999999*|r" or ""))
+    c.name:SetText(ItemName(d.id, d.it) .. (d.it.custom and (" " .. Grey("*")) or ""))
     c.type:SetText(d.type)
-    c.look:SetText("|cffbbbbbb" .. d.look .. "|r")
+    c.look:SetText(d.look)
     if d.info.low then
       c.low:SetText(ns.Money(d.info.low))
     elseif d.info.qty then
-      c.low:SetText("|cff777777none|r")
+      c.low:SetText(Grey("none"))
     else
-      c.low:SetText("|cff777777?|r")
+      c.low:SetText(Grey("?"))
     end
     c.qty:SetText(d.info.qty and d.info.qty > 0 and d.info.qty or "")
     -- grey: a remembered price for a piece that is not listed right now
@@ -420,35 +532,35 @@ local function FarmRowTooltip(self)
   end
   local spot = e.spot
   GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
-  GameTooltip:AddLine(ns.SpotLabel(spot), 1, 0.4, 0.67)
-  GameTooltip:AddLine(("%s, level %d-%d%s"):format(spot.mobs or "Mobs", spot.lo, spot.hi, spot.dungeon and " (dungeon)" or ""), 1, 1, 1, true)
+  GameTooltip:AddLine(ns.SpotLabel(spot), GOLD[1], GOLD[2], GOLD[3])
+  GameTooltip:AddLine(("%s, level %d-%d%s"):format(spot.mobs or "Mobs", spot.lo, spot.hi, spot.dungeon and " (dungeon)" or ""), WHITE[1], WHITE[2], WHITE[3], true)
   if spot.note then
-    GameTooltip:AddLine(spot.note, 0.7, 0.9, 0.7, true)
+    GameTooltip:AddLine(spot.note, WHITE[1], WHITE[2], WHITE[3], true)
   end
   GameTooltip:AddLine(" ")
-  GameTooltip:AddLine("Pieces whose level band overlaps this spot:", 1, 0.82, 0)
+  GameTooltip:AddLine("Pieces whose level band overlaps this spot:", GOLD[1], GOLD[2], GOLD[3])
   for i, p in ipairs(e.pieces) do
     if i > 22 then
-      GameTooltip:AddLine(("  ...and %d more"):format(#e.pieces - 22), 0.6, 0.6, 0.6)
+      GameTooltip:AddLine(("  ...and %d more"):format(#e.pieces - 22), GREY[1], GREY[2], GREY[3])
       break
     end
     local it = ns.Items()[p.id]
-    local right = p.value and ns.Money(p.value, not ns.Price(p.id).low) or "|cff777777no price|r"
+    local right = p.value and ns.Money(p.value, not ns.Price(p.id).low) or Grey("no price")
     if p.match < 0.999 then
-      right = right .. (" |cff777777(%d%% of its band)|r"):format(Pct(p.match))
+      right = right .. " " .. Grey(("(%d%% of its band)"):format(Pct(p.match)))
     end
     GameTooltip:AddDoubleLine("  " .. ItemName(p.id, it), right)
   end
-  GameTooltip:AddLine("Prices shown after the 5% auction house cut. Grey: not listed right now.", 0.5, 0.5, 0.5, true)
+  GameTooltip:AddLine("Prices shown after the 5% auction house cut. Grey: not listed right now.", GREY[1], GREY[2], GREY[3], true)
   local measured = ns.MeasuredForZone(spot.zone)
   if #measured > 0 then
     GameTooltip:AddLine(" ")
-    GameTooltip:AddLine("Your measured results in " .. spot.zone .. ":", 1, 0.4, 0.67)
+    GameTooltip:AddLine("Your measured results in " .. spot.zone .. ":", GOLD[1], GOLD[2], GOLD[3])
     for i, m in ipairs(measured) do
       if i > 4 then
         break
       end
-      GameTooltip:AddDoubleLine("  " .. m.key, MeasuredLine(m), 1, 1, 1, 0.8, 0.8, 0.8)
+      GameTooltip:AddDoubleLine("  " .. m.key, MeasuredLine(m), WHITE[1], WHITE[2], WHITE[3], WHITE[1], WHITE[2], WHITE[3])
     end
   end
   GameTooltip:Show()
@@ -487,16 +599,16 @@ local function RefreshFarm()
   for i, e in ipairs(ranked) do
     local row = farmView.list.rows[i]
     row.entry = e
-    row.stripe:SetShown(i % 2 == 0)
+    SetStripe(row, i)
     local spot = e.spot
-    row.title:SetText(("%s  |cff999999%s %d-%d%s|r"):format(ns.SpotLabel(spot), spot.mobs or "mobs", spot.lo, spot.hi, spot.dungeon and ", dungeon" or ""))
+    row.title:SetText(("%s  %s"):format(ns.SpotLabel(spot), Grey(("%s %d-%d%s"):format(spot.mobs or "mobs", spot.lo, spot.hi, spot.dungeon and ", dungeon" or ""))))
     if itemFilter then
       row.rank:SetText(i)
       row.pool:SetText(it.inst and "drops in this dungeon" or ("covers %d%% of its level band"):format(Pct(e.pieces[1].match)))
-      row.detail:SetText("|cffbbbbbb" .. (spot.note or "") .. "|r")
+      row.detail:SetText(spot.note or "")
     else
       row.rank:SetText(e.priced > 0 and i or "-")
-      row.pool:SetText(e.priced > 0 and (ns.Money(e.total) .. " |cff777777pool|r") or "|cff777777scan to price|r")
+      row.pool:SetText(e.priced > 0 and (ns.Money(e.total) .. " " .. Grey("pool")) or Grey("scan to price"))
       local parts = {}
       for j = 1, math.min(3, #e.pieces) do
         local p = e.pieces[j]
@@ -518,7 +630,7 @@ local function MeasuredRowTooltip(self)
   end
   local a = m.area
   GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
-  GameTooltip:AddLine(m.key, 1, 0.4, 0.67)
+  GameTooltip:AddLine(m.key, GOLD[1], GOLD[2], GOLD[3])
   GameTooltip:AddDoubleLine("Corpses with loot opened", a.looted or 0, 1, 0.82, 0, 1, 1, 1)
   GameTooltip:AddDoubleLine("Time between loots", Dur(a.secs), 1, 0.82, 0, 1, 1, 1)
   if a.lmin then
@@ -532,11 +644,11 @@ local function MeasuredRowTooltip(self)
     GameTooltip:AddLine("List pieces found here:", 1, 0.82, 0)
     for _, d in ipairs(SortedCounts(a.items)) do
       local v = ns.NetValue(d.name)
-      GameTooltip:AddDoubleLine(("  %s x%d"):format(ItemName(d.name, ns.Items()[d.name]), d.n), v and ns.Money(v * d.n) or "|cff777777no price|r")
+      GameTooltip:AddDoubleLine(("  %s x%d"):format(ItemName(d.name, ns.Items()[d.name]), d.n), v and ns.Money(v * d.n) or Grey("no price"))
     end
   end
   GameTooltip:AddLine(" ")
-  GameTooltip:AddLine("Gold per hour counts only the list pieces found, at their typical price today after the 5% auction house cut. Other loot is not counted. Time is only the stretches between loots (pauses over 5 minutes are left out), so a short or sparse session reads higher than a full hour of farming would.", 0.5, 0.5, 0.5, true)
+  GameTooltip:AddLine("Gold per hour counts only the list pieces found, at their typical price today after the 5% auction house cut. Other loot is not counted. Time is only the stretches between loots (pauses over 5 minutes are left out), so a short or sparse session reads higher than a full hour of farming would.", GREY[1], GREY[2], GREY[3], true)
   GameTooltip:Show()
 end
 
@@ -547,13 +659,13 @@ local function RefreshMeasured()
     local row = measuredView.list.rows[i]
     local a = m.area
     row.entry = m
-    row.stripe:SetShown(i % 2 == 0)
+    SetStripe(row, i)
     row.rank:SetText(m.perHour and i or "-")
-    row.title:SetText(m.key .. (a.lmin and ("  |cff999999mobs level %d-%d|r"):format(a.lmin, a.lmax) or ""))
+    row.title:SetText(m.key .. (a.lmin and ("  " .. Grey(("mobs level %d-%d"):format(a.lmin, a.lmax))) or ""))
     if m.perHour then
-      row.pool:SetText(ns.Money(m.perHour) .. " |cff777777per hour|r")
+      row.pool:SetText(ns.Money(m.perHour) .. " " .. Grey("per hour"))
     else
-      row.pool:SetText("|cff777777too little data yet|r")
+      row.pool:SetText(Grey("too little data yet"))
     end
     local worth = ""
     if m.pieces > 0 then
@@ -598,8 +710,12 @@ Refresh = function()
   if not win or not win:IsShown() then
     return
   end
-  for key, b in pairs(tabButtons) do
-    b:SetEnabled(key ~= state.tab)
+  if win.smogPanelTabs then
+    PanelTemplates_SetTab(win, TAB_INDEX[state.tab] or 1)
+  else
+    for key, b in pairs(tabButtons) do
+      b:SetEnabled(key ~= state.tab)
+    end
   end
   for key, b in pairs(armorButtons) do
     b:SetEnabled(key ~= state.armor)
@@ -692,22 +808,63 @@ local function CreateWindow()
   end
   title:SetText("Slutmog Scout")
 
-  -- top bar
+  -- Tabs: the game's tabs along the bottom edge of the window, as on the
+  -- auction house and the character window. Plain buttons along the top only
+  -- if this client lacks the tab template.
   local x = 14
-  for _, def in ipairs({ { "market", "Market", 80 }, { "farm", "Farm guide", 90 }, { "measured", "Measured", 90 } }) do
-    local key = def[1]
-    local b = MakeButton(win, def[2], def[3], function()
-      state.tab = key
-      if key == "farm" then
-        state.farmItem = nil
-      end
-      Refresh()
-    end)
-    b:SetPoint("TOPLEFT", x, -30)
-    tabButtons[key] = b
-    x = x + def[3] + 4
+  local function SelectTab(key)
+    state.tab = key
+    if key == "farm" then
+      state.farmItem = nil
+    end
+    Refresh()
   end
-  x = x + 16
+  local useTabs = type(PanelTemplates_SetNumTabs) == "function" and type(PanelTemplates_SetTab) == "function"
+  local made = {}
+  if useTabs then
+    for i, def in ipairs(TAB_DEFS) do
+      local b = TryCreate("Button", "SlutmogScoutFrameTab" .. i, win, "PanelTabButtonTemplate")
+      if not b then
+        useTabs = false
+        break
+      end
+      made[i] = b
+    end
+  end
+  if useTabs then
+    win.Tabs = made
+    for i, def in ipairs(TAB_DEFS) do
+      local b = made[i]
+      b:SetID(i)
+      b:SetText(def[2])
+      if i == 1 then
+        b:SetPoint("TOPLEFT", win, "BOTTOMLEFT", 11, 2)
+      end
+      b:SetScript("OnClick", function()
+        if PlaySound and SOUNDKIT and SOUNDKIT.IG_CHARACTER_INFO_TAB then
+          PlaySound(SOUNDKIT.IG_CHARACTER_INFO_TAB)
+        end
+        SelectTab(def[1])
+      end)
+      tabButtons[def[1]] = b
+    end
+    PanelTemplates_SetNumTabs(win, #TAB_DEFS)
+    win.smogPanelTabs = true
+  else
+    for i, b in ipairs(made) do
+      b:Hide()
+    end
+    for _, def in ipairs(TAB_DEFS) do
+      local key = def[1]
+      local b = MakeButton(win, def[2], def[3], function()
+        SelectTab(key)
+      end)
+      b:SetPoint("TOPLEFT", x, -30)
+      tabButtons[key] = b
+      x = x + def[3] + 4
+    end
+    x = x + 16
+  end
   for _, key in ipairs(ARMOR_ORDER) do
     local b = MakeButton(win, ARMOR_LABEL[key], 60, function()
       state.armor = key
@@ -745,19 +902,45 @@ local function CreateWindow()
   marketView = CreateFrame("Frame", nil, win)
   marketView:SetPoint("TOPLEFT", 12, -58)
   marketView:SetPoint("BOTTOMRIGHT", -12, 28)
+  -- Column headers: the game's column header tabs (as on the Who list and
+  -- the auction house), side by side; the first one also covers the icons.
   local hx = ICON_W + 2
-  for _, col in ipairs(COLS) do
-    local h = CreateFrame("Button", nil, marketView)
-    h:SetSize(col.width, 18)
-    h:SetPoint("TOPLEFT", hx, 0)
-    local hl = h:CreateTexture(nil, "HIGHLIGHT")
-    hl:SetAllPoints()
-    hl:SetColorTexture(1, 1, 1, 0.08)
-    local fs = h:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
-    fs:SetAllPoints()
+  for ci, col in ipairs(COLS) do
+    local left = ci == 1 and 0 or (hx - COL_GAP / 2)
+    local right = hx + col.width + (ci == #COLS and 4 or COL_GAP / 2)
+    local h = TryCreate("Button", nil, marketView, "ColumnDisplayButtonShortTemplate")
+    if not h then
+      h = CreateFrame("Button", nil, marketView)
+      local hl = h:CreateTexture(nil, "HIGHLIGHT")
+      hl:SetAllPoints()
+      if SetArt(hl, nil, "Interface\\PaperDollInfoFrame\\UI-Character-Tab-Highlight") then
+        hl:SetBlendMode("ADD")
+      end
+    end
+    h:SetSize(right - left, 19)
+    h:SetPoint("TOPLEFT", left, 0)
+    local fs = h:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+    fs:SetPoint("LEFT", hx - left, 0)
+    fs:SetWidth(col.width)
     fs:SetJustifyH(col.align)
     fs:SetWordWrap(false)
     fs:SetText(col.label)
+    if HasAtlas("auctionhouse-ui-sortarrow") then
+      local arrow = h:CreateTexture(nil, "OVERLAY")
+      arrow:SetAtlas("auctionhouse-ui-sortarrow", true)
+      arrow:Hide()
+      fs.arrow = arrow
+      fs.UpdateArrowPos = function()
+        local w = fs:GetStringWidth() or 0
+        arrow:ClearAllPoints()
+        if col.align == "RIGHT" then
+          arrow:SetPoint("RIGHT", fs, "RIGHT", -(w + 3), 0)
+        else
+          arrow:SetPoint("LEFT", fs, "LEFT", w + 3, 0)
+        end
+      end
+      fs.UpdateArrowPos()
+    end
     headerText[col.key] = fs
     h:SetScript("OnClick", function()
       if state.sortKey == col.key then
@@ -770,11 +953,11 @@ local function CreateWindow()
     end)
     h:SetScript("OnEnter", function(self)
       GameTooltip:SetOwner(self, "ANCHOR_TOP")
-      GameTooltip:AddLine(col.label, 1, 0.82, 0)
+      GameTooltip:AddLine(col.label, GOLD[1], GOLD[2], GOLD[3])
       if col.tip then
-        GameTooltip:AddLine(col.tip, 1, 1, 1, true)
+        GameTooltip:AddLine(col.tip, WHITE[1], WHITE[2], WHITE[3], true)
       end
-      GameTooltip:AddLine("Click to sort.", 0.5, 0.5, 0.5)
+      GameTooltip:AddLine("Click to sort.", GREY[1], GREY[2], GREY[3])
       GameTooltip:Show()
     end)
     h:SetScript("OnLeave", GameTooltip_Hide)
