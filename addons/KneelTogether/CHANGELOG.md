@@ -1,5 +1,10 @@
 # Changelog
 
+## 1.0.3
+
+- The countdown is now an exact copy of the game's zone name: same place on screen, same size and lettering, the line under it in the same colour as the name, and the same half-second fade-in and two-second fade-out.
+- When the game refuses the emote, "The game would not let you kneel: type /kneel" now shows on the game's red error line at the top of the screen instead of under the countdown.
+
 ## 1.0.2
 
 - The countdown in the middle of the screen now looks like the game's own zone name: the same gold lettering, a white line under it, and the same fade-out, instead of its own purple text.

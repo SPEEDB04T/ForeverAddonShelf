@@ -62,7 +62,7 @@ local db
 local floor, ceil, max, min = math.floor, math.ceil, math.max, math.min
 local issecret = issecretvalue
 
-local VERSION = "1.0.2"
+local VERSION = "1.0.3"
 if C_AddOns and C_AddOns.GetAddOnMetadata then
     local ok, v = pcall(C_AddOns.GetAddOnMetadata, ADDON_NAME, "Version")
     if ok and type(v) == "string" and v ~= "" and not (issecret and issecret(v)) then VERSION = v end
@@ -198,76 +198,93 @@ end
 ---------------------------------------------------------------------------
 -- The banner in the middle of the screen
 ---------------------------------------------------------------------------
--- Built like the game's own zone name (ZoneText.xml): the big line in the zone
--- name font and colour, the line under it in the game's white, no backdrop, and
--- a short fade at the end the way a zone name goes.
+-- A copy of the game's zone name, ZoneTextFrame (Blizzard_FrameXML/Mainline/
+-- ZoneText.xml and ZoneText.lua): a 128x128 frame at TOP 0,-128, strata LOW,
+-- the name in ZoneTextFont centred on it (512 wide, ARTWORK), the line under it
+-- in PVPInfoTextFont coloured like the name, no backdrop, and the zone name's
+-- fade: 0.5 s in, hold, 2 s out (FadingFrame.lua). Kneeling happens standing
+-- still, so a real zone name and this one do not meet.
 local banner
-local FADE = 0.6
+local FADE_IN, FADE_OUT = 0.5, 2.0      -- ZoneFadeInDuration, ZoneFadeOutDuration
 
 local function Font(fs, name, fallback)
     local obj = _G[name] or _G[fallback]
     if obj then pcall(fs.SetFontObject, fs, obj) end
 end
 
+local function Now() return (type(GetTime) == "function" and GetTime()) or 0 end
+
+-- FadingFrame_OnUpdate, with the hold that can be moved while it is up.
+local function Fade(b)
+    local elapsed = Now() - b.start
+    if elapsed < FADE_IN then
+        b:SetAlpha(elapsed / FADE_IN)
+    elseif elapsed < FADE_IN + b.hold then
+        b:SetAlpha(1)
+    elseif elapsed < FADE_IN + b.hold + FADE_OUT then
+        b:SetAlpha(1 - (elapsed - FADE_IN - b.hold) / FADE_OUT)
+    else
+        b:Hide()
+    end
+end
+
 local function Banner()
     if banner then return banner end
     local b = CreateFrame("Frame", "KneelTogetherBanner", UIParent)
-    b:SetSize(512, 96)
-    b:SetPoint("TOP", UIParent, "TOP", 0, -170)
-    b:SetFrameStrata("HIGH")
+    b:SetSize(128, 128)
+    b:SetPoint("TOP", UIParent, "TOP", 0, -128)
+    b:SetFrameStrata("LOW")
+    pcall(b.SetToplevel, b, true)
     b:EnableMouse(false)
-    b.big = b:CreateFontString(nil, "OVERLAY", "GameFontNormalHuge")
+    b.big = b:CreateFontString(nil, "ARTWORK", "GameFontNormalHuge")
     Font(b.big, "ZoneTextFont", "GameFontNormalHuge")
     b.big:SetWidth(512)
-    b.big:SetPoint("TOP", b, "TOP", 0, 0)
-    b.small = b:CreateFontString(nil, "OVERLAY", "GameFontHighlightLarge")
-    Font(b.small, "GameFontHighlightLarge", "GameFontHighlight")
+    b.big:SetPoint("CENTER", b, "CENTER")
+    b.small = b:CreateFontString(nil, "ARTWORK", "GameFontNormalLarge")
+    Font(b.small, "PVPInfoTextFont", "GameFontNormalLarge")
     b.small:SetWidth(512)
-    b.small:SetPoint("TOP", b.big, "BOTTOM", 0, -4)
-    -- the fade; without animations (or in the tests) it simply hides
-    local ok, group = pcall(b.CreateAnimationGroup, b)
-    if ok and type(group) == "table" and group.CreateAnimation then
-        local ok2, alpha = pcall(group.CreateAnimation, group, "Alpha")
-        if ok2 and type(alpha) == "table" and alpha.SetFromAlpha then
-            alpha:SetFromAlpha(1)
-            alpha:SetToAlpha(0)
-            alpha:SetDuration(FADE)
-            group:SetScript("OnFinished", function() b:Hide(); b:SetAlpha(1) end)
-            b.fade = group
-        end
-    end
-    b.stamp = 0
+    b.small:SetPoint("TOP", b.big, "BOTTOM")
+    -- the game colours the line under a zone name like the name itself
+    local ok, r, g, bl = pcall(b.big.GetTextColor, b.big)
+    if ok and type(r) == "number" then b.small:SetTextColor(r, g, bl) end
+    b.start, b.hold = 0, 0
+    b:SetScript("OnUpdate", Fade)
     b:Hide()
     banner = b
     return b
 end
 
-local function Hide(b)
-    b.hiding = true
-    if b.fade then b.fade:Play() else b:Hide() end
-end
-
--- seconds: hide by itself after that long (nil: stays until the next line).
+-- seconds: starts to fade after that long (nil: stays until the next line).
+-- A new line while it is up only changes the words, as zone text does; once it
+-- is fading out (or gone) it fades in again.
 local function Show(big, small, seconds)
     local b = Banner()
-    if b.fade and b.fade.IsPlaying and b.fade:IsPlaying() then b.fade:Stop() end
-    b.hiding = nil
-    b:SetAlpha(1)
+    local now = Now()
+    if not b:IsShown() or now - b.start >= FADE_IN + b.hold then
+        b.start = now
+        b:SetAlpha(0)
+        b:Show()
+    end
+    b.hold = seconds and math.max(0, now + seconds - b.start - FADE_IN) or math.huge
     b.big:SetText(big or "")
     b.small:SetText(small or "")
-    b:Show()
-    b.stamp = b.stamp + 1
     b.bigText, b.smallText = big or "", small or ""       -- what it says, for /kneelall status and the tests
-    if seconds and C_Timer and C_Timer.After then
-        local stamp = b.stamp
-        C_Timer.After(seconds, function()
-            if b.stamp == stamp then Hide(b) end
-        end)
+end
+
+-- The game's red error line at the top of the screen, for "you cannot do that".
+local function Error(text)
+    local f = UIErrorsFrame
+    if not f then return end
+    if f.AddExternalErrorMessage then
+        pcall(f.AddExternalErrorMessage, f, text)
+    elseif f.AddMessage then
+        local c = RED_FONT_COLOR
+        pcall(f.AddMessage, f, text, c and c.r or 1, c and c.g or 0.1, c and c.b or 0.1)
     end
 end
 
 function ns.BannerText()
-    if not (banner and banner:IsShown()) or banner.hiding then return nil end
+    if not (banner and banner:IsShown()) or Now() - banner.start >= FADE_IN + banner.hold then return nil end
     return banner.bigText, banner.smallText
 end
 
@@ -328,10 +345,9 @@ local function Perform(call)
         local moving = (Ask(GetUnitSpeed, "player") or 0) > 0
         result = Emote(move.token, call.toward) and (moving and "moving" or "ok") or "fail"
     end
-    if result == "ok" or result == "moving" then
-        Show(move.word .. "!", Sub(call), 2.5)
-    else
-        Show(move.word .. "!", "the game would not let you: type /" .. move.token:lower(), 4)
+    Show(move.word .. "!", Sub(call), 2.5)
+    if result ~= "ok" and result ~= "moving" then
+        Error("The game would not let you " .. move.word:lower() .. ": type /" .. move.token:lower())
     end
     Answer(call, result)
 end
