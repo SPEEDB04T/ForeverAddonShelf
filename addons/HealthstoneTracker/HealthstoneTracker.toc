@@ -1,7 +1,7 @@
 ## Interface: 16001, 16002
 ## Title: Healthstone Tracker
 ## Notes: Shows who in your party or raid has a healthstone, who used theirs and who still needs one, and who carries a soulstone.
-## Version: 1.3.1
+## Version: 1.3.2
 ## SavedVariables: HealthstoneTrackerDB
 ## SavedVariablesPerCharacter: HealthstoneTrackerCharDB
 ## IconTexture: Interface\Icons\INV_Stone_04

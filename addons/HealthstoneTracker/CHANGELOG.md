@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.3.2
+
+- Fixed: other players' healthstones and soulstones may never have arrived. The server names the sender of an addon message with its own spelling of the realm ("CAMWOWUS1Realm9RPPvP" where the game says "RPPvP"), so the addon did not recognise anyone in the group and dropped every message without a word. It now finds the sender among the group by name and uses the realm only to tell two players of the same name apart. Names with a space ("First Last") work everywhere: the list, trades, soulstone messages.
+- `/hst status` says how many addon messages came in and went out, and lists messages it ignored, from whom and why (not in the group, hidden by the game).
+- The last 40 addon messages in and out are kept in the saved settings, to see afterwards what really happened.
+
 ## 1.3.1
 
 - The window is now built like the game's own tooltip, part for part: the game's tooltip-style panel, a white title in the tooltip's heading font, tooltip-sized text and 12 px icons, the same spacing, and as wide as its longest line instead of cutting names off.

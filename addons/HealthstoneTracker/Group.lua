@@ -4,7 +4,7 @@
 -- stone in a trade, and the moment they use one.
 local ADDON, ns = ...
 local issecret = ns.issecret
-local Norm, FullUnitName, Qualified = ns.Norm, ns.FullUnitName, ns.Qualified
+local Norm, FullUnitName = ns.Norm, ns.FullUnitName
 
 local G = {}
 ns.Group = G
@@ -183,7 +183,8 @@ function G.Rebuild()
         for i = 1, GetNumGroupMembers() do
             local ok, name, _, subgroup, _, _, class = pcall(GetRaidRosterInfo, i)
             if ok and not issecret(name) and not issecret(subgroup) and not issecret(class) then
-                add(name, "raid" .. i, class, subgroup)
+                -- keyed by UnitName, the same name every lookup uses
+                add(FullUnitName("raid" .. i) or name, "raid" .. i, class, subgroup)
             end
         end
         -- inside a raid, partyN units are the player's subgroup mates
@@ -381,8 +382,19 @@ function G.OnUnitAura(unit)
 end
 
 local function MemberOfUnit(unit)
-    local name = (unit == "player") and ns.playerName or G.byUnit[unit]
+    local name = (unit == "player") and ns.playerName or G.byUnit[unit] or FullUnitName(unit)
     return name and G.members[name]
+end
+
+-- The group member a name from the server or from a message belongs to
+-- (ns.UnitOfName: matched by name, space kept, realm only as a tie-break).
+-- Returns the member, or nil and why.
+function G.FindMember(name)
+    local unit, why = ns.UnitOfName(name)
+    if not unit then return nil, why end
+    local m = MemberOfUnit(unit)
+    if not m then return nil, "not in the list yet" end
+    return m
 end
 
 -- Once a second: the units whose buffs changed, and everyone now and then.
@@ -525,6 +537,49 @@ function G.CommsProblem()
     return G.CommsBlocked() or refused
 end
 
+-- What really happened, for reading back from SavedVariables after a
+-- session: the last 40 messages in and out (db.commLog).
+G.inCount, G.outCount = 0, 0
+G.ignored = {}      -- [sender as given] = { n = count, why = reason }
+local LOG_SIZE = 40
+
+local function Plain(v)
+    if issecret(v) then return "hidden" end
+    if v == nil then return nil end
+    return tostring(v)
+end
+
+local function Log(dir, channel, sender, unit, code, text)
+    local db = ns.db
+    if not db then return end
+    local log = db.commLog
+    if type(log) ~= "table" then
+        log = {}
+        db.commLog = log
+    end
+    log[#log + 1] = {
+        t = time and time() or 0, dir = dir, ch = Plain(channel), from = Plain(sender),
+        unit = unit or "nobody", code = Plain(code),
+        msg = (type(text) == "string" and not issecret(text)) and text:sub(1, 40) or Plain(text),
+    }
+    while #log > LOG_SIZE do table.remove(log, 1) end
+end
+
+-- A message from someone not found in the group: counted, shown in /hst status.
+local function Ignore(sender, why)
+    local key = issecret(sender) and "a hidden sender" or tostring(sender)
+    local e = G.ignored[key]
+    if not e then
+        local n = 0
+        for _ in pairs(G.ignored) do n = n + 1 end
+        if n >= 20 then key = "others" end
+        e = G.ignored[key] or { n = 0 }
+        G.ignored[key] = e
+    end
+    e.n = e.n + 1
+    e.why = why or "not found in the group"
+end
+
 local function Enqueue(msg)
     if #queue >= 20 then table.remove(queue, 1) end
     queue[#queue + 1] = msg
@@ -564,6 +619,7 @@ local function Flush(now)
         return
     end
     local ok, result = pcall(C_ChatInfo.SendAddonMessage, PREFIX, msg, channel)
+    Log("out", channel, nil, nil, ok and (result == nil and "nil" or result) or "error", msg)
     if not ok then
         -- the game rejects this very message: after a few tries give up on it,
         -- so everything behind it is not stuck for good
@@ -579,6 +635,7 @@ local function Flush(now)
         end
     end
     sendErrors, refused = 0, nil
+    G.outCount = G.outCount + 1
     lastKind = kind
     if kind == "request" then
         G.wantRequest = false
@@ -590,13 +647,15 @@ local function Flush(now)
 end
 
 -- The player traded a healthstone to someone.
+-- Names inside messages go out as UnitName gives them (with a realm only when
+-- the game gives one) and are looked up by name on arrival.
 function G.NoteGave(name, item)
-    local m = name and G.members[name]
+    local m = name and G.FindMember(name)
     if not m or m.isPlayer or m.demo then return end
     RecordGift(m, ns.playerName, item)
     -- someone with the addon reports their own bags; the others need telling
     if not m.hasAddon then
-        Enqueue(("G;%s;%d"):format(Qualified(name), item or 0))
+        Enqueue(("G;%s;%d"):format(m.name, item or 0))
     end
 end
 
@@ -606,10 +665,10 @@ function G.PlayerSoulstoned(target)
     G.MarkState(false)
     G.scanAll = true
     ns.dirty = true
-    local m = target and G.members[target]
+    local m = target and G.FindMember(target)
     if not m or m.demo then return end
     m.soul = { expires = now + ns.SOUL_DURATION, by = ns.playerName, setAt = now }
-    Enqueue(("R;%s;%d"):format(Qualified(m.name), ns.SOUL_DURATION))
+    Enqueue(("R;%s;%d"):format(m.name, ns.SOUL_DURATION))
 end
 
 -- Someone else in the group was seen using a soulstone on somebody.
@@ -638,12 +697,24 @@ end
 -- Receiving
 ----------------------------------------------------------------------
 function G.OnAddonMessage(prefix, text, channel, sender)
-    if issecret(prefix) or issecret(text) or issecret(sender) then return end
-    if prefix ~= PREFIX or type(text) ~= "string" then return end
-    local from = Norm(sender)
-    if not from or from == ns.playerName then return end
-    local m = G.members[from]
-    if not m or m.demo then return end      -- only people in the group are listened to
+    if issecret(prefix) or prefix ~= PREFIX then return end
+    if issecret(text) or type(text) ~= "string" then
+        Log("in", channel, sender, nil, nil, text)
+        Ignore(sender, "the message itself was hidden")
+        return
+    end
+    -- the sender is found by name among the group units, never by comparing
+    -- "Name-Realm" strings: the server spells the realm unlike the client
+    local unit, why = ns.UnitOfName(sender)
+    local m = unit and MemberOfUnit(unit)
+    Log("in", channel, sender, unit, nil, text)
+    if not m then
+        Ignore(sender, why or "not in the list yet")
+        return
+    end
+    if m.isPlayer or m.demo then return end     -- our own message coming back
+    G.inCount = G.inCount + 1
+    local from = m.name
     local f = Split(text, ";")
     local kind = f[1]
     if kind == "S" then
@@ -673,8 +744,7 @@ function G.OnAddonMessage(prefix, text, channel, sender)
         G.MarkState(true)
     elseif kind == "R" then
         -- a warlock used their soulstone on someone
-        local target = Norm(f[2])
-        local tm = target and G.members[target]
+        local tm = Norm(f[2]) and G.FindMember(f[2])
         local left = Int(f[3], 1, 3600)
         if not tm or tm.demo or not left or m.class ~= "WARLOCK" then return end
         local now = GetTime()
@@ -682,8 +752,7 @@ function G.OnAddonMessage(prefix, text, channel, sender)
         if tm.isPlayer then G.MarkState(false) end
         ns.dirty = true
     elseif kind == "G" then
-        local target = Norm(f[2])
-        local tm = target and G.members[target]
+        local tm = Norm(f[2]) and G.FindMember(f[2])
         local item = Int(f[3], 0, 9999999)
         if not tm or tm.isPlayer or tm.demo or not item then return end
         RecordGift(tm, from, item)
@@ -801,8 +870,11 @@ end
 
 function G.PrintStatus()
     local have, need, unknown, total = G.Summary()
-    ns.Print(("%d of %d have a healthstone, %d need one, %d not known. Addon messages: %s."):format(
-        have, total, need, unknown, G.CommsProblem() or "ok"))
+    ns.Print(("%d of %d have a healthstone, %d need one, %d not known. Addon messages: %s, %d received, %d sent."):format(
+        have, total, need, unknown, G.CommsProblem() or "ok", G.inCount, G.outCount))
+    for who, e in pairs(G.ignored) do
+        ns.Print(("  %d message%s from %s ignored: %s."):format(e.n, e.n == 1 and "" or "s", who, e.why))
+    end
     for _, m in ipairs(G.SortedMembers()) do
         local who = (m.isPlayer and "you") or (m.hasAddon and ("addon " .. tostring(m.version))) or "no addon"
         ns.Print(("  %s (%s): %s"):format(m.name, who, (G.Describe(m))))

@@ -145,29 +145,93 @@ end
 ----------------------------------------------------------------------
 -- Names
 ----------------------------------------------------------------------
--- "Name-Realm" for other realms, plain "Name" on the player's own.
+-- Names on this client are often two words ("First Last"): a name is never
+-- cut or split at a space. The same realm comes spelled two ways at once:
+-- GetNormalizedRealmName() says "RPPvP", names from the server say
+-- "CAMWOWUS1Realm9RPPvP". So a name is never compared with a realm glued on;
+-- it is matched to a group unit by name, the realm only breaking a tie
+-- (see .agents/memory/pitfalls.md, "Who sent an addon message").
+
+-- A usable plain name string, or nil.
 function ns.Norm(name)
     if issecret(name) or type(name) ~= "string" or name == "" then return nil end
-    if Ambiguate then
-        local ok, short = pcall(Ambiguate, name, "none")
-        if ok and type(short) == "string" and not issecret(short) and short ~= "" then name = short end
-    end
     return name
 end
 
+-- The unit's name as the game gives it: "Name", or "Name-Realm" when the game
+-- gives a realm (another realm). This is the key of the member table.
 function ns.FullUnitName(unit)
     local ok, name, realm = pcall(UnitName, unit)
     if not ok or issecret(name) or issecret(realm) or type(name) ~= "string" or name == "" then return nil end
     if type(realm) == "string" and realm ~= "" then name = name .. "-" .. realm end
-    return ns.Norm(name)
+    return name
 end
 
--- Names go out with their realm so players from another realm read them right.
-function ns.Qualified(name)
-    if name:find("-", 1, true) or not GetNormalizedRealmName then return name end
-    local ok, realm = pcall(GetNormalizedRealmName)
-    if ok and type(realm) == "string" and realm ~= "" and not issecret(realm) then return name .. "-" .. realm end
-    return name
+-- "CAMWOWUS1Realm9RPPvP" -> "camwowus1realm9rppvp"
+local function Squeeze(s)
+    if type(s) ~= "string" then return "" end
+    return (s:lower():gsub("[^%w]", ""))
+end
+
+local function Agree(a, b)
+    if a == "" or b == "" then return a == b end
+    return a == b or a:sub(-#b) == b or b:sub(-#a) == a or a:sub(1, #b) == b or b:sub(1, #a) == a
+end
+
+local function OwnRealmAgrees(suffix)
+    if suffix == "" then return true end
+    for _, f in ipairs({ GetNormalizedRealmName, GetRealmName }) do
+        if f then
+            local ok, r = pcall(f)
+            if ok and not issecret(r) and Agree(suffix, Squeeze(r)) then return true end
+        end
+    end
+    return false
+end
+
+-- The group units to look through: in a raid the raid units (the player is
+-- one of them), otherwise the player and the party.
+local function GroupUnits()
+    local units = {}
+    if IsInRaid and IsInRaid() then
+        local n = GetNumGroupMembers and GetNumGroupMembers() or 0
+        for i = 1, math.min(40, tonumber(n) or 0) do units[#units + 1] = "raid" .. i end
+    else
+        units[1] = "player"
+        for i = 1, 4 do units[#units + 1] = "party" .. i end
+    end
+    return units
+end
+
+-- Which group unit a name from the server or from a message belongs to.
+-- Returns the unit, or nil and why: "hidden" (a secret or unusable name),
+-- "not found in the group", or "several with that name".
+function ns.UnitOfName(full)
+    if issecret(full) then return nil, "hidden" end
+    if type(full) ~= "string" or full == "" then return nil, "hidden" end
+    local dash = full:find("-", 1, true)
+    local who = dash and full:sub(1, dash - 1) or full
+    local suffix = Squeeze(dash and full:sub(dash + 1) or "")
+    if who == "" then return nil, "hidden" end
+    local first, agreeing, count = nil, nil, 0
+    for _, unit in ipairs(GroupUnits()) do
+        local ok, name, realm = pcall(UnitName, unit)
+        if ok and not issecret(name) and not issecret(realm) and name == who then
+            count = count + 1
+            first = first or unit
+            local agrees
+            if type(realm) == "string" and realm ~= "" then
+                agrees = suffix ~= "" and Agree(suffix, Squeeze(realm))
+            else
+                agrees = OwnRealmAgrees(suffix)
+            end
+            if agrees and not agreeing then agreeing = unit end
+        end
+    end
+    if count == 1 then return first end
+    if agreeing then return agreeing end
+    if count == 0 then return nil, "not found in the group" end
+    return nil, "several with that name"
 end
 
 -- 75 -> "1:15"

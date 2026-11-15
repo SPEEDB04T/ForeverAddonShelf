@@ -2,7 +2,7 @@
 local ADDON, ns = ...
 local issecret = ns.issecret
 
-ns.VERSION = "1.3.1"
+ns.VERSION = "1.3.2"
 do
     local get = C_AddOns and C_AddOns.GetAddOnMetadata
     if get then
@@ -320,8 +320,10 @@ end
 
 function ns.ResetSettings()
     local db = ns.db
+    local log = db.commLog      -- the message log is a record, not a setting
     for k in pairs(db) do db[k] = nil end
     for k, v in pairs(defaults) do db[k] = v end
+    db.commLog = log
     ns.UI.ApplyLayout()
     if ns.Kit then ns.Kit.RefreshMinimap() end
     ns.Print("settings reset.")
