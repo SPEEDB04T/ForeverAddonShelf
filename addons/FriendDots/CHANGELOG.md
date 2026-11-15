@@ -1,5 +1,13 @@
 # Changelog
 
+## 1.3.0
+
+Friendly nameplates only in fights, and colours that match the game.
+
+- New option "Friendly nameplates only in combat" (`/fdots combat`, off by default): friendly player nameplates, and so the dots, come on as a fight starts and go off when it ends. Turning it off puts your own nameplate setting back.
+- The health line uses the game's own status bar texture and health-bar green.
+- Colours come from the game: party ring in the game's gold, target ring in its white, friendly NPC dots in its friendly green, unknown players in its grey, low health in its red.
+
 ## 1.2.1
 
 Your own party is easier to see.

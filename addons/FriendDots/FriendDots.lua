@@ -19,6 +19,7 @@
     /fdots group      -> highlight your own party (bigger dot, gold ring) on / off
     /fdots npcs       -> also turn friendly NPCs and pets into small green dots
     /fdots click [on|off] -> friendly nameplates click-through
+    /fdots combat     -> friendly player nameplates (and so the dots) only in combat
     /fdots y <n>      -> move the dot up / down
     /fdots plates     -> turn friendly player nameplates on / off (the game setting)
     /fdots on|off, /fdots reset, /fdots debug
@@ -31,13 +32,23 @@ local WHITE  = "Interface\\Buttons\\WHITE8X8"
 local CIRCLE = "Interface\\Masks\\CircleMaskScalable"
 local PLATES_CVAR = "nameplateShowFriendlyPlayers"
 
+local BAR_TEXTURE = "Interface\\TargetingFrame\\UI-StatusBar"   -- the game's own unit frame bar
+
+-- Colours come from the game's own constants where it has one, so the dots
+-- read like the rest of the UI; the numbers are only fallbacks.
+local function GameColor(c, r, g, b)
+    if type(c) == "table" and type(c.r) == "number" then return { c.r, c.g, c.b } end
+    return { r, g, b }
+end
+
 local LOW_HEALTH    = 0.35                 -- health line turns red below this
 local DEAD_ALPHA    = 0.35                 -- dead or offline
-local NPC_COLOR     = { 0.35, 0.85, 0.40 }
-local UNKNOWN_COLOR = { 0.80, 0.80, 0.80 } -- class not known (yet)
-local HP_GREEN      = { 0.25, 0.90, 0.35 }
-local HP_RED        = { 1.00, 0.20, 0.15 }
-local GROUP_COLOR   = { 1.00, 0.82, 0.20 } -- ring on members of your own party
+local NPC_COLOR     = GameColor(FACTION_BAR_COLORS and FACTION_BAR_COLORS[5], 0.00, 0.60, 0.10) -- "friendly"
+local UNKNOWN_COLOR = GameColor(GRAY_FONT_COLOR, 0.50, 0.50, 0.50)  -- class not known (yet)
+local HP_GREEN      = { 0.00, 1.00, 0.00 }  -- the game's health bar green
+local HP_RED        = GameColor(RED_FONT_COLOR, 1.00, 0.10, 0.10)
+local GROUP_COLOR   = GameColor(NORMAL_FONT_COLOR, 1.00, 0.82, 0.00) -- the game's gold: your own party
+local TARGET_COLOR  = GameColor(HIGHLIGHT_FONT_COLOR, 1.00, 1.00, 1.00)
 local GROUP_SCALE   = 1.25                 -- their dot is this much bigger
 local LEVEL_NORMAL, LEVEL_GROUP, LEVEL_TARGET = 5, 10, 15   -- frame level above the plate
 
@@ -51,6 +62,7 @@ local DEFAULTS = {
     names        = "off",   -- "off" | "target" | "all"
     where        = "all",   -- "all" | "pvp" (battlegrounds and arenas only)
     groupRing    = true,
+    combatPlates = false,   -- friendly player nameplates only while you are in combat
     npcs         = false,
     clickThrough = true,
     yOffset      = 0,
@@ -313,7 +325,7 @@ local function CreateWidget(plate)
     w.targetEdge:SetVertexColor(0, 0, 0, 0.9)
     w.targetEdge:SetAlpha(0)
     w.targetRing = Circle(w, "BACKGROUND", -4)   -- white ring
-    w.targetRing:SetVertexColor(1, 1, 1, 1)
+    w.targetRing:SetVertexColor(TARGET_COLOR[1], TARGET_COLOR[2], TARGET_COLOR[3], 1)
     w.targetRing:SetAlpha(0)
     w.groupEdge = Circle(w, "BACKGROUND", -3)    -- dark edge around the gold
     w.groupEdge:SetVertexColor(0, 0, 0, 0.9)
@@ -346,7 +358,8 @@ local function CreateWidget(plate)
     icon:Hide()
     w.fill, w.bg, w.icon = fill, bg, icon
 
-    -- Health line: 2 px of health inside a 1 px dark edge.
+    -- Health line: 2 px of the game's health bar inside a 1 px dark edge
+    -- (too thin for any of the game's bar borders, so the edge is plain).
     local hp = CreateFrame("Frame", nil, w)
     hp:SetPoint("TOP", w, "BOTTOM", 0, -2)
     local hpBg = hp:CreateTexture(nil, "BACKGROUND")
@@ -356,7 +369,7 @@ local function CreateWidget(plate)
         local bar = CreateFrame("StatusBar", nil, hp)
         bar:SetPoint("TOPLEFT", hp, "TOPLEFT", 1, -1)
         bar:SetPoint("BOTTOMRIGHT", hp, "BOTTOMRIGHT", -1, 1)
-        bar:SetStatusBarTexture(WHITE)
+        bar:SetStatusBarTexture(BAR_TEXTURE)
         bar:SetStatusBarColor(color[1], color[2], color[3])
         bar:SetFrameLevel((hp:GetFrameLevel() or 0) + level)
         return bar
@@ -693,6 +706,97 @@ if C_NamePlateManager and C_NamePlateManager.SetNamePlateHitTestInsets and hooks
 end
 
 ---------------------------------------------------------------------------
+-- Friendly nameplates only in combat: the game's own "friendly player
+-- nameplates" setting is switched on as a fight starts and off when it ends.
+-- It has to be switched in the moment combat starts (PLAYER_REGEN_DISABLED,
+-- before the game locks protected changes), the way Leatrix Plus does it for
+-- enemy plates on this client. BetterBlizzPlates saves this setting per zone
+-- type and puts its own value back after zone changes and after combat, so
+-- ours is written again a moment after those.
+---------------------------------------------------------------------------
+local platesError, platesWarned, platesRestore = nil, false, nil
+
+local function SyncWindow()
+    if ns.Kit and ns.Kit.Sync then pcall(ns.Kit.Sync) end
+end
+
+local function WritePlates(value)
+    if not (C_CVar and C_CVar.GetCVar and C_CVar.SetCVar) then return false end
+    if C_CVar.GetCVar(PLATES_CVAR) == value then return true end
+    local ok, err = pcall(C_CVar.SetCVar, PLATES_CVAR, value)
+    if ok and C_CVar.GetCVar(PLATES_CVAR) == value then
+        SyncWindow()
+        return true
+    end
+    platesError = ok and "the game did not take the change" or tostring(err)
+    return false
+end
+
+local function CombatPlatesActive()
+    return db.combatPlates and db.enabled
+end
+
+-- Out of combat the plates are off while the option is active.
+local function SyncCombatPlates()
+    if not db or not CombatPlatesActive() or InCombatLockdown() then return end
+    WritePlates("0")
+end
+
+local function LaterSync(seconds)
+    if C_Timer and C_Timer.After then C_Timer.After(seconds, SyncCombatPlates) end
+end
+
+local function RestorePlates()
+    local before = db.platesBefore or "1"
+    if InCombatLockdown() then
+        platesRestore = before
+    else
+        platesRestore = nil
+        WritePlates(before)
+    end
+end
+
+-- The option itself: remembers the setting it found, and puts it back when
+-- the option is turned off.
+local function SetCombatPlates(on)
+    on = on and true or false
+    if on == db.combatPlates then return end
+    db.combatPlates = on
+    if on then
+        db.platesBefore = (C_CVar and C_CVar.GetCVar and C_CVar.GetCVar(PLATES_CVAR)) or "1"
+        platesRestore, platesWarned = nil, false
+        SyncCombatPlates()
+    else
+        RestorePlates()
+        db.platesBefore = nil
+    end
+end
+
+-- The addon was switched on or off: off gives the nameplates back.
+local function CombatPlatesEnabledChanged()
+    if not db.combatPlates then return end
+    if db.enabled then SyncCombatPlates() else RestorePlates() end
+end
+
+local function OnCombatStart()
+    if not CombatPlatesActive() then return end
+    if not WritePlates("1") and not platesWarned then
+        platesWarned = true
+        print(PREFIX .. "the game did not let Friend Dots turn friendly nameplates on as the fight started. "
+            .. "/fdots debug shows why, /fdots combat turns this option off.")
+    end
+end
+
+local function OnCombatEnd()
+    if platesRestore then
+        WritePlates(platesRestore)
+        platesRestore = nil
+    end
+    SyncCombatPlates()
+    LaterSync(0)          -- after other addons' own end-of-combat changes
+end
+
+---------------------------------------------------------------------------
 -- Saved settings
 ---------------------------------------------------------------------------
 local function InitDB()
@@ -722,7 +826,11 @@ f:RegisterEvent("UNIT_FACTION")
 f:RegisterEvent("UNIT_NAME_UPDATE")
 f:RegisterEvent("PLAYER_TARGET_CHANGED")
 f:RegisterEvent("PLAYER_REGEN_ENABLED")
+f:RegisterEvent("PLAYER_REGEN_DISABLED")
 f:RegisterEvent("GROUP_ROSTER_UPDATE")
+f:RegisterEvent("ZONE_CHANGED_NEW_AREA")
+f:RegisterEvent("ZONE_CHANGED")
+f:RegisterEvent("ZONE_CHANGED_INDOORS")
 -- Arena rounds can swap who is on your team. Registered defensively: an
 -- event name this client doesn't know must not stop the addon from loading.
 pcall(f.RegisterEvent, f, "PVP_MATCH_STATE_CHANGED")
@@ -782,8 +890,15 @@ f:SetScript("OnEvent", function(_, event, arg1)
     elseif event == "PVP_MATCH_STATE_CHANGED" or event == "ARENA_OPPONENT_UPDATE" then
         RefreshAll()
 
+    elseif event == "PLAYER_REGEN_DISABLED" then
+        OnCombatStart()
+
+    elseif event == "ZONE_CHANGED_NEW_AREA" or event == "ZONE_CHANGED" or event == "ZONE_CHANGED_INDOORS" then
+        if CombatPlatesActive() then LaterSync(2) end
+
     elseif event == "PLAYER_REGEN_ENABLED" then
         if clickPending then ApplyClick() end
+        OnCombatEnd()
         -- Plates that came up while the client was hiding who they belong to
         -- (and dots that stayed grey) get another look now.
         RefreshAll()
@@ -792,10 +907,12 @@ f:SetScript("OnEvent", function(_, event, arg1)
         -- A moment later, so this lands after other nameplate addons' setup.
         C_Timer.After(1, function()
             ApplyClick()
+            SyncCombatPlates()
             RefreshAll()
         end)
+        if CombatPlatesActive() then LaterSync(2) end   -- after BetterBlizzPlates' own check
         local platesOff = C_CVar and C_CVar.GetCVar and C_CVar.GetCVar(PLATES_CVAR) == "0"
-        if platesOff and not db.hinted then
+        if platesOff and not db.hinted and not db.combatPlates then
             db.hinted, db.welcomed = true, true
             print(PREFIX .. "friendly player nameplates are off, so there are no dots yet. Type /fdots plates to turn them on. Type /fdots to see all options.")
         elseif not db.welcomed then
@@ -817,6 +934,7 @@ local function PrintStatus()
         .. "  |  names " .. db.names
         .. "  |  where " .. db.where
         .. "  |  party highlight " .. OnOff(db.groupRing)
+        .. "  |  nameplates only in combat " .. OnOff(db.combatPlates)
         .. "  |  npcs " .. OnOff(db.npcs)
         .. "  |  click-through " .. OnOff(db.clickThrough) .. (clickPending and " (changes after combat)" or "")
         .. "  |  y " .. db.yOffset)
@@ -828,7 +946,8 @@ local function PrintHelp()
     print("  /fdots hp bar|fill|off   -  /fdots hpfull (show the health line at full health)")
     print("  /fdots names off|target|all   -  /fdots where all|pvp (pvp = only battlegrounds and arenas)")
     print("  /fdots group (your own party: bigger dot, gold ring)   -  /fdots npcs   -  /fdots click [on|off]")
-    print("  /fdots plates (friendly player nameplates on/off)   -  /fdots on|off   -  /fdots reset   -  /fdots debug")
+    print("  /fdots plates (friendly player nameplates on/off)   -  /fdots combat (friendly nameplates only in combat)")
+    print("  /fdots on|off   -  /fdots reset   -  /fdots debug")
     print("  /fdots config (options window)   -  /fdots minimap (minimap button on/off)")
 end
 
@@ -849,6 +968,11 @@ function ns.Print(msg) print(PREFIX .. tostring(msg)) end
 -- Stores one setting and redraws every dot.
 function ns.Set(key, value)
     if not db or DEFAULTS[key] == nil then return end
+    if key == "combatPlates" then
+        SetCombatPlates(value)
+        RefreshAll()
+        return
+    end
     local old = db[key]
     db[key] = value
     if key == "hp" then
@@ -862,11 +986,13 @@ function ns.Set(key, value)
     elseif key == "enabled" or key == "where" then
         ApplyClick()
         ClickNote()
+        if key == "enabled" then CombatPlatesEnabledChanged() end
     end
     RefreshAll()
 end
 
 function ns.Reset()
+    SetCombatPlates(false)                    -- gives the nameplate setting back first
     for key, value in pairs(DEFAULTS) do db[key] = value end
     db.minimap = nil
     hpBroken, hpFailures = false, 0
@@ -889,6 +1015,9 @@ function ns.SetPlates(turnOn)
     end
     C_CVar.SetCVar(PLATES_CVAR, turnOn and "1" or "0")
     print(PREFIX .. "friendly player nameplates " .. OnOff(turnOn) .. ".")
+    if CombatPlatesActive() then
+        print(PREFIX .. "\"only in combat\" is on, so they switch on and off again with your next fight. /fdots combat turns that off.")
+    end
 end
 
 -- Kit.lua and Options.lua are new in 1.2.0. The game only finds new files after a full restart,
@@ -930,6 +1059,16 @@ SlashCmdList.FRIENDDOTS = function(msg)
         db.enabled = (cmd == "on")
         ApplyClick()
         ClickNote()
+        CombatPlatesEnabledChanged()
+
+    elseif cmd == "combat" then
+        SetCombatPlates(not db.combatPlates)
+        if db.combatPlates then
+            print(PREFIX .. "friendly player nameplates now turn on when a fight starts and off when it ends.")
+        else
+            print(PREFIX .. "friendly player nameplates are no longer switched with combat"
+                .. (platesRestore and "; your setting comes back when this fight ends." or "."))
+        end
 
     elseif CHOICES[cmd] then
         if not CHOICES[cmd][arg] then
@@ -1000,6 +1139,7 @@ SlashCmdList.FRIENDDOTS = function(msg)
             .. ", click-through applied: " .. tostring(clickApplied)
             .. ", plates cvar: " .. tostring(C_CVar and C_CVar.GetCVar and C_CVar.GetCVar(PLATES_CVAR)))
         if lastError then print(PREFIX .. "last health error: " .. lastError) end
+        if platesError then print(PREFIX .. "last nameplate switch error: " .. platesError) end
         if UnitExists("target") then
             print(PREFIX .. "target: friend = " .. Describe(UnitIsFriend("player", "target"))
                 .. ", attackable = " .. Describe(UnitCanAttack("player", "target"))

@@ -19,7 +19,7 @@ For WoW Forever (Interface 16001).
 
 1. Copy the `FriendDots` folder into `World of Warcraft\_forever_\Interface\AddOns`, so that the file ends up at `AddOns\FriendDots\FriendDots.toc` (not `AddOns\FriendDots\FriendDots\...`).
 2. Restart the game. A new addon needs a full restart; after an update `/reload` is enough.
-3. Friendly player nameplates must be on: `/fdots plates` (or Shift+V).
+3. Friendly player nameplates must be on: `/fdots plates` (or Shift+V). Or let Friend Dots turn them on only during fights: `/fdots combat`.
 
 ## Commands
 
@@ -39,6 +39,7 @@ For WoW Forever (Interface 16001).
 | `/fdots click on` / `off` | Friendly nameplates click-through (on by default). On means you can't click a teammate's plate to target them |
 | `/fdots y <n>` | Move the dot up or down |
 | `/fdots plates` | Turn friendly player nameplates on / off |
+| `/fdots combat` | Friendly player nameplates (and so the dots) only in fights: on as a fight starts, off when it ends |
 | `/fdots on` / `off` / `reset` / `debug` | Enable, disable, defaults, bug-report info |
 
 ## Notes
@@ -51,6 +52,7 @@ For WoW Forever (Interface 16001).
 - **Health in fights**: during fights the game hides other players' exact health from addons. The health line still works, because it is drawn by the game's own bar; the addon never reads the numbers.
 - **Plates that appear mid-fight**: if the game hides who a new nameplate belongs to, it keeps its normal look until the fight ends, then turns into a dot. A dot that is already up stays up.
 - **Crowds**: if dots climb into columns when many players stand together, friendly nameplate stacking is on. Turn it off in the game's nameplate options (or the friendly stacking option of your nameplate addon) so dots overlap on the spot instead.
+- **Only in fights** (`/fdots combat`, or the "Friendly nameplates only in combat" tick in the options): the game's friendly player nameplates come on as a fight starts and go off when it ends, after zone changes and at log-in. This works everywhere, whatever `where` is set to. Shift+V or `/fdots plates` still work, until the next fight or zone change. Turning the option off, or turning the dots off, puts your own nameplate setting back. With **BetterBlizzPlates**, Friend Dots writes its value again after BetterBlizzPlates applies its per-zone nameplate setting.
 - **Names**: `names all` is fine for a small group. In a battleground use `names target`.
 - **Fill mode** only works with dots: with icons the health line is used instead.
 - This version has been checked with an offline test only, not yet in a real battleground or arena. If something looks wrong, `/fdots debug` prints what a bug report needs.

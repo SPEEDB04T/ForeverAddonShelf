@@ -71,6 +71,10 @@ local function Rows()
               .. "Same as /fdots plates.",
           get = function() return ns.PlatesShown() end,
           set = function(value) ns.SetPlates(value) end },
+        { kind = "check", label = "Friendly nameplates only in combat",
+          tip = "Turns the game's friendly player nameplates on as a fight starts and off when it ends, "
+              .. "so the dots only show in fights. Unticking it puts your own setting back. Same as /fdots combat.",
+          get = Get("combatPlates"), set = Set("combatPlates") },
 
         { kind = "header", text = "Minimap" },
         Kit.MinimapRow(),
@@ -85,7 +89,11 @@ Options.Rows = Rows
 
 local function Status()
     local lines = { ns.db.enabled and "Dots are on." or "Dots are off." }
-    if not ns.PlatesShown() then lines[#lines + 1] = "Friendly player nameplates are off, so no dots show." end
+    if ns.db.combatPlates and ns.db.enabled then
+        lines[#lines + 1] = "Friendly nameplates come on when a fight starts."
+    elseif not ns.PlatesShown() then
+        lines[#lines + 1] = "Friendly player nameplates are off, so no dots show."
+    end
     return lines
 end
 
