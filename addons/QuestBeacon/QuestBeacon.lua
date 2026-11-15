@@ -72,9 +72,24 @@ local function Plain(text) return (tostring(text):gsub("|", "||")) end   -- no c
 local function Log(what, channel, text, note)
     if not db then return end
     local log = db.log
-    log[#log + 1] = { at = date and date("%H:%M:%S") or "", what = what, channel = channel or "",
-                      text = text and text:sub(1, 160) or "", note = note or "" }
+    local entry = { at = date and date("%H:%M:%S") or "", what = what, channel = channel or "",
+                    text = text and text:sub(1, 160) or "", note = note or "" }
+    log[#log + 1] = entry
     while #log > LOG_SIZE do table.remove(log, 1) end
+    return entry
+end
+
+-- Both parts of a unit's name. On this client a player's surname comes as the second value
+-- ("Bunglfart", "Dunglode"); on other clients the second value is a realm, or nothing.
+local function NameParts(unit)
+    local first, second = Read(UnitName, unit)
+    return Text(first), Text(second)
+end
+
+local function FullName(unit)
+    local first, second = NameParts(unit)
+    if first and second then return first .. " " .. second end
+    return first
 end
 
 ---------------------------------------------------------------------------
@@ -141,7 +156,7 @@ end
 local function GiverName()
     for _, unit in ipairs({ "questnpc", "npc" }) do
         if Read(UnitExists, unit) and not Read(UnitIsPlayer, unit) then
-            local name = Text(Read(UnitName, unit))
+            local name = FullName(unit)
             if name then return name end
         end
     end
@@ -371,7 +386,7 @@ function Send(text, plain, channel)
         end
         return
     end
-    Log(rich and "out" or "out plain", channel, text)
+    sent.entry = Log(rich and "out" or "out plain", channel, text, sent.back)
     if echoBlind then return end
     C_Timer.After(ECHO_WAIT, function() EchoMissed(sent) end)
 end
@@ -445,33 +460,88 @@ local CHAT_EVENTS = {
     CHAT_MSG_INSTANCE_CHAT = "INSTANCE_CHAT", CHAT_MSG_INSTANCE_CHAT_LEADER = "INSTANCE_CHAT",
 }
 
--- true: the line is mine. false: someone else's. nil: the game hides who sent it.
-local function IsMine(sender, guid)
-    guid = Known(guid)
-    if type(guid) == "string" and guid ~= "" then
-        local mine = Read(UnitGUID, "player")
-        if type(mine) == "string" then return guid == mine end
+-- Does a chat sender fit one spelling of a name? A realm may follow after a dash.
+local function Fits(sender, spelling)
+    if sender == spelling then return true end
+    if sender:sub(1, #spelling + 1) == spelling .. "-" then return true, sender:sub(#spelling + 2) end
+    return false
+end
+
+local function Squash(text) return (text:gsub("[%s%-']", ""):lower()) end
+
+-- The group units a sender's name fits. Chat spells a sender "First Last" while UnitName gives
+-- "First", "Last"; the second value can also be a realm. So: "First Second" on every unit first,
+-- "First" alone only when that fitted nobody, and then a realm after the dash decides between several.
+local function UnitsNamed(sender, units)
+    local names, fits = {}, {}
+    for i, unit in ipairs(units) do
+        local first, second = NameParts(unit)
+        names[i] = { unit = unit, first = first, second = second }
     end
-    sender = Known(sender)
-    if type(sender) ~= "string" or sender == "" then return nil end
-    local me = Read(UnitName, "player")
-    if type(me) ~= "string" then return nil end
-    -- the realm after the name is spelled in several ways on this realm; names have a space
-    return sender == me or sender:sub(1, #me + 1) == me .. "-"
+    for _, n in ipairs(names) do
+        if n.first and n.second and Fits(sender, n.first .. " " .. n.second) then fits[#fits + 1] = n.unit end
+    end
+    if #fits > 0 then return fits end
+    local byRealm = {}
+    for _, n in ipairs(names) do
+        if n.first then
+            local ok, realm = Fits(sender, n.first)
+            if ok then
+                fits[#fits + 1] = n.unit
+                if realm and n.second and Squash(realm) == Squash(n.second) then byRealm[#byRealm + 1] = n.unit end
+            end
+        end
+    end
+    if #fits > 1 and #byRealm > 0 then return byRealm end
+    return fits
+end
+
+-- Who sent a chat line: the group unit and how it was told ("guid" or "name"). Without a unit:
+-- "nobody" (not in my group), "others" (several members, none of them me), "unsure" (several, one
+-- of them me) or "hidden" (the game does not say).
+local function Sender(sender, guid)
+    guid, sender = Text(guid), Text(sender)
+    local units = Others()
+    table.insert(units, 1, "player")
+    if guid and Text(Read(UnitGUID, "player")) then
+        for _, unit in ipairs(units) do
+            if Read(UnitGUID, unit) == guid then return unit, "guid" end
+        end
+        return nil, "nobody"
+    end
+    if not sender or not NameParts("player") then return nil, "hidden" end
+    local fits = UnitsNamed(sender, units)
+    if #fits == 1 then return fits[1], "name" end
+    if #fits == 0 then return nil, "nobody" end
+    for _, unit in ipairs(fits) do
+        if unit == "player" then return nil, "unsure" end
+    end
+    return nil, "others"
+end
+
+-- For the saved log: the sender as the game spelled it, and what it was taken for.
+local function SenderNote(sender, unit, how)
+    sender = Text(sender)
+    return ('"%s" = %s'):format(sender or "?", unit and (unit .. " by " .. how) or how)
 end
 
 local function Who(sender)
-    sender = Known(sender)
-    if type(sender) ~= "string" or sender == "" then return nil end
+    sender = Text(sender)
+    if not sender then return nil end
     return sender:match("^([^%-]+)") or sender
 end
 
 local function OnChat(channel, text, sender, guid)
-    local mine = IsMine(sender, guid)
+    -- mine: true, false (someone else's), or nil when the game does not say who sent it
+    local unit, how = Sender(sender, guid)
+    local mine
+    if unit then mine = unit == "player" elseif how == "nobody" or how == "others" then mine = false end
     text = Known(text)
     -- Our line came back: from us (or from a hidden sender), and readable as ours or hidden.
     if awaiting and awaiting.channel == channel and mine ~= false
         and (type(text) ~= "string" or text:sub(1, #awaiting.head) == awaiting.head) then
+        awaiting.back = "came back, sender " .. SenderNote(sender, unit, how)
+        if awaiting.entry then awaiting.entry.note = awaiting.back end
         awaiting = nil
     end
     if mine ~= false or type(text) ~= "string" then return end
@@ -480,7 +550,7 @@ local function OnChat(channel, text, sender, guid)
     if not title then return end
     local who = Who(sender)
     heard[title] = { at = GetTime(), who = who }
-    Log("in", channel, text, who or "")
+    Log("in", channel, text, SenderNote(sender, unit, how))
     if db.follow == "off" or not map then return end
     if HaveQuestTitled(title) then return end
     local ok, why = SetPin(title, map, x, y, who)
@@ -517,7 +587,7 @@ end
 
 -- What the line would look like for a quest picked up right here. Nothing is sent.
 function ns.Test()
-    local giver = Text(Read(UnitName, "target")) or "the quest giver"
+    local giver = FullName("target") or "the quest giver"
     local spot = Spot()
     Print("picking up a quest here that can't be shared would tell your group:")
     print("  " .. Build("A Quest You Cannot Share", giver, spot, db.links))
