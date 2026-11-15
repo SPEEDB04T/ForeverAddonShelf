@@ -1,5 +1,10 @@
 # Changelog
 
+## 1.0.2
+
+- The countdown in the middle of the screen now looks like the game's own zone name: the same gold lettering, a white line under it, and the same fade-out, instead of its own purple text.
+- The options window and minimap button use the game's own window and button art.
+
 ## 1.0.1
 
 - Fixed: every call ended with "could not call it: this realm blocks addon messages". The addon read a realm setting that is on for ordinary realms and has nothing to do with messages inside a group. It now just sends, and only reports a problem when the game really refuses the message.

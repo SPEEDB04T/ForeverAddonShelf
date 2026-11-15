@@ -62,7 +62,7 @@ local db
 local floor, ceil, max, min = math.floor, math.ceil, math.max, math.min
 local issecret = issecretvalue
 
-local VERSION = "1.0.1"
+local VERSION = "1.0.2"
 if C_AddOns and C_AddOns.GetAddOnMetadata then
     local ok, v = pcall(C_AddOns.GetAddOnMetadata, ADDON_NAME, "Version")
     if ok and type(v) == "string" and v ~= "" and not (issecret and issecret(v)) then VERSION = v end
@@ -198,33 +198,61 @@ end
 ---------------------------------------------------------------------------
 -- The banner in the middle of the screen
 ---------------------------------------------------------------------------
+-- Built like the game's own zone name (ZoneText.xml): the big line in the zone
+-- name font and colour, the line under it in the game's white, no backdrop, and
+-- a short fade at the end the way a zone name goes.
 local banner
+local FADE = 0.6
+
+local function Font(fs, name, fallback)
+    local obj = _G[name] or _G[fallback]
+    if obj then pcall(fs.SetFontObject, fs, obj) end
+end
 
 local function Banner()
     if banner then return banner end
     local b = CreateFrame("Frame", "KneelTogetherBanner", UIParent)
-    b:SetSize(640, 96)
+    b:SetSize(512, 96)
     b:SetPoint("TOP", UIParent, "TOP", 0, -170)
     b:SetFrameStrata("HIGH")
     b:EnableMouse(false)
     b.big = b:CreateFontString(nil, "OVERLAY", "GameFontNormalHuge")
+    Font(b.big, "ZoneTextFont", "GameFontNormalHuge")
+    b.big:SetWidth(512)
     b.big:SetPoint("TOP", b, "TOP", 0, 0)
-    pcall(function()
-        local font = b.big:GetFont()
-        if Plain(font) and type(font) == "string" then b.big:SetFont(font, 46, "OUTLINE") end
-    end)
-    b.big:SetTextColor(0.85, 0.66, 1.00)
     b.small = b:CreateFontString(nil, "OVERLAY", "GameFontHighlightLarge")
-    b.small:SetPoint("TOP", b.big, "BOTTOM", 0, -6)
+    Font(b.small, "GameFontHighlightLarge", "GameFontHighlight")
+    b.small:SetWidth(512)
+    b.small:SetPoint("TOP", b.big, "BOTTOM", 0, -4)
+    -- the fade; without animations (or in the tests) it simply hides
+    local ok, group = pcall(b.CreateAnimationGroup, b)
+    if ok and type(group) == "table" and group.CreateAnimation then
+        local ok2, alpha = pcall(group.CreateAnimation, group, "Alpha")
+        if ok2 and type(alpha) == "table" and alpha.SetFromAlpha then
+            alpha:SetFromAlpha(1)
+            alpha:SetToAlpha(0)
+            alpha:SetDuration(FADE)
+            group:SetScript("OnFinished", function() b:Hide(); b:SetAlpha(1) end)
+            b.fade = group
+        end
+    end
     b.stamp = 0
     b:Hide()
     banner = b
     return b
 end
 
+local function Hide(b)
+    b.hiding = true
+    if b.fade then b.fade:Play() else b:Hide() end
+end
+
 -- seconds: hide by itself after that long (nil: stays until the next line).
 local function Show(big, small, seconds)
     local b = Banner()
+    if b.fade and b.fade.IsPlaying and b.fade:IsPlaying() then b.fade:Stop() end
+    b.hiding = nil
+    b:SetAlpha(1)
     b.big:SetText(big or "")
     b.small:SetText(small or "")
     b:Show()
@@ -233,13 +261,13 @@ local function Show(big, small, seconds)
     if seconds and C_Timer and C_Timer.After then
         local stamp = b.stamp
         C_Timer.After(seconds, function()
-            if b.stamp == stamp then b:Hide() end
+            if b.stamp == stamp then Hide(b) end
         end)
     end
 end
 
 function ns.BannerText()
-    if not (banner and banner:IsShown()) then return nil end
+    if not (banner and banner:IsShown()) or banner.hiding then return nil end
     return banner.bigText, banner.smallText
 end
 
