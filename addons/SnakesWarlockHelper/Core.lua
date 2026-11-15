@@ -7,7 +7,7 @@ local ADDON, ns = ...
 
 ns.ADDON = ADDON
 ns.TITLE = "Snakes Warlock Helper"
-ns.VERSION = "1.1.0"
+ns.VERSION = "1.2.0"
 
 local defaults = {
     remind = { armor = true, soullink = true, demon = true, stone = true },

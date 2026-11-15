@@ -28,18 +28,19 @@ end
 local function ShowTip(icon)
     local e = icon and icon.entry
     if not e then return end
+    local gold, white, gray, green = C.gold, C.white, C.gray, C.green
     GameTooltip:SetOwner(icon, "ANCHOR_BOTTOM", 0, -6)
-    GameTooltip:AddLine(e.title, 1, 1, 1)
-    GameTooltip:AddLine(e.text, C.dim[1], C.dim[2], C.dim[3], true)
+    GameTooltip:AddLine(e.title, gold[1], gold[2], gold[3])
+    GameTooltip:AddLine(e.text, white[1], white[2], white[3], true)
     if not ns.demo then
         if InCombatLockdown() then
-            GameTooltip:AddLine("Can't be clicked during a fight.", C.faint[1], C.faint[2], C.faint[3])
+            GameTooltip:AddLine("Can't be clicked during a fight.", gray[1], gray[2], gray[3])
         elseif e.spell or e.macro then
-            GameTooltip:AddLine(e.macro and "Click to use it" or "Click to cast it", C.fel[1], C.fel[2], C.fel[3])
+            GameTooltip:AddLine(e.macro and "Click to use it" or "Click to cast it", green[1], green[2], green[3])
         end
     end
-    GameTooltip:AddLine("Right-click: quiet for 10 minutes", C.faint[1], C.faint[2], C.faint[3])
-    GameTooltip:AddLine("Shift + right-click: turn this reminder off", C.faint[1], C.faint[2], C.faint[3])
+    GameTooltip:AddLine("Right-click: quiet for 10 minutes", gray[1], gray[2], gray[3])
+    GameTooltip:AddLine("Shift + right-click: turn this reminder off", gray[1], gray[2], gray[3])
     GameTooltip:Show()
 end
 
@@ -56,20 +57,14 @@ end
 ----------------------------------------------------------------------
 local function NewIcon(i)
     local ic = CreateFrame("Frame", nil, Strip.frame)
-    -- soft frame that breathes, a crisp 1px edge, then the icon
-    ic.glow = UI.Fill(ic, "BACKGROUND", C.accent, 0.45, -2)
-    ic.glow:SetPoint("TOPLEFT", -3, 3)
-    ic.glow:SetPoint("BOTTOMRIGHT", 3, -3)
-    ic.edge = UI.Fill(ic, "BACKGROUND", C.accent, 1, 0)
-    ic.edge:SetAllPoints()
-    ic.shade = UI.Fill(ic, "BORDER", { 0, 0, 0 }, 1)
-    ic.shade:SetPoint("TOPLEFT", 1, -1)
-    ic.shade:SetPoint("BOTTOMRIGHT", -1, 1)
-    ic.tex = ic:CreateTexture(nil, "ARTWORK")
-    ic.tex:SetPoint("TOPLEFT", 2, -2)
-    ic.tex:SetPoint("BOTTOMRIGHT", -2, 2)
-    ic.tex:SetTexCoord(0.08, 0.92, 0.08, 0.92)
-    ic.timer = ic:CreateFontString(nil, "OVERLAY", "NumberFontNormalSmall")
+    -- Built like an action bar button: slot, masked icon, icon frame, then the bar's coloured
+    -- border (purple: missing, orange: running out) and its spell-highlight glow.
+    UI.IconFrame(ic, (ns.db and ns.db.iconSize) or 32)
+    ic.border = UI.IconOverlay(ic, "UI-HUD-ActionBar-IconFrame-Border", 2)
+    ic.glow = UI.IconOverlay(ic, "UI-HUD-ActionBar-IconFrame-Mouseover", 3, true)
+    ic.hl = UI.IconOverlay(ic, "UI-HUD-ActionBar-IconFrame-Mouseover", 4, true)
+    ic.hl:Hide()
+    ic.timer = ic:CreateFontString(nil, "OVERLAY", "NumberFontNormal")
     ic.timer:SetPoint("BOTTOM", 0, 3)
 
     -- Breathing glow. Animation support differs between clients, so it is optional.
@@ -77,16 +72,17 @@ local function NewIcon(i)
         local group = ic.glow:CreateAnimationGroup()
         group:SetLooping("BOUNCE")
         local a = group:CreateAnimation("Alpha")
-        a:SetFromAlpha(1)
-        a:SetToAlpha(0.25)
+        a:SetFromAlpha(0.9)
+        a:SetToAlpha(0.1)
         a:SetDuration(1.2)
         a:SetSmoothing("IN_OUT")
         ic.pulse = group
     end)
 
+    -- Hovered without a cast button on top (during a fight, in the demo): the bar's highlight.
     ic:EnableMouse(true)
-    ic:SetScript("OnEnter", ShowTip)
-    ic:SetScript("OnLeave", HideTip)
+    ic:SetScript("OnEnter", function(self) self.hl:Show(); ShowTip(self) end)
+    ic:SetScript("OnLeave", function(self) self.hl:Hide(); HideTip() end)
     ic:SetScript("OnMouseUp", function(self, button)
         if button == "RightButton" then RightClick(self.entry) end
     end)
@@ -100,9 +96,9 @@ local function NewButton(i)
     b:SetFrameStrata("MEDIUM")
     b:SetFrameLevel(Strip.frame:GetFrameLevel() + 10)
     if UseKeyDown() then b:RegisterForClicks("AnyDown", "AnyUp") else b:RegisterForClicks("AnyUp") end
-    b.hl = b:CreateTexture(nil, "HIGHLIGHT")
-    b.hl:SetAllPoints()
-    b.hl:SetColorTexture(1, 1, 1, 0.14)
+    -- the action bar's own hover and pressed art
+    if b.SetHighlightAtlas then b:SetHighlightAtlas("UI-HUD-ActionBar-IconFrame-Mouseover", "ADD") end
+    if b.SetPushedAtlas then b:SetPushedAtlas("UI-HUD-ActionBar-IconFrame-Down") end
     b:SetScript("OnEnter", function(self) ShowTip(self.icon) end)
     b:SetScript("OnLeave", HideTip)
     b:SetScript("PostClick", function(self, button, down)
@@ -124,15 +120,22 @@ local function Create()
     f:Hide()
 
     -- Shown only while unlocked: a box to drag the strip by.
-    local m = CreateFrame("Frame", nil, f)
+    -- A dialog-style box, like the game's own move handles.
+    local m = CreateFrame("Frame", nil, f, "BackdropTemplate")
     Strip.mover = m
     m:SetFrameLevel(f:GetFrameLevel() + 20)
     m:SetPoint("CENTER", f, "CENTER", 0, 7)
-    m.bg = UI.Fill(m, "BACKGROUND", C.accent, 0.22)
-    m.bg:SetAllPoints()
-    UI.Border(m, C.accent, 0.9)
-    m.label = UI.Text(m, "GameFontHighlightSmall", C.text, "CENTER")
-    m.label:SetPoint("TOP", 0, -4)
+    if m.SetBackdrop then
+        m:SetBackdrop({
+            bgFile = "Interface\\DialogFrame\\UI-DialogBox-Background-Dark",
+            edgeFile = UI.TOOLTIP_BORDER, edgeSize = 12, tile = true, tileSize = 32,
+            insets = { left = 3, right = 3, top = 3, bottom = 3 },
+        })
+        m:SetBackdropBorderColor(C.gold[1], C.gold[2], C.gold[3], 1)
+        m:SetBackdropColor(1, 1, 1, 0.6)
+    end
+    m.label = UI.Text(m, "GameFontNormalSmall", nil, "CENTER")
+    m.label:SetPoint("TOP", 0, -6)
     m.label:SetText("Warlock reminders: drag me")
     m:EnableMouse(true)
     m:RegisterForDrag("LeftButton")
@@ -166,14 +169,15 @@ function Strip.Show(list)
             ic = ic or NewIcon(i)
             e.expiresAt = e.remaining and (now + e.remaining) or nil
             ic.entry = e
-            ic:SetSize(size, size)
+            UI.SizeIconFrame(ic, size)
             ic:ClearAllPoints()
             ic:SetPoint("LEFT", Strip.frame, "LEFT", (i - 1) * (size + GAP), 0)
             ic.tex:SetTexture(e.icon)
-            local c = (e.state == "expiring") and C.amber or C.accent
-            UI.SetFill(ic.glow, c, 0.45)
-            UI.SetFill(ic.edge, c, 1)
-            ic.timer:SetTextColor(c[1], c[2], c[3])
+            local c = (e.state == "expiring") and C.orange or C.warlock
+            ic.border:SetVertexColor(c[1], c[2], c[3], 1)
+            ic.glow:SetVertexColor(c[1], c[2], c[3], 1)
+            if e.state == "expiring" or not ns.db.pulse then ic.glow:Hide() else ic.glow:Show() end
+            ic.timer:SetTextColor(C.white[1], C.white[2], C.white[3])
             ic:Show()
             if ic.pulse then
                 if ns.db.pulse and e.state ~= "expiring" then

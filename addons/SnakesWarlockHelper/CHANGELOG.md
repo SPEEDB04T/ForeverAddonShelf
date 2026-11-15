@@ -1,5 +1,9 @@
 # Changelog
 
+## 1.2.0 (2026-11-14)
+
+- Looks like the game's own UI: the window is a standard game window with tabs under its bottom edge, the reminder icons are drawn like action bar buttons (purple border while missing, orange while running out, the bar's glow), and the buttons, check boxes, bars, text colours and tooltips are the game's.
+
 ## 1.1.0 (2026-11-14)
 
 - Minimap button on warlocks: left-click opens or closes the window, right-click opens the Options tab, drag moves it. A tick on the Options tab and `/swh minimap` hide it.
