@@ -158,6 +158,14 @@ local function CheckResult()
   return nil
 end
 
+local GRADES = { bikini = true, skimpy = true, cropped = true }
+ns.GRADES = GRADES
+
+-- " (skimpy)" or " (skimpy, set by you)" for the tooltip line, "" without a grade
+function ns.GradeLabel(it)
+  return it and it.grade and (" (" .. it.grade .. (it.gradeMine and ", set by you" or "") .. ")") or ""
+end
+
 function ns.RebuildItems()
   wipe(items)
   local chk = CheckResult()
@@ -165,8 +173,15 @@ function ns.RebuildItems()
   -- Names stored by the check are in the language it ran in: after a language
   -- switch the list's own names are used until the check has run again.
   local names = chk and chk.locale == Locale() and type(chk.names) == "table" and chk.names or nil
+  local mine = db and type(db.grades) == "table" and db.grades or {}
   for id, it in pairs(ns.ITEMS) do
     it.id = id
+    -- a grade the player set with /smog grade wins over the generator's
+    if it.genGrade == nil then
+      it.genGrade = it.grade or false
+    end
+    local g = GRADES[mine[id]] and mine[id] or nil
+    it.grade, it.gradeMine = g or it.genGrade or nil, g and true or nil
     it.listName = it.listName or it.name
     it.name = names and names[id] or it.listName
     if not (db and db.hidden[id]) and not (bad and bad[id]) then
@@ -178,6 +193,8 @@ function ns.RebuildItems()
       if type(it) == "table" then
         it.custom = true
         it.id = id
+        local g = GRADES[mine[id]] and mine[id] or nil
+        it.grade, it.gradeMine = g, g and true or nil
         items[id] = it
       end
     end
@@ -272,7 +289,7 @@ function ns.AddCustom(text)
     db.hidden[id] = nil
     db.custom[id] = nil
     ns.RebuildItems()
-    if builtin.grade == "cropped" and not ns.ShowCropped() then
+    if builtin.grade == "cropped" and not ns.ShowCropped() and not ns.Demanded(id) then
       ns.Print(("%s is a built-in piece with a cropped look, hidden for now: |cffffff00/smog cropped|r or Filter > Show cropped pieces shows it."):format(builtin.name))
       ns.Fire("ITEMS")
       return
@@ -338,6 +355,46 @@ function ns.AddCustom(text)
   else
     ns.Print("The game sent no data for item " .. id .. ". Try again in a moment.")
   end
+end
+
+-- "/smog grade <item link, ID or name> <bikini|skimpy|cropped|auto>": the
+-- player's grade wins over the generator's; auto goes back to it.
+function ns.SetGrade(text)
+  text = type(text) == "string" and text or ""
+  local body, word = text:match("^(.-)%s*(%a+)%s*$")
+  word = word and word:lower()
+  if not (word and (GRADES[word] or word == "auto")) or (body or "") == "" then
+    ns.Print("Usage: |cffffff00/smog grade|r <item link, ID or name> <bikini, skimpy, cropped or auto>")
+    return
+  end
+  local id = ItemIDFromLink(body)
+  if not id then
+    local want = body:lower()
+    for i, it in pairs(items) do
+      if (it.name or ""):lower() == want or (it.listName or ""):lower() == want then
+        id = i
+        break
+      end
+    end
+  end
+  local it = id and items[id]
+  if not it then
+    ns.Print("That item is not on the list.")
+    return
+  end
+  if type(db.grades) ~= "table" then
+    db.grades = {}
+  end
+  db.grades[id] = word ~= "auto" and word or nil
+  ns.RebuildItems()
+  ns.PricesChanged()
+  if word == "auto" then
+    ns.Print(("%s: back to the list's own grade (%s)."):format(it.name, it.grade or "none"))
+  else
+    ns.Print(("%s is now graded %s by you (the list says %s). |cffffff00/smog grade %d auto|r undoes it."):format(
+      it.name, word, it.genGrade or "nothing", id))
+  end
+  ns.Fire("ITEMS")
 end
 
 function ns.RemoveItem(text)
@@ -675,7 +732,7 @@ function ns.Common(it, info)
   end
   info = info or (it.id and ns.Price(it.id)) or {}
   local own = OWN_BASIS[info.fairBasis] and info.fair or nil
-  if own and own >= COMMON_FLOOR then
+  if own and (own >= COMMON_FLOOR or (it.id and ns.Demanded(it.id, info))) then
     return nil
   end
   if (it.q or 2) <= 2 and not it.inst and it.src ~= "fishing" and (it.req or 0) <= COMMON_MAX_REQ then
@@ -687,13 +744,17 @@ function ns.Common(it, info)
   return nil
 end
 
--- false for a cropped piece while cropped pieces are hidden, and for an easy,
--- common piece while those are hidden. info as in ns.Common.
+-- false for a cropped piece while cropped pieces are hidden (unless its prices
+-- show demand, see ns.Demanded), and for an easy, common piece while those are
+-- hidden. info as in ns.Common.
+local DEMAND_SHOW = 2     -- own prices at 2 times ordinary gear or more: demand evidence
+local GRADE_CROPPED = 0.85 -- a shown cropped piece without demand evidence scores lower
+ns.DEMAND_SHOW, ns.GRADE_CROPPED = DEMAND_SHOW, GRADE_CROPPED
 function ns.Shown(it, info)
   if it == nil then
     return false
   end
-  if it.grade == "cropped" and not ns.ShowCropped() then
+  if it.grade == "cropped" and not ns.ShowCropped() and not (it.id and ns.Demanded(it.id, info)) then
     return false
   end
   return ns.ShowCommon() or not ns.Common(it, info)
@@ -743,6 +804,18 @@ function ns.NoDemand(id, info)
   local prem = ns.Premium(id, info)
   local p = db and db.prices[id]
   return prem ~= nil and prem < NO_DEMAND and type(p) == "table" and (Num(p.seen) or 0) >= NO_DEMAND_SEEN
+end
+
+-- Demand evidence: the piece's own prices put it at DEMAND_SHOW times ordinary
+-- gear of its level or more. Returns that ratio, or nil. Such a piece is never
+-- hidden or ruled out for its grade: what players pay beats what the textures say.
+function ns.Demanded(id, info)
+  info = info or ns.Price(id)
+  if not OWN_BASIS[info.fairBasis] then
+    return nil
+  end
+  local prem = ns.Premium(id, info)
+  return prem and prem >= DEMAND_SHOW and prem or nil
 end
 
 local craftedSet
@@ -967,7 +1040,8 @@ function ns.Buy(id, info)
   local function stop(text) b.stop = b.stop or text end
   local alt = type(it.alt) == "table" and it.alt or {}
   local common = not ns.ShowCommon() and ns.Common(it, info)
-  if it.grade == "cropped" and not ns.ShowCropped() then
+  local demanded = ns.Demanded(id, info)
+  if it.grade == "cropped" and not ns.ShowCropped() and not demanded then
     stop("a cropped look (it covers the bust or most of the thigh), which few buy for slutmog")
   elseif common then
     b.common = common
@@ -1103,8 +1177,19 @@ function ns.Buy(id, info)
     end
   end
 
-  b.factors = { sure = c, supply = s, farm = f, look = o, demand = d }
-  b.mult = c * s * f * o * d
+  -- the grade only lowers the score, and only without demand evidence
+  local g = 1
+  if it.grade == "cropped" then
+    if demanded then
+      pro(("a cropped look, but it sells for %.1f times ordinary gear of its level"):format(demanded))
+    else
+      g = GRADE_CROPPED
+      con("a cropped look: fewer players buy it for slutmog")
+    end
+  end
+
+  b.factors = { sure = c, supply = s, farm = f, look = o, demand = d, grade = g }
+  b.mult = c * s * f * o * d * g
   b.score = math.max(0, b.gain) * b.mult
   b.risk = b.mult >= 0.5 and "low" or b.mult >= 0.3 and "medium" or "high"
   if not b.stop and b.score < BUY_MIN_GAIN then
@@ -2086,7 +2171,7 @@ local function OnTooltipItem(tooltip, data)
     return
   end
   tooltip:AddLine(" ")
-  tooltip:AddLine("|cffff66aaSlutmog|r" .. (it.grade and (" (" .. it.grade .. ")") or "") .. ": " .. (it.look or "revealing"),
+  tooltip:AddLine("|cffff66aaSlutmog|r" .. ns.GradeLabel(it) .. ": " .. (it.look or "revealing"),
     1, 1, 1, true)
   local info = ns.Price(id)
   if info.low then
@@ -2287,6 +2372,8 @@ SlashCmdList.SLUTMOGSCOUT = function(input)
     ns.SetShowCropped(not ns.ShowCropped())
     ns.Print("Cropped pieces (tops that cover the bust, shorts that cover most of the thigh): "
       .. (ns.ShowCropped() and "shown" or "hidden"))
+  elseif cmd == "grade" then
+    ns.SetGrade(rest)
   elseif cmd == "common" then
     ns.SetShowCommon(not ns.ShowCommon())
     ns.Print(("Easy, common pieces (green world drops up to level %d, pieces always listed for under %s): %s"):format(
@@ -2330,6 +2417,7 @@ SlashCmdList.SLUTMOGSCOUT = function(input)
     print("  |cffffff00/smog remove <item link or id>|r  take a piece off the list")
     print("  |cffffff00/smog restore|r  bring back removed built-in pieces")
     print("  |cffffff00/smog cropped|r  show or hide cropped pieces")
+    print("  |cffffff00/smog grade|r <item> <bikini, skimpy, cropped or auto>  set a piece's grade yourself")
     print("  |cffffff00/smog common|r  show or hide easy, common pieces (low-level greens, cheap pieces always listed)")
     print("  |cffffff00/smog hints|r  pieces off the list that are priced like transmog pieces")
     print("  |cffffff00/smog verify|r  check the built-in list against this game build")

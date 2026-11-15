@@ -1,5 +1,27 @@
 # Changelog
 
+## 1.8.0
+
+Grades fixed: Tyrant's Legplates and other plate pieces people buy for slutmog are no longer hidden as cropped.
+
+- **What players pay beats the grade.** Suppose a piece's own prices put it at 2 times ordinary gear of its
+  level or more. Then it is never hidden or ruled out for its grade, and it never counts as easy, common gear.
+  The tooltip says "a cropped look, but it sells for X times ordinary gear". Without that evidence, a cropped
+  piece stays hidden. When you show it with the filter, its look only lowers the score a little.
+- **Better grade rules:**
+  - Chest: a fully bare midriff under a partly open top is skimpy (Tyrant's and Jade Breastplate). A bare
+    belly under a top that covers the bust is still cropped, like Infantry Tunic.
+  - Legs: plate thongs and skirts measure low on the thigh, because the metal is painted over it. A thigh
+    and hip that are both mostly bare are now skimpy: Tyrant's, Jade, Saltstone and Vanguard Legplates and
+    Lofty Legguards.
+  - Of 166 pieces, 58 are now cropped (was 65), 89 skimpy and 19 bikini.
+- **Grades set by hand.** The item list now carries a short hand-kept list for pieces checked on the body, or
+  judged by a player, with the reason in the tooltip data. Tyrant's Legplates and Chestpiece are on it as
+  skimpy.
+- **`/smog grade <item> <bikini|skimpy|cropped|auto>`** sets a piece's grade yourself. Give an item link,
+  ID or name. Your grade wins over the list's and is saved, and the tooltip says "set by you". `auto` goes
+  back to the list's grade.
+
 ## 1.7.0
 
 Only pieces worth flipping: gear players get by the dozen is hidden.

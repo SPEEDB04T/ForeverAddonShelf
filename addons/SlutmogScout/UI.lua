@@ -205,7 +205,7 @@ function ns.FillItemTooltip(tip, id)
   local w1, w2, w3 = WHITE[1], WHITE[2], WHITE[3]
   local e1, e2, e3 = GREY[1], GREY[2], GREY[3]
   tip:AddLine(" ")
-  tip:AddLine("|cffff66aaSlutmog|r" .. (it.grade and (" (" .. it.grade .. ")") or "") .. ": " .. (it.look or "revealing"),
+  tip:AddLine("|cffff66aaSlutmog|r" .. ns.GradeLabel(it) .. ": " .. (it.look or "revealing"),
     w1, w2, w3, true)
   if info.low then
     tip:AddDoubleLine("Lowest in your last scan", ns.Money(info.low) .. " " .. Grey(("(%d listed in all)"):format(info.qty or 0)), g1, g2, g3, w1, w2, w3)
