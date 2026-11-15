@@ -2684,8 +2684,8 @@ SlashCmdList.SLUTMOGSCOUT = function(input)
     end
   elseif cmd == "common" then
     ns.SetShowCommon(not ns.ShowCommon())
-    ns.Print(("Easy, common pieces (green world drops up to level %d, pieces always listed for under %s): %s"):format(
-      COMMON_MAX_REQ, ns.Money(COMMON_FLOOR), ns.ShowCommon() and "shown" or "hidden"))
+    ns.Print(("Easy, common pieces (green world drops up to level %d): %s"):format(
+      COMMON_MAX_REQ, ns.ShowCommon() and "shown" or "hidden"))
   elseif cmd == "config" or cmd == "options" or cmd == "opt" then
     if HasKit() then
       ns.Kit.Open()
@@ -2730,7 +2730,7 @@ SlashCmdList.SLUTMOGSCOUT = function(input)
     print("  |cffffff00/smog cropped|r  show or hide cropped pieces")
     print("  |cffffff00/smog buy|r <item>  find the cheapest copy listed and ask to buy it")
     print("  |cffffff00/smog grade|r <item> <bikini, skimpy, cropped or auto>  set a piece's grade yourself")
-    print("  |cffffff00/smog common|r  show or hide easy, common pieces (low-level greens, cheap pieces always listed)")
+    print(("  |cffffff00/smog common|r  show or hide easy, common pieces (green world drops up to level %d)"):format(COMMON_MAX_REQ))
     print("  |cffffff00/smog hints|r  pieces off the list that are priced like transmog pieces")
     print("  |cffffff00/smog verify|r  check the built-in list against this game build")
     print("  |cffffff00/smog selftest|r  check that this game has what the addon needs")

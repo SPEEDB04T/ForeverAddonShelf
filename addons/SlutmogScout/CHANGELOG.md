@@ -1,5 +1,14 @@
 # Changelog
 
+## 1.12.1
+
+- **Fixed: blank models in the Review grid.** Going to another tab and back (or closing and opening the
+  window) left the grid's models empty, because a hidden model forgets what it wore. Each model is now
+  dressed again when it shows, and the piece and the up-close framing are put on again once the body
+  has finished loading.
+- `/smog common` and its help line no longer name a rule about cheap pieces that the addon dropped in
+  1.11.0 (it printed a "-" where a price should be).
+
 ## 1.12.0
 
 The Review grid shows the piece up close, and the whole window can be made bigger.

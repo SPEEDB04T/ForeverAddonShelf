@@ -1403,7 +1403,7 @@ local function CreateFilterDropdown()
     root:CreateCheckbox("Show cropped pieces", ns.ShowCropped, function()
       ns.SetShowCropped(not ns.ShowCropped())
     end)
-    -- easy, common gear: low-level greens and cheap pieces listed in every scan
+    -- easy, common gear: green world drops up to level 30
     root:CreateCheckbox("Show easy, common pieces", ns.ShowCommon, function()
       ns.SetShowCommon(not ns.ShowCommon())
     end)
@@ -1617,6 +1617,26 @@ local function CreateReviewView()
       model:SetPoint("BOTTOMRIGHT", -3, 34)
       pcall(model.EnableMouse, model, false) -- clicks and drags go to the tile
       tile.model = model
+      -- A hidden model forgets what it wore. Dress it again each time it
+      -- shows: back on the Review tab, the window opened again, or a tile
+      -- that was empty on the last page filled again.
+      pcall(model.SetScript, model, "OnShow", function()
+        local p = tile.entry
+        if p then
+          tile.shownId, tile.shownFemale = p.id, state.female
+          DressModel(tile, p.id)
+        end
+      end)
+      -- The body loads after SetUnit returns, and a piece or framing set
+      -- before that can be lost: put both on again once it has loaded.
+      pcall(model.SetScript, model, "OnModelLoaded", function()
+        local p = tile.entry
+        if p and tile.wantId == p.id then
+          pcall(model.Undress, model)
+          pcall(model.TryOn, model, "item:" .. p.id)
+          FrameModel(tile)
+        end
+      end)
     end
     tile.onList = tile:CreateTexture(nil, "OVERLAY")
     tile.onList:SetSize(14, 14)
