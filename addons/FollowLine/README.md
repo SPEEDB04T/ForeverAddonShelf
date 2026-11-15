@@ -26,7 +26,7 @@ During a fight the game does not let an addon change the Follow button. If the l
 | `no addon` | no Follow Line seen: the addon can't tell whether they follow |
 | `offline` | offline |
 
-`^` and `v` move a player one place, `x` takes them out, and `+` puts a player from "Not in the line" back at the end. A changed order is only sent when you press **Call line** again.
+The arrow buttons move a player one place, minus takes them out, and plus puts a player from "Not in the line" back at the end. A changed order is only sent when you press **Call line** again.
 
 If a player leaves the group, the line closes up by itself: whoever was behind them follows the player who was ahead of them.
 

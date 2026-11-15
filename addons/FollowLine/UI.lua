@@ -1,5 +1,10 @@
 -- Follow Line: the Follow button every player gets, and the window the line is ordered in.
 --
+-- Both are built from the game's own parts so they sit in its UI: the Follow
+-- button is an action button (the action bars' slot, frame, pushed, highlight and
+-- flash art) with its name beside it, and the window is the game's basic frame
+-- with an inset, panel buttons and the quest log's row highlight.
+--
 -- The Follow button is a secure button running "/follow <the player ahead>", so
 -- the follow starts from the player's own click or key press, which is what the
 -- game asks for. The game does not let addons change, show or hide such a button
@@ -10,21 +15,35 @@ local Line = ns.Line
 local UI = {}
 ns.UI = UI
 
-local WHITE = "Interface\\Buttons\\WHITE8X8"
-local WIDTH, PAD, TITLE_H, NOTE_H, ROW_H, BTN_H, GAP = 272, 8, 20, 28, 18, 20, 4
-local INNER = WIDTH - PAD * 2
+local WIDTH = 284
+local LEFT, RIGHT, TOP, BOTTOM = 12, 14, 30, 10     -- inside the frame's inset
+local NOTE_H, COUNT_H, ROW_H, BTN_H, GAP = 28, 14, 18, 22, 4
+local INNER = WIDTH - LEFT - RIGHT
 local MAX_ROWS, MAX_BENCH = 40, 10
 local BINDING = "CLICK FollowLineJoinButton:LeftButton"
+local BUTTON_SIZE = 45
+
+-- The game's text colours, with their usual values for when a constant is missing.
+local function FontColor(name, r, g, b)
+    local c = _G[name]
+    if type(c) == "table" and type(c.r) == "number" then return { c.r, c.g, c.b } end
+    return { r, g, b }
+end
+local GOLD = FontColor("NORMAL_FONT_COLOR", 1.0, 0.82, 0.0)
+local WHITE = FontColor("HIGHLIGHT_FONT_COLOR", 1.0, 1.0, 1.0)
+local GRAY = FontColor("GRAY_FONT_COLOR", 0.5, 0.5, 0.5)
+local GREEN = FontColor("GREEN_FONT_COLOR", 0.1, 1.0, 0.1)
+local RED = FontColor("RED_FONT_COLOR", 1.0, 0.1, 0.1)
+local YELLOW = FontColor("YELLOW_FONT_COLOR", 1.0, 1.0, 0.0)
+
+local function Hex(c)
+    return ("ff%02x%02x%02x"):format(c[1] * 255, c[2] * 255, c[3] * 255)
+end
+local function Paint(c, text) return "|c" .. Hex(c) .. text .. "|r" end
 
 local COLOR = {
-    head    = { 1.00, 0.82, 0.00 },
-    on      = { 0.40, 0.92, 0.45 },
-    off     = { 1.00, 0.32, 0.26 },
-    pending = { 1.00, 0.85, 0.30 },
-    noaddon = { 0.62, 0.62, 0.62 },
-    offline = { 0.50, 0.50, 0.50 },
-    out     = { 0.62, 0.62, 0.62 },
-    none    = { 0.62, 0.62, 0.62 },
+    head = GOLD, on = GREEN, off = RED, pending = YELLOW,
+    noaddon = GRAY, offline = GRAY, out = GRAY, none = GRAY,
 }
 local SHORT = {
     head = "leads", on = "following", off = "off the line", pending = "not got it yet",
@@ -39,25 +58,17 @@ local commands = {}
 local function ClassColor(class)
     local c = class and ((CUSTOM_CLASS_COLORS and CUSTOM_CLASS_COLORS[class]) or (RAID_CLASS_COLORS and RAID_CLASS_COLORS[class]))
     if c then return c.r, c.g, c.b end
-    return 0.85, 0.85, 0.85
+    return WHITE[1], WHITE[2], WHITE[3]
 end
 
 local function HideTooltip()
     if GameTooltip then GameTooltip:Hide() end
 end
 
-local function Border(parent, r, g, b, a)
-    local lines = {}
-    for i = 1, 4 do
-        local t = parent:CreateTexture(nil, "BORDER")
-        t:SetColorTexture(r, g, b, a)
-        lines[i] = t
-    end
-    lines[1]:SetPoint("TOPLEFT"); lines[1]:SetPoint("TOPRIGHT"); lines[1]:SetHeight(1)
-    lines[2]:SetPoint("BOTTOMLEFT"); lines[2]:SetPoint("BOTTOMRIGHT"); lines[2]:SetHeight(1)
-    lines[3]:SetPoint("TOPLEFT"); lines[3]:SetPoint("BOTTOMLEFT"); lines[3]:SetWidth(1)
-    lines[4]:SetPoint("TOPRIGHT"); lines[4]:SetPoint("BOTTOMRIGHT"); lines[4]:SetWidth(1)
-    return lines
+-- A part the frame template made, or nil (a template part is a table).
+local function Part(f, key)
+    local v = f and f[key]
+    if type(v) == "table" then return v end
 end
 
 ----------------------------------------------------------------------
@@ -69,55 +80,85 @@ local function BoundKey()
     if ok and type(key) == "string" and key ~= "" then return key end
 end
 
+-- The key the way the action bars print it ("S-F", "M4").
+local function ShortKey(key)
+    if GetBindingText then
+        local ok, text = pcall(GetBindingText, key, true)
+        if ok and type(text) == "string" and text ~= "" then return text end
+    end
+    return key
+end
+
 local function ButtonTooltip(self)
     if not GameTooltip then return end
-    GameTooltip:SetOwner(self, "ANCHOR_BOTTOM", 0, -4)
-    GameTooltip:AddLine("Follow Line")
+    GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
+    GameTooltip:AddLine("Follow Line", GOLD[1], GOLD[2], GOLD[3])
     if Line.target then
-        GameTooltip:AddLine(("Click to follow %s, the player ahead of you in the line."):format(Line.target), 1, 1, 1, true)
+        GameTooltip:AddLine(("Follow %s, the player ahead of you in the line."):format(Line.target), WHITE[1], WHITE[2], WHITE[3], true)
     end
     local key = BoundKey()
-    GameTooltip:AddLine(key and ("Your key for this: " .. key .. ".")
-        or "Give it a key under Key Bindings > AddOns > Follow Line.", 0.6, 0.6, 0.6, true)
-    if not ns.db.locked then GameTooltip:AddLine("Drag to move (not during a fight).", 1, 0.82, 0, true) end
+    GameTooltip:AddLine(key and ("Key: " .. key)
+        or "Give it a key under Key Bindings > AddOns > Follow Line.", GRAY[1], GRAY[2], GRAY[3], true)
+    if not ns.db.locked then GameTooltip:AddLine("Drag to move (not during a fight).", GRAY[1], GRAY[2], GRAY[3], true) end
     GameTooltip:Show()
 end
 
 local function CreateButton()
     local b = CreateFrame("Button", "FollowLineJoinButton", UIParent, "SecureActionButtonTemplate")
     button = b
-    b:SetSize(196, 38)
+    b:SetSize(BUTTON_SIZE, BUTTON_SIZE)
     b:SetFrameStrata("MEDIUM")
     b:SetClampedToScreen(true)
     b:SetMovable(true)
+    -- the name beside the button is part of what can be clicked
+    b:SetHitRectInsets(0, -158, 0, 0)
     -- the game clicks on the way down or the way up depending on a setting of the player's
     b:RegisterForClicks("AnyDown", "AnyUp")
     b:RegisterForDrag("LeftButton")
     b:SetAttribute("type", "macro")
 
-    b.bg = b:CreateTexture(nil, "BACKGROUND")
-    b.bg:SetAllPoints(b)
-    b.bg:SetColorTexture(0.05, 0.07, 0.10, 0.88)
-    b.hl = b:CreateTexture(nil, "HIGHLIGHT")
-    b.hl:SetAllPoints(b)
-    b.hl:SetColorTexture(1, 1, 1, 0.10)
-    b.border = Border(b, ns.ACCENT[1], ns.ACCENT[2], ns.ACCENT[3], 1)
-
-    b.icon = b:CreateTexture(nil, "ARTWORK")
-    b.icon:SetSize(26, 26)
-    b.icon:SetPoint("LEFT", b, "LEFT", 6, 0)
+    -- the action bars' slot: background, icon, frame, pushed, highlight
+    b.slot = b:CreateTexture(nil, "BACKGROUND")
+    b.slot:SetAllPoints(b)
+    b.slot:SetAtlas("UI-HUD-ActionBar-IconFrame-Background")
+    b.icon = b:CreateTexture(nil, "BACKGROUND", nil, 1)
+    b.icon:SetAllPoints(b)
     b.icon:SetTexture(ns.ICON)
-    b.icon:SetTexCoord(0.08, 0.92, 0.08, 0.92)
+    local mask = b.CreateMaskTexture and b:CreateMaskTexture()
+    if mask then
+        mask:SetAtlas("UI-HUD-ActionBar-IconFrame-Mask", false)
+        mask:SetAllPoints(b.icon)
+        b.icon:AddMaskTexture(mask)
+    end
+    b:SetNormalAtlas("UI-HUD-ActionBar-IconFrame")
+    b:SetPushedAtlas("UI-HUD-ActionBar-IconFrame-Down")
+    b:SetHighlightAtlas("UI-HUD-ActionBar-IconFrame-Mouseover", "ADD")
+    for _, t in ipairs({ b:GetNormalTexture(), b:GetPushedTexture(), b:GetHighlightTexture() }) do
+        if type(t) == "table" then
+            t:ClearAllPoints()
+            t:SetPoint("TOPLEFT", b, "TOPLEFT", 0, 0)
+            t:SetSize(BUTTON_SIZE + 1, BUTTON_SIZE)
+        end
+    end
+    -- the red flash an action button shows; it pulses while the player is off the line
+    b.flashTex = b:CreateTexture(nil, "ARTWORK", nil, 1)
+    b.flashTex:SetAtlas("UI-HUD-ActionBar-IconFrame-Flash", true)
+    b.flashTex:SetPoint("TOPLEFT", b, "TOPLEFT", 0, 0)
+    b.flashTex:Hide()
+
+    b.hotkey = b:CreateFontString(nil, "OVERLAY", "NumberFontNormalSmallGray")
+    b.hotkey:SetPoint("TOPRIGHT", b, "TOPRIGHT", -4, -5)
+    b.hotkey:SetJustifyH("RIGHT")
 
     b.label = b:CreateFontString(nil, "OVERLAY", "GameFontNormal")
-    b.label:SetPoint("TOPLEFT", b.icon, "TOPRIGHT", 7, 0)
-    b.label:SetPoint("TOPRIGHT", b, "TOPRIGHT", -6, -6)
+    b.label:SetPoint("TOPLEFT", b, "TOPRIGHT", 7, -6)
+    b.label:SetWidth(150)
     b.label:SetJustifyH("LEFT")
     b.label:SetWordWrap(false)
 
     b.sub = b:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
-    b.sub:SetPoint("BOTTOMLEFT", b.icon, "BOTTOMRIGHT", 7, 0)
-    b.sub:SetPoint("BOTTOMRIGHT", b, "BOTTOMRIGHT", -6, 6)
+    b.sub:SetPoint("BOTTOMLEFT", b, "BOTTOMRIGHT", 7, 8)
+    b.sub:SetWidth(150)
     b.sub:SetJustifyH("LEFT")
     b.sub:SetWordWrap(false)
 
@@ -136,16 +177,18 @@ local function CreateButton()
     end)
     b:SetScript("OnEnter", ButtonTooltip)
     b:SetScript("OnLeave", HideTooltip)
-    -- the border pulses while the player is off the line
     b:SetScript("OnUpdate", function(self, elapsed)
-        local a = 1
         if self.flash then
-            self.phase = (self.phase or 0) + elapsed * 5
-            a = 0.35 + 0.65 * math.abs(math.sin(self.phase))
-        end
-        if a ~= self.borderAlpha then
-            self.borderAlpha = a
-            for _, t in ipairs(self.border) do t:SetAlpha(a) end
+            self.phase = (self.phase or 0) + elapsed * 4
+            self.flashTex:SetAlpha(0.25 + 0.75 * math.abs(math.sin(self.phase)))
+            if not self.flashShown then
+                self.flashShown = true
+                self.flashTex:Show()
+            end
+        elseif self.flashShown then
+            self.flashShown = false
+            self.phase = 0
+            self.flashTex:Hide()
         end
     end)
     b:Hide()
@@ -179,21 +222,22 @@ local function RefreshButton()
     if not button or not target then return end
     local on = Line.OnLine()
     local total = Line.line and #Line.line.order or 0
-    local place = ("place %d of %d"):format(Line.place or 0, total)
+    local place = ("Place %d of %d"):format(Line.place or 0, total)
+    local key = BoundKey()
     local sub
     if UI.pending and button.target ~= target then
         -- the line changed during a fight: the button still points at someone else
-        sub = "changes after the fight: /follow " .. target
+        sub = Paint(RED, "After the fight.") .. " Type /follow " .. target
     elseif on then
         sub = place
     elseif Line.InRange(Line.members[target]) == false then
-        sub = "too far away: walk closer first"
+        sub = Paint(RED, "Too far away:") .. " walk closer"
     else
-        local key = BoundKey()
-        sub = place .. (key and (", click or press " .. key) or ", click to fall in")
+        sub = place .. (key and "" or ", click to fall in")
     end
     button.label:SetText((on and "Following " or "Follow ") .. target)
     button.sub:SetText(sub)
+    button.hotkey:SetText(key and ShortKey(key) or "")
     button:SetAlpha(on and 0.5 or 1)
     button.flash = (Line.dropped and not on) and true or false
 end
@@ -217,27 +261,39 @@ local function StopMove()
     SavePosition()
 end
 
+-- Gold title, white text, the way the game's tooltips read.
 local function Tip(self)
     if not GameTooltip or not self.tip then return end
     GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
-    GameTooltip:AddLine(self.tipTitle or self.tip, 1, 1, 1, not self.tipTitle)
-    if self.tipTitle then GameTooltip:AddLine(self.tip, 0.8, 0.8, 0.8, true) end
+    if self.tipTitle then
+        GameTooltip:AddLine(self.tipTitle, GOLD[1], GOLD[2], GOLD[3])
+        GameTooltip:AddLine(self.tip, WHITE[1], WHITE[2], WHITE[3], true)
+    else
+        GameTooltip:AddLine(self.tip, WHITE[1], WHITE[2], WHITE[3], true)
+    end
     GameTooltip:Show()
 end
 
--- A small square button inside a row: move up, move down, take out, put in.
-local function MiniButton(row, text, tip, onClick)
+-- A small button inside a row, drawn with the game's own button art.
+local ART = {
+    up     = { "Interface\\ChatFrame\\UI-ChatIcon-ScrollUp-Up", "Interface\\ChatFrame\\UI-ChatIcon-ScrollUp-Down",
+               "Interface\\ChatFrame\\UI-ChatIcon-ScrollUp-Disabled", "Interface\\Buttons\\UI-Common-MouseHilight", 18 },
+    down   = { "Interface\\ChatFrame\\UI-ChatIcon-ScrollDown-Up", "Interface\\ChatFrame\\UI-ChatIcon-ScrollDown-Down",
+               "Interface\\ChatFrame\\UI-ChatIcon-ScrollDown-Disabled", "Interface\\Buttons\\UI-Common-MouseHilight", 18 },
+    remove = { "Interface\\Buttons\\UI-MinusButton-Up", "Interface\\Buttons\\UI-MinusButton-Down",
+               "Interface\\Buttons\\UI-MinusButton-Disabled", "Interface\\Buttons\\UI-PlusButton-Hilight", 14 },
+    add    = { "Interface\\Buttons\\UI-PlusButton-Up", "Interface\\Buttons\\UI-PlusButton-Down",
+               "Interface\\Buttons\\UI-PlusButton-Disabled", "Interface\\Buttons\\UI-PlusButton-Hilight", 14 },
+}
+
+local function MiniButton(row, art, tip, onClick)
+    local a = ART[art]
     local b = CreateFrame("Button", nil, row)
-    b:SetSize(15, 15)
-    local bg = b:CreateTexture(nil, "BACKGROUND")
-    bg:SetAllPoints(b)
-    bg:SetColorTexture(1, 1, 1, 0.07)
-    local hl = b:CreateTexture(nil, "HIGHLIGHT")
-    hl:SetAllPoints(b)
-    hl:SetColorTexture(ns.ACCENT[1], ns.ACCENT[2], ns.ACCENT[3], 0.35)
-    local label = b:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
-    label:SetPoint("CENTER", b, "CENTER", 0, 0)
-    label:SetText(text)
+    b:SetSize(a[5], a[5])
+    b:SetNormalTexture(a[1])
+    b:SetPushedTexture(a[2])
+    b:SetDisabledTexture(a[3])
+    b:SetHighlightTexture(a[4], "ADD")
     b.tip = tip
     b:SetScript("OnEnter", Tip)
     b:SetScript("OnLeave", HideTooltip)
@@ -248,20 +304,11 @@ local function MiniButton(row, text, tip, onClick)
     return b
 end
 
--- One of the six buttons under the list.
+-- One of the six buttons under the list: the game's red panel button.
 local function CommandButton(label, tipTitle, tip, onClick)
-    local b = CreateFrame("Button", nil, frame)
+    local b = CreateFrame("Button", nil, frame, "UIPanelButtonTemplate")
     b:SetSize((INNER - GAP * 2) / 3, BTN_H)
-    b.bg = b:CreateTexture(nil, "BACKGROUND")
-    b.bg:SetAllPoints(b)
-    b.bg:SetColorTexture(1, 1, 1, 0.08)
-    local hl = b:CreateTexture(nil, "HIGHLIGHT")
-    hl:SetAllPoints(b)
-    hl:SetColorTexture(1, 1, 1, 0.12)
-    b.border = Border(b, 0, 0, 0, 1)
-    b.label = b:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
-    b.label:SetPoint("CENTER", b, "CENTER", 0, 0)
-    b.label:SetText(label)
+    b:SetText(label)
     b.tipTitle, b.tip = tipTitle, tip
     b:SetScript("OnEnter", Tip)
     b:SetScript("OnLeave", HideTooltip)
@@ -280,14 +327,14 @@ local function RowTooltip(row)
     local r, g, b = ClassColor(m.class)
     GameTooltip:AddLine(m.name, r, g, b)
     local text, st = Line.Describe(m)
-    local c = COLOR[st] or COLOR.none
+    local c = COLOR[st] or WHITE
     GameTooltip:AddLine(text:sub(1, 1):upper() .. text:sub(2) .. ".", c[1], c[2], c[3], true)
     if m.isPlayer or m.demo then
         -- nothing to add
     elseif m.hasAddon then
-        GameTooltip:AddLine("Has Follow Line " .. tostring(m.version or ""), 0.6, 0.6, 0.6)
+        GameTooltip:AddLine("Follow Line " .. tostring(m.version or ""), GRAY[1], GRAY[2], GRAY[3])
     else
-        GameTooltip:AddLine("No Follow Line seen: they don't get a Follow button, and the addon can't tell whether they follow.", 0.6, 0.6, 0.6, true)
+        GameTooltip:AddLine("No Follow Line seen: they get no Follow button, and the addon can't tell whether they follow.", GRAY[1], GRAY[2], GRAY[3], true)
     end
     GameTooltip:Show()
 end
@@ -297,9 +344,12 @@ local function NewRow(bench)
     local row = CreateFrame("Button", nil, frame)
     row:SetHeight(ROW_H)
 
+    -- the quest log's row highlight
     local hl = row:CreateTexture(nil, "HIGHLIGHT")
+    hl:SetTexture("Interface\\QuestFrame\\UI-QuestTitleHighlight")
+    hl:SetBlendMode("ADD")
     hl:SetAllPoints(row)
-    hl:SetColorTexture(1, 1, 1, 0.07)
+    hl:SetAlpha(0.5)
 
     row.num = row:CreateFontString(nil, "OVERLAY", "GameFontDisableSmall")
     row.num:SetPoint("LEFT", row, "LEFT", 0, 0)
@@ -307,15 +357,15 @@ local function NewRow(bench)
     row.num:SetJustifyH("RIGHT")
 
     if bench then
-        row.add = MiniButton(row, "+", "Put them at the end of the line", function(name) Line.Add(name) end)
-        row.add:SetPoint("RIGHT", row, "RIGHT", 0, 0)
+        row.add = MiniButton(row, "add", "Put them at the end of the line", function(name) Line.Add(name) end)
+        row.add:SetPoint("RIGHT", row, "RIGHT", -2, 0)
     else
-        row.rem = MiniButton(row, "x", "Take them out of the line", function(name) Line.Remove(name) end)
-        row.rem:SetPoint("RIGHT", row, "RIGHT", 0, 0)
-        row.down = MiniButton(row, "v", "Move back one place", function(name) Line.Move(name, 1) end)
-        row.down:SetPoint("RIGHT", row.rem, "LEFT", -1, 0)
-        row.up = MiniButton(row, "^", "Move forward one place", function(name) Line.Move(name, -1) end)
-        row.up:SetPoint("RIGHT", row.down, "LEFT", -1, 0)
+        row.rem = MiniButton(row, "remove", "Take them out of the line", function(name) Line.Remove(name) end)
+        row.rem:SetPoint("RIGHT", row, "RIGHT", -2, 0)
+        row.down = MiniButton(row, "down", "Move back one place", function(name) Line.Move(name, 1) end)
+        row.down:SetPoint("RIGHT", row.rem, "LEFT", -3, 0)
+        row.up = MiniButton(row, "up", "Move forward one place", function(name) Line.Move(name, -1) end)
+        row.up:SetPoint("RIGHT", row.down, "LEFT", 1, 0)
     end
 
     row.state = row:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
@@ -340,21 +390,25 @@ end
 -- top = distance from the top of the window
 local function Place(widget, top)
     widget:ClearAllPoints()
-    widget:SetPoint("TOPLEFT", frame, "TOPLEFT", PAD, -top)
-    widget:SetPoint("TOPRIGHT", frame, "TOPRIGHT", -PAD, -top)
+    widget:SetPoint("TOPLEFT", frame, "TOPLEFT", LEFT, -top)
+    widget:SetPoint("TOPRIGHT", frame, "TOPRIGHT", -RIGHT, -top)
 end
 
-local function FillRow(row, m, number)
+local function FillRow(row, m, number, last)
     row.member = m
     local r, g, b = ClassColor(m.class)
     local st = Line.Status(m)
-    if st == "offline" then r, g, b = 0.5, 0.5, 0.5 end
+    if st == "offline" then r, g, b = GRAY[1], GRAY[2], GRAY[3] end
     row.num:SetText(number and (number .. ".") or "")
     row.name:SetText(m.name .. (m.isPlayer and " (you)" or ""))
     row.name:SetTextColor(r, g, b)
-    local c = COLOR[st] or COLOR.none
+    local c = COLOR[st] or WHITE
     row.state:SetText(SHORT[st] or "")
     row.state:SetTextColor(c[1], c[2], c[3])
+    if row.up then
+        if number == 1 then row.up:Disable() else row.up:Enable() end
+        if last then row.down:Disable() else row.down:Enable() end
+    end
     row:Show()
 end
 
@@ -385,14 +439,20 @@ function UI.ApplyLayout()
     if type(bp) == "table" and type(bp[1]) == "number" and type(bp[2]) == "number" then
         button:SetPoint("CENTER", UIParent, "BOTTOMLEFT", bp[1], bp[2])
     else
-        button:SetPoint("CENTER", UIParent, "CENTER", 0, -170)
+        button:SetPoint("CENTER", UIParent, "CENTER", -80, -170)
     end
+end
+
+local function HideWindow()
+    UI.hiding = true
+    frame:Hide()
+    UI.hiding = false
 end
 
 function UI.Create()
     CreateButton()
 
-    frame = CreateFrame("Frame", "FollowLineFrame", UIParent, BackdropTemplateMixin and "BackdropTemplate" or nil)
+    frame = CreateFrame("Frame", "FollowLineFrame", UIParent, "BasicFrameTemplateWithInset")
     frame:SetSize(WIDTH, 120)
     frame:SetFrameStrata("MEDIUM")
     frame:SetClampedToScreen(true)
@@ -401,53 +461,33 @@ function UI.Create()
     frame:RegisterForDrag("LeftButton")
     frame:SetScript("OnDragStart", StartMove)
     frame:SetScript("OnDragStop", StopMove)
-    if frame.SetBackdrop then
-        frame:SetBackdrop({ bgFile = WHITE, edgeFile = WHITE, edgeSize = 1 })
-        frame:SetBackdropColor(0.05, 0.06, 0.08, 0.90)
-        frame:SetBackdropBorderColor(0, 0, 0, 1)
+    -- Escape and the close button close it like any game window; /line opens it again
+    -- (IsShown stays true when only the whole UI is hidden, as with Alt+Z: then it stays open)
+    frame:SetScript("OnHide", function(self)
+        if not UI.hiding and not self:IsShown() and ns.db.open then
+            ns.db.open = false
+            if ns.Kit then ns.Kit.Sync() end
+        end
+    end)
+    if type(UISpecialFrames) == "table" then table.insert(UISpecialFrames, "FollowLineFrame") end
+
+    title = Part(frame, "TitleText") or (Part(frame, "TitleContainer") and Part(frame.TitleContainer, "TitleText"))
+    if not title then
+        title = frame:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+        title:SetPoint("TOP", frame, "TOP", -6, -4)
     end
-
-    local icon = frame:CreateTexture(nil, "ARTWORK")
-    icon:SetSize(16, 16)
-    icon:SetPoint("TOPLEFT", frame, "TOPLEFT", PAD, -PAD + 1)
-    icon:SetTexture(ns.ICON)
-    icon:SetTexCoord(0.08, 0.92, 0.08, 0.92)
-
-    title = frame:CreateFontString(nil, "OVERLAY", "GameFontNormal")
-    title:SetPoint("LEFT", icon, "RIGHT", 5, 0)
     title:SetText("Follow Line")
 
-    local close = CreateFrame("Button", nil, frame)
-    close:SetSize(16, 16)
-    close:SetPoint("TOPRIGHT", frame, "TOPRIGHT", -PAD + 2, -PAD + 1)
-    local closeHl = close:CreateTexture(nil, "HIGHLIGHT")
-    closeHl:SetAllPoints(close)
-    closeHl:SetColorTexture(1, 0.3, 0.3, 0.35)
-    local closeText = close:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
-    closeText:SetPoint("CENTER", close, "CENTER", 0, 0)
-    closeText:SetText("x")
-    close.tip = "Close (/line opens it again)"
-    close:SetScript("OnEnter", Tip)
-    close:SetScript("OnLeave", HideTooltip)
-    close:SetScript("OnClick", function()
-        ns.db.open = false
-        ns.dirty = true
-        if ns.Kit then ns.Kit.Sync() end
-    end)
-
-    count = frame:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
-    count:SetPoint("RIGHT", close, "LEFT", -6, 0)
-    count:SetJustifyH("RIGHT")
+    count = frame:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+    count:SetJustifyH("LEFT")
 
     note = frame:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
-    note:SetPoint("TOPLEFT", frame, "TOPLEFT", PAD, -(PAD + TITLE_H))
-    note:SetPoint("TOPRIGHT", frame, "TOPRIGHT", -PAD, -(PAD + TITLE_H))
     note:SetHeight(NOTE_H - 4)
     note:SetJustifyH("LEFT")
     note:SetJustifyV("TOP")
     note:SetWordWrap(true)
 
-    benchHead = frame:CreateFontString(nil, "OVERLAY", "GameFontDisableSmall")
+    benchHead = frame:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
     benchHead:SetJustifyH("LEFT")
     benchHead:SetText("Not in the line")
     benchHead:Hide()
@@ -470,7 +510,7 @@ function UI.Create()
         function() Line.Announce() end)
 
     UI.ApplyLayout()
-    frame:Hide()
+    HideWindow()
 end
 
 ----------------------------------------------------------------------
@@ -485,7 +525,7 @@ local function NoteText()
         return "Order the players (the first one leads), then press Call line."
     end
     if Line.DraftDiffers() then
-        return "|cffffd100Order changed.|r Press Call line to send it to the group."
+        return Paint(GOLD, "Order changed.") .. " Press Call line to send it to the group."
     end
     local by = (line.by == ns.playerName) and "you" or line.by
     if Line.place == 1 then
@@ -500,22 +540,30 @@ function UI.Refresh()
     if not frame then return end
     RefreshButton()
     if not ns.db.open then
-        if frame:IsShown() then frame:Hide() end
+        if frame:IsShown() then HideWindow() end
         return
     end
 
+    local top = TOP
     local line = Line.line
     if line then
         local on, followers = Line.Summary()
-        local c = (followers > 0 and on == followers) and COLOR.on or COLOR.pending
-        count:SetText(("|cff%02x%02x%02x%d / %d|r following"):format(c[1] * 255, c[2] * 255, c[3] * 255, on, followers))
+        local c = (followers > 0 and on == followers) and GREEN or WHITE
+        count:SetText(("Following: %s"):format(Paint(c, ("%d of %d"):format(on, followers))))
+        Place(count, top)
+        count:Show()
+        top = top + COUNT_H
     else
-        count:SetText("")
+        count:Hide()
     end
+    Place(note, top)
     note:SetText(NoteText())
+    top = top + NOTE_H
 
-    local top = PAD + TITLE_H + NOTE_H
-    local shown = 0
+    local shown, last = 0, 0
+    for _, name in ipairs(Line.draft) do
+        if Line.members[name] then last = last + 1 end
+    end
     for i, name in ipairs(Line.draft) do
         local m = Line.members[name]
         if m and shown < MAX_ROWS then
@@ -526,7 +574,7 @@ function UI.Refresh()
                 rows[shown] = row
             end
             Place(row, top)
-            FillRow(row, m, i)
+            FillRow(row, m, i, shown == last)
             top = top + ROW_H
         end
     end
@@ -572,24 +620,21 @@ function UI.Refresh()
         moreNote:Hide()
     end
 
-    -- "Call line" stands out while there is something to send
+    -- "Call line" lights up, the way the game marks a button it wants pressed,
+    -- while there is something to send
     local call = commands[1]
     local ready = (Line.grouped or Line.demo) and (not line or Line.DraftDiffers())
-    if ready then
-        call.bg:SetColorTexture(ns.ACCENT[1], ns.ACCENT[2], ns.ACCENT[3], 0.35)
-    else
-        call.bg:SetColorTexture(1, 1, 1, 0.08)
-    end
+    if ready then call:LockHighlight() else call:UnlockHighlight() end
 
-    top = top + 6
+    top = top + 8
     local width = (INNER - GAP * 2) / 3
     for i, b in ipairs(commands) do
         local col, rowIndex = (i - 1) % 3, math.floor((i - 1) / 3)
         b:ClearAllPoints()
-        b:SetPoint("TOPLEFT", frame, "TOPLEFT", PAD + col * (width + GAP), -(top + rowIndex * (BTN_H + GAP)))
+        b:SetPoint("TOPLEFT", frame, "TOPLEFT", LEFT + col * (width + GAP), -(top + rowIndex * (BTN_H + GAP)))
     end
     top = top + BTN_H * 2 + GAP
 
-    frame:SetHeight(top + PAD)
+    frame:SetHeight(top + BOTTOM)
     if not frame:IsShown() then frame:Show() end
 end
