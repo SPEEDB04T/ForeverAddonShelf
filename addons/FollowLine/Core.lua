@@ -67,19 +67,24 @@ end
 ----------------------------------------------------------------------
 -- Names
 ----------------------------------------------------------------------
--- Character names on this client are often two words ("First Last"), and the
--- realm is spelled two ways at once: GetNormalizedRealmName() says "RPPvP" while
--- the server writes message senders as "First Last-CAMWOWUS1Realm9RPPvP". So a
--- name is never cut at a space, and players are found by the name the group's
--- units give (Line.Lookup), with the realm only to choose between equal names.
+-- Character names on this client are two words, and UnitName gives them as two
+-- values: UnitName("player") is "Ann", "Lee", the surname where other
+-- clients put the realm. Message and chat senders spell the same player
+-- "Ann Lee" (a space, no realm), and a realm, when one comes, follows
+-- a dash ("...-CAMWOWUS1Realm9RPPvP", while GetNormalizedRealmName() says "RPPvP").
+-- So players are found by the spellings their unit gives (Line.Lookup), and the
+-- realm only chooses between equal names.
 
--- A group unit's name as the roster gives it: "First Last", or "First Last-Realm"
--- when the game gives a realm (another realm). Also the bare name and the realm.
+-- A group unit's name: its key "First Last" (shown to the player and put inside
+-- messages), then UnitName's two values. The second value may be a surname or a
+-- realm; when the first is already two words it can only be a realm, so the key
+-- keeps the old "First Last-Realm".
 function ns.UnitKey(unit)
-    local ok, name, realm = pcall(UnitName, unit)
-    if not ok or issecret(name) or issecret(realm) or type(name) ~= "string" or name == "" then return nil end
-    if type(realm) ~= "string" or realm == "" then realm = nil end
-    return realm and (name .. "-" .. realm) or name, name, realm
+    local ok, first, second = pcall(UnitName, unit)
+    if not ok or issecret(first) or issecret(second) or type(first) ~= "string" or first == "" then return nil end
+    if type(second) ~= "string" or second == "" then second = nil end
+    if not second then return first, first, nil end
+    return first .. (first:find(" ", 1, true) and "-" or " ") .. second, first, second
 end
 
 -- "Roleplay PvP", "RPPvP" and "CAMWOWUS1Realm9RPPvP" squeezed to compare them.

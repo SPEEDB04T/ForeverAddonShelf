@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.1.5
+
+- Fixed: players' copies still never heard each other, and even your own messages coming back were thrown away. This client gives a character's name as two parts, first name and surname, and the addon joined them as "First-Last", while every message arrives from "First Last". Players are now matched by "First Last" first and by their first name when nobody else in the group shares it.
+- Names are shown, and sent inside a called line, as "First Last". Lines called by 1.1.4 ("First-Last") are still understood.
+- A follow the game reports by first name alone counts when it fits the player ahead of you.
+
 ## 1.1.4
 
 - The line window and the Follow button are listed for the LookShots screenshot helper, so they can be checked in the game. Nothing changes for players without it.

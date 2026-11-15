@@ -75,42 +75,69 @@ local function Short(name)
     return (name:gsub("%-.*$", ""))
 end
 
+-- Two names for the same player? Names the game reports go through Lookup first,
+-- so mostly this is a == b; an older copy's "First-Last" still agrees with "First Last".
 local function SameName(a, b)
     if not a or not b then return false end
-    return a == b or Short(a) == Short(b)
+    if a == b then return true end
+    local la, lb = L.Lookup(a), L.Lookup(b)
+    if la and la == lb then return true end
+    return Short(a) == Short(b) and not a:find(" ", 1, true) and not b:find(" ", 1, true)
 end
 
--- Which group member a name means: a message's sender ("First Last-CAMWOWUS1Realm9RPPvP"),
--- a name inside a message, or a name the game reports. Found by the name the
--- group's units give, keeping its space; the realm only chooses between players
--- with the same name. Returns the member's key, or nil when nobody in the group has it.
+-- Does raw spell c, maybe with a realm after a dash? Returns true and what
+-- follows the dash ("" when nothing does).
+local function Spells(raw, c)
+    if not c or c == "" then return false end
+    if raw == c then return true, "" end
+    if #raw > #c + 1 and raw:sub(1, #c + 1) == c .. "-" then return true, raw:sub(#c + 2) end
+    return false
+end
+
+-- Which group member a name means: a message's sender ("Ann Lee", maybe
+-- with "-Realm" after it), a name inside a message (also an older copy's
+-- "Ann-Lee"), or a name the game reports. Each unit has two spellings:
+-- its key "First Last" and the first name alone. The long spelling is tried on
+-- every member first, the short one only when no long one fits; the realm after
+-- the dash only chooses between players who still match. Returns the member's
+-- key, or nil when nobody in the group has the name.
 function L.Lookup(raw)
     if issecret(raw) or type(raw) ~= "string" or raw == "" then return nil end
     local members = L.members
     if members[raw] then return raw end
-    local who, suffix = raw:match("^([^%-]+)%-(.+)$")
-    who = who or raw
-    local found, count = {}, 0
+    local long, short, all = {}, {}, {}
     for key, m in pairs(members) do
-        if not m.demo and m.base == who then
-            count = count + 1
-            found[count] = key
+        if not m.demo then
+            local ok, suffix = Spells(raw, key)
+            if ok then
+                long[#long + 1] = key
+            elseif m.first ~= key then
+                ok, suffix = Spells(raw, m.first)
+                if ok then short[#short + 1] = key end
+            end
+            if ok then all[#all + 1] = { key = key, m = m, suffix = suffix } end
         end
     end
-    if count == 1 then return found[1] end
-    if count == 0 then return nil end
-    -- several players with this name: the realm decides
-    local own = ns.OwnRealms()
-    for i = 1, count do
-        local m = members[found[i]]
-        if suffix and m.realm and RealmAgrees(suffix, m.realm) then return found[i] end
-        if not m.realm then
-            if not suffix then return found[i] end
-            for _, r in ipairs(own) do
-                if RealmAgrees(suffix, r) then return found[i] end
+    local best = (#long > 0) and long or short
+    if #all == 1 then return all[1].key end
+    if #all == 0 then return nil end
+    -- several players fit: what follows the dash decides, when exactly one agrees
+    -- with it (their second name or realm; your own realm for players of your realm)
+    local own, agreed, n = ns.OwnRealms(), nil, 0
+    for _, f in ipairs(all) do
+        local m, yes = f.m, false
+        if f.suffix ~= "" then
+            yes = m.second ~= nil and RealmAgrees(f.suffix, m.second)
+            if not yes and not m.realmForm then
+                for _, r in ipairs(own) do
+                    if RealmAgrees(f.suffix, r) then yes = true break end
+                end
             end
         end
+        if yes then agreed, n = f.key, n + 1 end
     end
+    if n == 1 then return agreed end
+    if #best == 1 then return best[1] end
     return nil
 end
 
@@ -454,13 +481,14 @@ function L.Rebuild()
     local old = L.members
     local members, roster = {}, {}
 
-    -- keyed by the unit's own name as the roster gives it
+    -- keyed by "First Last", built from the unit's two names (Core's UnitKey)
     local function add(unit, class, rank)
-        local name, base, realm = UnitKey(unit)
+        local name, first, second = UnitKey(unit)
         if not name or members[name] then return end
         local m = old[name]
         if not m or m.demo then m = { name = name } end
-        m.unit, m.base, m.realm = unit, base, realm
+        m.unit, m.first, m.second = unit, first, second
+        m.realmForm = second ~= nil and first:find(" ", 1, true) ~= nil   -- "First Last" plus a real realm
         if type(class) == "string" then m.class = class end
         if rank ~= nil then m.rank = rank end
         m.isPlayer = (name == ns.playerName)
@@ -756,7 +784,13 @@ function L.OnFollowBegin(name)
     if issecret(name) or type(name) ~= "string" or name == "" then
         L.following = L.target or "?"       -- the game won't say who: take it to be the line
     else
-        L.following = L.Lookup(name) or name
+        local found = L.Lookup(name)
+        if not found and L.target then
+            -- a first name that fits several players: the one ahead in the line, if it fits them
+            local m = L.members[L.target]
+            if m and (Spells(name, m.first) or Spells(name, L.target)) then found = L.target end
+        end
+        L.following = found or name
     end
     if L.directAt and GetTime() - L.directAt < 2 then L.directWorks = true end
     if L.OnLine() then
