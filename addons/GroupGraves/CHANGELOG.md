@@ -1,5 +1,10 @@
 # Changelog
 
+## 1.3.1
+
+- The options window and the minimap button are redrawn by the shared kit: they now copy the game's own Options rows and its round minimap button.
+- Two option labels are shorter, so every row stays one line: "Battlegrounds and arenas too" and "Show test markers". The rest of each sentence is in the row's tip.
+
 ## 1.3.0
 
 - Fixed: who sent a message is now found in the group by the whole name ("First Last", with the space). The realm part of a sender, which the server spells unlike your client (`CAMWOWUS1Realm9RPPvP` against `RPPvP`), only decides between two members with the same name. Before, your own messages coming back to you were taken for someone else's, and you could get a marker on your own corpse.

@@ -29,10 +29,12 @@ local function Rows()
         { kind = "check", label = "Names under the markers",
           tip = "Without names, point at a marker to see whose corpse it is.",
           get = Get("names"), set = Set("names") },
-        { kind = "check", label = "Also in battlegrounds and arenas",
+        { kind = "check", label = "Battlegrounds and arenas too",
+          tip = "Also mark corpses in battlegrounds and arenas. Same as /graves pvp.",
           get = Get("pvp"), set = Set("pvp") },
-        { kind = "check", label = "Show three test markers around you",
-          tip = "To see what the markers look like without anyone dying. Same as /graves test.",
+        { kind = "check", label = "Show test markers",
+          tip = "Three test markers around you, to see what the markers look like without anyone dying. "
+              .. "Same as /graves test.",
           get = function() return ns.Testing() end,
           set = function(value) ns.SetTesting(value) end },
 
