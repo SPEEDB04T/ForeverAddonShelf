@@ -80,6 +80,7 @@ Options.Rows = Rows
 local function Status()
     local res = ns.result
     if not res then return { "Nothing worked out yet." } end
+    if res.dead then return { "You're dead: no advice until you're back on your feet." } end
     local cur = res.current and ns.known[res.current]
     local lines = { "On now: " .. (cur and cur.name or "no aura") .. "." }
     if res.shown and ns.known[res.shown] then

@@ -187,7 +187,7 @@ end
 ----------------------------------------------------------------------
 local function AddAdvice(tt, key)
     local res = ns.result
-    if not (key and res and ns.enabled and ns.known[key]) then return end
+    if not (key and res and ns.enabled and ns.known[key]) or res.dead then return end
     local text, color
     if key == res.shown then
         text, color = "Aura Advisor: switch to this (" .. tostring(res.reason or "it fits better") .. ")", "GREEN_FONT_COLOR"

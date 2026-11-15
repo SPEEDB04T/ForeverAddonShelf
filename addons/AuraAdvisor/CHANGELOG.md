@@ -1,5 +1,9 @@
 # Changelog
 
+## 1.2.2 (2026-11-15)
+
+- Quiet while you're dead or a ghost: no glow, sound, line on screen, chat line or tooltip line. Your aura is gone and nothing can be cast, so it waits until you're back on your feet; then it quietly suggests an aura to put back on (with a sound only if you're back in a fight). The hits from the fight you died in are forgotten.
+
 ## 1.2.1 (2026-11-15)
 
 - If the options window or minimap button isn't there yet right after an update, the message now says a /reload brings it (it used to say to restart the game).

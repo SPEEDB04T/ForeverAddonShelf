@@ -296,6 +296,15 @@ local function Alert(res, now)
     end
 end
 
+-- UnitIsDeadOrGhost when the game shows it; else what PLAYER_DEAD / PLAYER_ALIVE / PLAYER_UNGHOST said.
+function ns.IsDead()
+    if UnitIsDeadOrGhost then
+        local ok, dead = pcall(UnitIsDeadOrGhost, "player")
+        if ok and not Secret(dead) and dead ~= nil then return dead and true or false end
+    end
+    return ns.deadFlag and true or false
+end
+
 function ns.Think(now)
     Signals.ScanEnemies(now)
     local sum = Signals.Summary(now)
@@ -307,6 +316,16 @@ function ns.Think(now)
     })
     res.style, res.styleWhy = style, styleWhy
     ns.sticky = res.suggest
+
+    -- Dead or a ghost: your aura is gone and nothing can be cast, so say nothing at all (no
+    -- glow, sound, banner, chat or tooltip line) until you're back on your feet.
+    if ns.IsDead() then
+        pending.key, ns.held, ns.shownKey, ns.sticky = nil, nil, nil, nil
+        res.dead = true
+        ns.result, ns.summary = res, sum
+        if ns.UI then ns.UI.Update(res) end
+        return res
+    end
 
     -- A suggestion is shown once it has stood for a moment. In a fight it then stays until you
     -- switch, another suggestion takes its place or the fight ends: hits come in bursts, and a
@@ -402,8 +421,16 @@ local function OnEvent(_, event, a1, a2, a3, a4, a5)
         buffDirty, formsDirty = true, true
         ns.held, ns.thinkNow = nil, true    -- the fight is over: so is its suggestion
     elseif event == "PLAYER_DEAD" then
+        ns.seenCurrent, ns.deadFlag, ns.held = nil, true, nil
+        formsDirty, buffDirty, ns.thinkNow = true, true, true
+        -- the fight you died in is over for you: its hits don't count once you're back
+        if not ns.testing then Signals.Reset() end
+    elseif event == "PLAYER_ALIVE" or event == "PLAYER_UNGHOST" then
+        -- PLAYER_ALIVE also fires on release, as a ghost: IsDead() still says so then
+        local ok, dead = pcall(UnitIsDeadOrGhost or function() return false end, "player")
+        if event == "PLAYER_UNGHOST" or (ok and not Secret(dead) and not dead) then ns.deadFlag = false end
         ns.seenCurrent = nil
-        formsDirty, buffDirty = true, true
+        formsDirty, buffDirty, ns.thinkNow = true, true, true
     elseif event == "UPDATE_SHAPESHIFT_FORM" or event == "UPDATE_SHAPESHIFT_USABLE" then
         formsDirty, ns.thinkNow = true, true
     elseif event == "GROUP_ROSTER_UPDATE" or event == "PLAYER_ROLES_ASSIGNED" then
@@ -417,6 +444,7 @@ end
 local EVENTS = {
     "UNIT_COMBAT", "UNIT_SPELLCAST_START", "UNIT_SPELLCAST_CHANNEL_START", "UNIT_SPELLCAST_DELAYED",
     "UNIT_SPELLCAST_SUCCEEDED", "UNIT_AURA", "PLAYER_REGEN_DISABLED", "PLAYER_REGEN_ENABLED", "PLAYER_DEAD",
+    "PLAYER_ALIVE", "PLAYER_UNGHOST",
     "UPDATE_SHAPESHIFT_FORM", "UPDATE_SHAPESHIFT_FORMS", "UPDATE_SHAPESHIFT_USABLE", "GROUP_ROSTER_UPDATE",
     "PLAYER_ROLES_ASSIGNED", "SPELLS_CHANGED", "PLAYER_LEVEL_UP", "PLAYER_ENTERING_WORLD",
     "LEARNED_SPELL_IN_TAB", "PLAYER_TALENT_UPDATE",
@@ -466,6 +494,7 @@ local STYLE_NAME = { damage = "damage", tank = "tank", healer = "healer" }
 function ns.PrintWhy()
     local res = ns.result
     if not res then ns.Print("nothing worked out yet.") return end
+    if res.dead then ns.Print("you're dead: no advice until you're back on your feet.") return end
     local cur = res.current and ns.known[res.current]
     ns.Print(("on now: %s. Play style: %s (%s)."):format(cur and cur.name or "no aura",
         STYLE_NAME[res.style] or tostring(res.style), tostring(res.styleWhy)))
@@ -531,6 +560,7 @@ function ns.Test(kind)
     local what = TESTS[kind]
     if not what then return false end
     if ns.inCombat then ns.Print("the test is for outside a fight.") return true end
+    if ns.IsDead() then ns.Print("the test waits until you're back on your feet.") return true end
     Signals.Reset()
     ns.testing = true
     local now = GetTime()

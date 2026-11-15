@@ -47,5 +47,6 @@ The play style comes from your group role, or Righteous Fury (tank), or is damag
 
 - **What the game lets an addon see.** WoW Forever hides the combat log from addons and hides damage numbers in fights. The damage school of each hit on you and your party is still shown, and so are pushed-back casts; those are what the advice mostly rests on. Enemy spell names are often hidden too: then a cast counts as "an enemy is casting something" and is shared out among the schools that have hit you so far. `/aura debug` shows how much of each the game let through.
 - **Only the game's own bars.** The glow goes on the stance bar and the game's action bars. Bars from other addons (Bartender, Dominos and the like) don't get it; the tooltip line, the sound and the line on screen still work there.
+- **Dead or a ghost?** It says nothing until you're back on your feet.
 - **Hidden stance bar?** Then the glow shows only on action bar buttons that hold the aura.
 - This version has been checked with an offline test only, not yet in the game.
