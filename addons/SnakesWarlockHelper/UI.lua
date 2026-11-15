@@ -1,5 +1,6 @@
--- Snakes Warlock Helper: shared look for the strip and the window, built from the game's own
--- templates, art, fonts and colours so it reads as part of the default UI.
+-- Snakes Warlock Helper: shared look for the strip and the window. Every widget copies a whole
+-- Blizzard widget from this client's UI (Gethe/wow-ui-source, branch forever), at the game's
+-- own sizes; see the notes on each builder.
 local _, ns = ...
 local UI = {}
 ns.UI = UI
@@ -9,29 +10,28 @@ local function GameColor(c, r, g, b)
     if type(c) == "table" and c.r then return { c.r, c.g, c.b } end
     return { r, g, b }
 end
-local warlock = RAID_CLASS_COLORS and RAID_CLASS_COLORS.WARLOCK
 UI.color = {
-    gold    = GameColor(NORMAL_FONT_COLOR, 1, 0.82, 0),           -- headings, labels, tooltip titles
-    white   = GameColor(HIGHLIGHT_FONT_COLOR, 1, 1, 1),           -- values, body text
-    gray    = GameColor(GRAY_FONT_COLOR, 0.5, 0.5, 0.5),          -- hints
-    green   = GameColor(GREEN_FONT_COLOR, 0.1, 1, 0.1),           -- the best choice, "your spells"
-    orange  = GameColor(ORANGE_FONT_COLOR, 1, 0.5, 0.25),         -- running out, not measured yet
-    warlock = GameColor(warlock, 0.53, 0.53, 0.93),               -- the demon's own damage
+    gold   = GameColor(NORMAL_FONT_COLOR, 1, 0.82, 0),           -- headings, tooltip titles
+    white  = GameColor(HIGHLIGHT_FONT_COLOR, 1, 1, 1),           -- values, body text
+    gray   = GameColor(GRAY_FONT_COLOR, 0.5, 0.5, 0.5),          -- hints
+    green  = GameColor(GREEN_FONT_COLOR, 0.1, 1, 0.1),           -- "+N dps" in tooltips
+    orange = GameColor(ORANGE_FONT_COLOR, 1, 0.5, 0.25),         -- tooltip warning line
 }
 local C = UI.color
 
--- Art from the game (Dragonflight-style action buttons, the target frame's status bar).
-UI.BAR = "Interface\\TargetingFrame\\UI-StatusBar"
-UI.TOOLTIP_BORDER = "Interface\\Tooltips\\UI-Tooltip-Border"
-UI.ROW_HIGHLIGHT = "Interface\\QuestFrame\\UI-QuestTitleHighlight"
-
-local function PlayClick(on)
-    if PlaySound and SOUNDKIT then
-        local id = on == false and SOUNDKIT.IG_MAINMENU_OPTION_CHECKBOX_OFF or SOUNDKIT.IG_MAINMENU_OPTION_CHECKBOX_ON
-        if id then pcall(PlaySound, id) end
+-- True when the client has this XML template (always true outside the game).
+function UI.HasTemplate(name)
+    if C_XMLUtil and C_XMLUtil.GetTemplateInfo then
+        local ok, info = pcall(C_XMLUtil.GetTemplateInfo, name)
+        return ok and info ~= nil
     end
+    return true
 end
-UI.PlayClick = PlayClick
+
+function UI.Sound(key)
+    local id = SOUNDKIT and SOUNDKIT[key]
+    if PlaySound and id then pcall(PlaySound, id) end
+end
 
 function UI.Hex(c)
     return ("|cff%02x%02x%02x"):format(c[1] * 255, c[2] * 255, c[3] * 255)
@@ -44,96 +44,77 @@ function UI.Text(parent, font, c, justify)
     return fs
 end
 
--- An icon framed like an action button: slot background, masked icon, the bar's icon frame.
--- `size` is the icon's edge; the frame art is drawn at the action bar's proportions (46 x 45).
-function UI.IconFrame(f, size)
-    f.slot = f:CreateTexture(nil, "BACKGROUND")
-    f.slot:SetAllPoints()
-    if f.slot.SetAtlas then f.slot:SetAtlas("UI-HUD-ActionBar-IconFrame-Background") end
-    f.tex = f:CreateTexture(nil, "ARTWORK")
-    f.tex:SetAllPoints()
-    if f.CreateMaskTexture then
-        local ok, mask = pcall(f.CreateMaskTexture, f)
-        if ok and mask then
+-- Texture of a button state (Normal/Pushed/Highlight), placed the way the action bar places it.
+local function PlaceState(tex, layer, w, h)
+    if type(tex) ~= "table" then return end
+    if layer then tex:SetDrawLayer(layer) end
+    tex:ClearAllPoints()
+    tex:SetPoint("TOPLEFT")
+    tex:SetSize(w, h)
+end
+UI.PlaceState = PlaceState
+
+-- ActionButtonTemplate (Blizzard_ActionBar/Mainline/ActionButtonTemplate.xml) as a stand-alone
+-- button, which the game draws with the "AddRow" frame (BaseActionButtonMixin:UpdateButtonArt in
+-- Blizzard_ActionBar/Mainline/ActionButtonOverrides.lua, the branch for buttons without bar art).
+-- 45 x 45 like the template; callers change the on-screen size with SetScale on a parent.
+UI.ACTION_SIZE = 45
+function UI.ActionIcon(parent)
+    local b = CreateFrame("Button", nil, parent)
+    b:SetSize(45, 45)
+    b.tex = b:CreateTexture(nil, "BACKGROUND")                  -- $parentIcon: fills the button
+    b.tex:SetAllPoints()
+    if b.CreateMaskTexture then
+        local ok, mask = pcall(b.CreateMaskTexture, b)
+        if ok and mask then                                     -- IconMask, 45 x 45 on the icon's centre
             mask:SetAtlas("UI-HUD-ActionBar-IconFrame-Mask")
-            mask:SetAllPoints(f.tex)
-            f.tex:AddMaskTexture(mask)
-            f.mask = mask
+            mask:SetPoint("CENTER", b.tex)
+            mask:SetSize(45, 45)
+            b.tex:AddMaskTexture(mask)
         end
     end
-    f.frameArt = f:CreateTexture(nil, "OVERLAY", nil, 1)
-    f.frameArt:SetPoint("TOPLEFT")
-    if f.frameArt.SetAtlas then f.frameArt:SetAtlas("UI-HUD-ActionBar-IconFrame") end
-    UI.SizeIconFrame(f, size)
+    b.slot = b:CreateTexture(nil, "BACKGROUND", nil, -1)        -- SlotBackground, shown without bar art
+    b.slot:SetAllPoints()
+    if b.slot.SetAtlas then b.slot:SetAtlas("UI-HUD-ActionBar-IconFrame-Background") end
+    if b.SetNormalAtlas then
+        b:SetNormalAtlas("UI-HUD-ActionBar-IconFrame-AddRow")
+        PlaceState(b:GetNormalTexture(), "OVERLAY", 51, 51)
+        b:SetPushedAtlas("UI-HUD-ActionBar-IconFrame-AddRow-Down")
+        PlaceState(b:GetPushedTexture(), "OVERLAY", 51, 51)
+        b:SetHighlightAtlas("UI-HUD-ActionBar-IconFrame-Mouseover")
+        PlaceState(b:GetHighlightTexture(), nil, 46, 45)
+    end
+    return b
 end
 
-function UI.SizeIconFrame(f, size)
-    f:SetSize(size, size)
-    f.frameArt:SetSize(size * 46 / 45, size)
-    for _, t in ipairs(f.overlays or {}) do t:SetSize(size * 46 / 45, size) end
-end
-
--- One more layer of action-bar art over an icon frame (border, glow, highlight), kept the
--- frame's size by SizeIconFrame.
-function UI.IconOverlay(f, atlas, sublevel, add)
-    local t = f:CreateTexture(nil, "OVERLAY", nil, sublevel)
-    t:SetPoint("TOPLEFT")
-    if t.SetAtlas then t:SetAtlas(atlas) end
-    if add then t:SetBlendMode("ADD") end
-    f.overlays = f.overlays or {}
-    f.overlays[#f.overlays + 1] = t
-    t:SetSize(f:GetWidth() * 46 / 45, f:GetHeight())
-    return t
-end
-
--- Blizzard push button. `b.text` is the button's own label.
-function UI.Button(parent, label, onClick, small)
+-- UIPanelButtonTemplate. `b.text` is the button's own label.
+function UI.Button(parent, label, onClick)
     local b = CreateFrame("Button", nil, parent, "UIPanelButtonTemplate")
-    b.small = small
-    if small and GameFontNormalSmall then
-        b:SetNormalFontObject(GameFontNormalSmall)
-        b:SetHighlightFontObject(GameFontHighlightSmall)
-        b:SetDisabledFontObject(GameFontDisableSmall)
-    end
     b:SetText(label)
-    b.text = b:GetFontString() or UI.Text(b, small and "GameFontNormalSmall" or "GameFontNormal", nil, "CENTER")
-    function b:SetLabel(text)
-        self:SetText(text)
-        self.text:SetText(text)
-        self:SetSize(math.max(60, (self.text:GetStringWidth() or 40) + 24), self.small and 20 or 22)
-    end
-    b:SetLabel(label)
-    -- Selected choice of a group: held lit, the way the game marks the current option.
-    function b:SetSelected(on)
-        self.selected = on
-        if on then self:LockHighlight() else self:UnlockHighlight() end
-    end
-    b:HookScript("OnEnter", function(self)
-        if self.tip then
-            GameTooltip:SetOwner(self, "ANCHOR_TOP")
-            GameTooltip:SetText(self.tipTitle or self.text:GetText() or "", C.gold[1], C.gold[2], C.gold[3])
-            GameTooltip:AddLine(self.tip, C.white[1], C.white[2], C.white[3], true)
-            GameTooltip:Show()
-        end
-    end)
-    b:HookScript("OnLeave", function() GameTooltip:Hide() end)
+    b.text = b:GetFontString() or UI.Text(b, "GameFontNormal", nil, "CENTER")
+    b.text:SetText(label)
+    b:SetSize(math.max(80, (b.text:GetStringWidth() or 40) + 24), 22)
     b:SetScript("OnClick", function(self)
-        if PlaySound and SOUNDKIT and SOUNDKIT.IG_MAINMENU_OPTION then pcall(PlaySound, SOUNDKIT.IG_MAINMENU_OPTION) end
+        UI.Sound("IG_MAINMENU_OPTION")
         if onClick then onClick(self) end
     end)
     return b
 end
 
--- Blizzard check box with a label; the label is clickable too.
+-- UICheckButtonTemplate (Blizzard_SharedXML/Shared/Button/CheckButtonTemplates.xml) as it is:
+-- 32 x 32, its own GameFontNormalSmall label at the box's right. The label is clickable too.
+UI.CHECK_SIZE = 32
 function UI.Check(parent, label, get, set)
     local b = CreateFrame("CheckButton", nil, parent, "UICheckButtonTemplate")
-    b:SetSize(24, 24)
-    b.text = UI.Text(b, "GameFontHighlight")
-    b.text:SetPoint("LEFT", b, "RIGHT", 2, 1)
+    local own = rawget(b, "Text")                                -- the template's label
+    if type(own) == "table" and own.SetText then
+        b.text = own
+    else
+        b:SetSize(32, 32)
+        b.text = UI.Text(b, "GameFontNormalSmall")
+        b.text:SetPoint("LEFT", b, "RIGHT", -2, 0)
+    end
     b.text:SetText(label)
-    -- The template's own label (Mainline) stays empty; this one is used instead.
-    local own = rawget(b, "Text")
-    if type(own) == "table" and own.SetText then own:SetText("") end
     b:SetHitRectInsets(0, -((b.text:GetStringWidth() or 100) + 4), 0, 0)
     function b:Sync()
         self:SetChecked(get() and true or false)
@@ -141,40 +122,64 @@ function UI.Check(parent, label, get, set)
     b:SetScript("OnClick", function(self)
         local v = not get()
         set(v)
-        PlayClick(v)
+        UI.Sound(v and "IG_MAINMENU_OPTION_CHECKBOX_ON" or "IG_MAINMENU_OPTION_CHECKBOX_OFF")
         self:Sync()
     end)
     b:Sync()
     return b
 end
 
--- A bar track in the game's style: status bar texture over a dark tint, in a tooltip border.
-function UI.BarFrame(parent, width, height)
-    local f = CreateFrame("Frame", nil, parent, "BackdropTemplate")
-    f:SetSize(width + 6, height + 6)
-    if f.SetBackdrop then
-        f:SetBackdrop({ edgeFile = UI.TOOLTIP_BORDER, edgeSize = 8, insets = { left = 2, right = 2, top = 2, bottom = 2 } })
-        f:SetBackdropBorderColor(0.6, 0.6, 0.6, 1)
+-- WowStyle1DropdownTemplate (Blizzard_Menu/Mainline/MenuTemplates.xml) with radio entries, the
+-- way the game's settings pick one of a few values. `choices` = { { label, value }, ... }.
+-- `dd.key` names it, `dd.Choose(value)` picks a value as a click would.
+function UI.Dropdown(parent, key, width, choices, get, set)
+    local dd
+    local function choose(value)
+        set(value)
+        if dd.GenerateMenu then pcall(dd.GenerateMenu, dd) end
     end
-    f.track = f:CreateTexture(nil, "BACKGROUND")
-    f.track:SetTexture(UI.BAR)
-    f.track:SetVertexColor(0, 0, 0, 0.55)
-    f.track:SetPoint("TOPLEFT", 3, -3)
-    f.track:SetSize(width, height)
-    return f
+    if UI.HasTemplate("WowStyle1DropdownTemplate") then
+        dd = CreateFrame("DropdownButton", nil, parent, "WowStyle1DropdownTemplate")
+        dd:SetWidth(width)
+        if dd.SetupMenu then
+            dd:SetupMenu(function(_, root)
+                for _, c in ipairs(choices) do
+                    root:CreateRadio(c[1], function(v) return get() == v end, choose, c[2])
+                end
+            end)
+        end
+    else                                                         -- no menu system: cycle on click
+        dd = UI.Button(parent, "", function()
+            for i, c in ipairs(choices) do
+                if c[2] == get() then choose(choices[i % #choices + 1][2]); break end
+            end
+        end)
+        dd:SetWidth(width)
+    end
+    dd.key, dd.choices, dd.Choose = key, choices, choose
+    function dd:Sync()
+        if self.GenerateMenu then pcall(self.GenerateMenu, self) end
+        if self.text then
+            for _, c in ipairs(choices) do
+                if c[2] == get() then self.text:SetText(c[1]) end
+            end
+        end
+    end
+    return dd
 end
 
-function UI.BarSegment(f, c, height)
-    local t = f:CreateTexture(nil, "ARTWORK")
-    t:SetTexture(UI.BAR)
-    t:SetVertexColor(c[1], c[2], c[3], 1)
-    t:SetHeight(height)
-    return t
-end
-
--- |T escape of the bar texture, tinted: a legend swatch that matches the bars.
-function UI.Swatch(c)
-    return ("|T%s:10:16:0:0:64:64:0:64:0:64:%d:%d:%d|t"):format(UI.BAR, c[1] * 255, c[2] * 255, c[3] * 255)
+-- The buff frame's duration text (SecondsToTimeAbbrev, white under a minute, gold above:
+-- Blizzard_BuffFrame/BuffFrame.lua, AuraButtonMixin:UpdateDuration).
+function UI.SetDuration(fs, seconds)
+    if not seconds or seconds <= 0 then fs:SetText(""); return end
+    if SecondsToTimeAbbrev then
+        fs:SetFormattedText(SecondsToTimeAbbrev(seconds))
+    else
+        fs:SetText(UI.FormatTimer(seconds))
+    end
+    local warn = BUFF_DURATION_WARNING_TIME or 60
+    local c = seconds < warn and C.white or C.gold
+    fs:SetVertexColor(c[1], c[2], c[3])
 end
 
 function UI.FormatAge(seconds)

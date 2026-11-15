@@ -7,12 +7,11 @@ local ADDON, ns = ...
 
 ns.ADDON = ADDON
 ns.TITLE = "Snakes Warlock Helper"
-ns.VERSION = "1.2.0"
+ns.VERSION = "1.3.0"
 
 local defaults = {
     remind = { armor = true, soullink = true, demon = true, stone = true },
     combat = true,        -- keep showing reminders during a fight
-    pulse = true,         -- slow breathing animation on reminder icons
     locked = true,        -- reminder strip can't be dragged
     iconSize = 32,
     expiring = 120,       -- out of combat, also remind when a buff has less than this many seconds left

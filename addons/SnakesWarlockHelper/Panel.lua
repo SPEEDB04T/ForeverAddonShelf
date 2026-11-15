@@ -1,17 +1,21 @@
 -- Snakes Warlock Helper: the window. One tab per feature; a feature adds its own with
 -- Panel.AddTab(key, label, build, refresh). The window holds no cast buttons, so it can be
 -- opened and closed at any time, including during a fight.
--- Built like the game's own windows: BasicFrameTemplateWithInset (title bar, close button,
--- inset) with PanelTabButtonTemplate tabs under the bottom edge, as on the character window.
+--
+-- Built like the character window (Blizzard_UIPanels_Game/Mainline/CharacterFrame.xml):
+-- ButtonFrameTemplate with a portrait, an inset and PanelTabButtonTemplate tabs under the bottom
+-- edge. The demon list copies the Skills tab's rows (Blizzard_UIPanels_Game/Camelot/SkillsFrame.xml).
 local _, ns = ...
 local UI, D = ns.UI, ns.Data
 local C = UI.color
 local Panel = {}
 ns.Panel = Panel
 
-local WIDTH, PAD = 344, 16
-local INNER = WIDTH - PAD * 2
-local CONTENT_Y = 36          -- below the template's title bar, inside the inset
+local WIDTH = 338
+local INSET_LEFT, INSET_TOP, INSET_RIGHT = 4, 60, 6      -- ButtonFrameTemplate's Inset anchors
+local INSET_BOTTOM = math.abs(PANEL_INSET_BOTTOM_OFFSET or 4)   -- after ButtonFrameTemplate_HideButtonBar
+local PAD = 10                                           -- content inside the inset
+local INNER = WIDTH - INSET_LEFT - INSET_RIGHT - PAD * 2
 local tabs, tabOrder = {}, {}
 local activeTab
 
@@ -30,7 +34,7 @@ local function SelectTab(key)
         local tab = tabs[k]
         if not tab.content then
             tab.content = CreateFrame("Frame", nil, Panel.frame)
-            tab.content:SetPoint("TOPLEFT", PAD, -CONTENT_Y)
+            tab.content:SetPoint("TOPLEFT", INSET_LEFT + PAD, -(INSET_TOP + PAD))
             tab.content:SetSize(INNER, 10)
             local inset = rawget(Panel.frame, "Inset")       -- draw above the template's inset
             if type(inset) == "table" then tab.content:SetFrameLevel(inset:GetFrameLevel() + 2) end
@@ -44,10 +48,9 @@ end
 
 local function Create()
     if Panel.frame then return end
-    local f = CreateFrame("Frame", "SnakesWarlockHelperPanel", UIParent, "BasicFrameTemplateWithInset")
+    local f = CreateFrame("Frame", "SnakesWarlockHelperPanel", UIParent, "ButtonFrameTemplate")
     Panel.frame = f
     f:SetSize(WIDTH, 300)
-    f:SetFrameStrata("HIGH")
     f:SetToplevel(true)
     f:SetClampedToScreen(true)
     f:SetMovable(true)
@@ -58,20 +61,22 @@ local function Create()
         self:StopMovingOrSizing()
         UI.SavePoint(self, "panelPoint")
     end)
+    if ButtonFrameTemplate_HideButtonBar then ButtonFrameTemplate_HideButtonBar(f) end
 
-    -- The template's title text (its name differs between client builds), else our own.
-    local title = rawget(f, "TitleText")
-    local container = rawget(f, "TitleContainer")
-    if not title and type(container) == "table" then title = container.TitleText end
-    if type(title) ~= "table" then
-        title = UI.Text(f, "GameFontNormal", nil, "CENTER")
-        title:SetPoint("TOP", 0, -5)
+    -- Title and portrait through the template's own mixin (PortraitFrameMixin).
+    if type(rawget(f, "SetTitle")) == "function" then
+        f:SetTitle(ns.TITLE)
+    else
+        f.title = UI.Text(f, "GameFontNormal", nil, "CENTER")
+        f.title:SetPoint("TOP", 0, -5)
+        f.title:SetText(ns.TITLE)
     end
-    title:SetText(ns.TITLE)
-    f.title = title
+    if type(rawget(f, "SetPortraitToAsset")) == "function" then
+        f:SetPortraitToAsset("Interface\\Icons\\Spell_Shadow_GatherShadows")
+    end
     -- The template's close button hides the window; OnHide below does the rest.
 
-    -- Tabs hang under the bottom edge, like the character window's.
+    -- Tabs, anchored like CharacterFrameTab1 and CharacterFrameTab2.
     local prev
     for i, key in ipairs(tabOrder) do
         local tab = tabs[key]
@@ -84,12 +89,9 @@ local function Create()
             b:SetPoint("TOPLEFT", f, "BOTTOMLEFT", 11, 2)
         end
         b:SetScript("OnClick", function()
-            if PlaySound and SOUNDKIT and SOUNDKIT.IG_CHARACTER_INFO_TAB then
-                pcall(PlaySound, SOUNDKIT.IG_CHARACTER_INFO_TAB)
-            end
+            UI.Sound("IG_CHARACTER_INFO_TAB")
             SelectTab(key)
         end)
-        if PanelTemplates_TabResize then pcall(PanelTemplates_TabResize, b, 0) end
         tab.button, tab.index = b, i
         prev = b
     end
@@ -100,9 +102,7 @@ local function Create()
     -- Closing the window (Esc, the close button) also ends the demo. Set after the first Hide,
     -- which would otherwise end a demo that is just starting.
     f:SetScript("OnHide", function()
-        if PlaySound and SOUNDKIT and SOUNDKIT.IG_CHARACTER_INFO_CLOSE then
-            pcall(PlaySound, SOUNDKIT.IG_CHARACTER_INFO_CLOSE)
-        end
+        UI.Sound("IG_CHARACTER_INFO_CLOSE")
         if ns.demo then
             ns.demo = nil
             ns.Strip.Show({})
@@ -125,14 +125,12 @@ function Panel.Refresh()
     local tab = tabs[activeTab]
     local height = tab.refresh(tab.content) or 100
     tab.content:SetHeight(height)
-    Panel.frame:SetHeight(CONTENT_Y + height + PAD)
+    Panel.frame:SetHeight(INSET_TOP + PAD + height + PAD + INSET_BOTTOM)
 end
 
 function Panel.Open(key)
     Create()
-    if not Panel.frame:IsShown() and PlaySound and SOUNDKIT and SOUNDKIT.IG_CHARACTER_INFO_OPEN then
-        pcall(PlaySound, SOUNDKIT.IG_CHARACTER_INFO_OPEN)
-    end
+    if not Panel.frame:IsShown() then UI.Sound("IG_CHARACTER_INFO_OPEN") end
     Panel.frame:Show()
     SelectTab(key or activeTab or tabOrder[1])
 end
@@ -148,11 +146,10 @@ end
 ----------------------------------------------------------------------
 -- Tab: Demons
 ----------------------------------------------------------------------
-local ROW_H, ICON = 50, 30
-local BAR_X = ICON + 12
-local VALUE_W = 46
-local BAR_W = INNER - BAR_X - VALUE_W
-local BAR_H = 8
+-- SkillsEntryTemplate: 30 high, name on the left in GameFontHighlight, a 160 x 29
+-- ColoredProgressBarTemplate on the right (blue fill, white, value written on the bar), and the
+-- character-create line highlight at 10% while hovered.
+local ROW_H, BAR_W, BAR_H = 30, 160, 29
 
 local demons = { rows = {} }
 
@@ -205,91 +202,100 @@ local function RowTooltip(self)
     GameTooltip:Show()
 end
 
+local function NewBar(parent)
+    if UI.HasTemplate("ColoredProgressBarTemplate") then
+        local bar = CreateFrame("Frame", nil, parent, "ColoredProgressBarTemplate")
+        bar:SetSize(BAR_W, BAR_H)
+        if bar.SetFillTextureByColorType and ColoredProgressBarMixin then
+            bar:SetFillTextureByColorType(ColoredProgressBarMixin.ColorType.Blue)   -- as SkillsBarMixin:OnLoad
+        end
+        local fill = rawget(bar, "Fill")
+        if type(fill) == "table" then fill:SetVertexColor(1, 1, 1) end             -- UpdateBarColor(WHITE)
+        return bar
+    end
+    local bar = CreateFrame("Frame", nil, parent)                 -- no template: the value alone
+    bar:SetSize(BAR_W, BAR_H)
+    bar.Text = UI.Text(bar, "GameFontHighlight", nil, "CENTER")
+    bar.Text:SetAllPoints()
+    return bar
+end
+
 local function NewRow(parent)
     local r = CreateFrame("Frame", nil, parent)
-    r:SetSize(INNER, ROW_H)
+    r:SetHeight(ROW_H)
     r:EnableMouse(true)
-    r:SetScript("OnEnter", function(self) self.hover:Show(); RowTooltip(self) end)
-    r:SetScript("OnLeave", function(self) self.hover:Hide(); GameTooltip:Hide() end)
-    -- the quest log's row highlight
-    r.hover = r:CreateTexture(nil, "BACKGROUND")
-    r.hover:SetTexture(UI.ROW_HIGHLIGHT)
-    r.hover:SetBlendMode("ADD")
-    r.hover:SetAlpha(0.7)
-    r.hover:SetPoint("TOPLEFT", -6, 1)
-    r.hover:SetPoint("BOTTOMRIGHT", 6, 1)
-    r.hover:Hide()
+    r:SetScript("OnEnter", function(self) self.hl:SetAlpha(0.10); RowTooltip(self) end)
+    r:SetScript("OnLeave", function(self) self.hl:SetAlpha(0); GameTooltip:Hide() end)
 
-    r.iconFrame = CreateFrame("Frame", nil, r)
-    UI.IconFrame(r.iconFrame, ICON)
-    r.iconFrame:SetPoint("TOPLEFT", 0, -5)
-    r.icon = r.iconFrame.tex
+    -- BackgroundHighlight
+    r.hl = CreateFrame("Frame", nil, r)
+    r.hl:SetAllPoints()
+    r.hl:SetAlpha(0)
+    local left = r.hl:CreateTexture(nil, "BACKGROUND")
+    left:SetAtlas("charactercreate-customize-dropdown-linemouseover-side")
+    left:SetWidth(6)
+    left:SetPoint("TOPLEFT"); left:SetPoint("BOTTOMLEFT")
+    local right = r.hl:CreateTexture(nil, "BACKGROUND")
+    right:SetAtlas("charactercreate-customize-dropdown-linemouseover-side")
+    right:SetTexCoord(1, 0, 0, 1)
+    right:SetWidth(6)
+    right:SetPoint("TOPRIGHT"); right:SetPoint("BOTTOMRIGHT")
+    local middle = r.hl:CreateTexture(nil, "BACKGROUND")
+    middle:SetAtlas("charactercreate-customize-dropdown-linemouseover-middle")
+    middle:SetPoint("TOPLEFT", left, "TOPRIGHT")
+    middle:SetPoint("BOTTOMRIGHT", right, "BOTTOMLEFT")
 
+    r.bar = NewBar(r)
+    r.bar:SetPoint("RIGHT", -3, 0)
     r.name = UI.Text(r, "GameFontHighlight")
-    r.name:SetPoint("TOPLEFT", BAR_X, -3)
-    r.value = UI.Text(r, "GameFontHighlight", nil, "RIGHT")
-    r.value:SetPoint("TOPRIGHT", 0, -3)
-
-    r.bar = UI.BarFrame(r, BAR_W, BAR_H)
-    r.bar:SetPoint("TOPLEFT", BAR_X - 3, -18)
-    r.track = r.bar.track
-    r.pet = UI.BarSegment(r.bar, C.warlock, BAR_H)
-    r.pet:SetPoint("TOPLEFT", r.track, "TOPLEFT")
-    r.you = UI.BarSegment(r.bar, C.green, BAR_H)
-    r.you:SetPoint("TOPLEFT", r.pet, "TOPRIGHT")
-
-    r.sub = UI.Text(r, "GameFontHighlightSmall")
-    r.sub:SetPoint("TOPLEFT", BAR_X, -36)
-    r.sub:SetWidth(INNER - BAR_X)
-    r.sub:SetWordWrap(false)
+    r.name:SetHeight(15)
+    r.name:SetPoint("LEFT", 2, 0)
+    r.name:SetPoint("RIGHT", r.bar, "LEFT", -10, 0)
+    r.name:SetWordWrap(false)
     return r
 end
 
-local function SetBar(r, petDps, youDps, scale)
-    local petW = (petDps or 0) * scale
-    local youW = (youDps or 0) * scale
-    if petW >= 1 then
-        r.pet:SetWidth(petW); r.pet:Show()
-        r.you:ClearAllPoints()
-        r.you:SetPoint("TOPLEFT", r.pet, "TOPRIGHT")
-    else
-        r.pet:Hide()
-        r.you:ClearAllPoints()
-        r.you:SetPoint("TOPLEFT", r.track, "TOPLEFT")
-    end
-    if youW >= 1 then r.you:SetWidth(youW); r.you:Show() else r.you:Hide() end
+-- Rows are pinned left and right to the content, so they follow its width.
+local function Place(r, y)
+    r:ClearAllPoints()
+    r:SetPoint("TOPLEFT", 0, y)
+    r:SetPoint("TOPRIGHT", 0, y)
+end
+
+local function SetBar(r, value, top, text)
+    if r.bar.SetFillPercent then r.bar:SetFillPercent(top > 0 and (value or 0) / top or 0) end
+    if r.bar.SetText then r.bar:SetText(text) end
+    local t = rawget(r.bar, "Text")
+    if type(t) == "table" then t:SetText(text) end
 end
 
 local function BuildDemons(content)
-    demons.heading = UI.Text(content, "GameFontNormal")
-    demons.heading:SetPoint("TOPLEFT", 0, -4)
-    demons.heading:SetText("Damage each demon is worth")
-
-    demons.school = UI.Button(content, "Shadow", function()
+    demons.schoolLabel = UI.Text(content, "GameFontHighlight")
+    demons.schoolLabel:SetPoint("TOPLEFT", 2, -6)
+    demons.schoolLabel:SetText("Count the bonuses for your")
+    demons.school = UI.Dropdown(content, "school", 120, {
+        { "Shadow spells", "shadow" },
+        { "Fire spells", "fire" },
+    }, function() return ns.demo and "shadow" or (ns.cdb.school or "shadow") end, function(v)
         if ns.demo then return end
-        ns.cdb.school = (ns.cdb.school == "fire") and "shadow" or "fire"
+        ns.cdb.school = v
         ns.MarkDirty()
         Panel.Refresh()
-    end, true)
-    demons.school:SetPoint("TOPRIGHT", 0, 0)
-    demons.school.tipTitle = "Your spells"
-    demons.school.tip = "Which of your own spells to count the demon bonuses for. Click to switch between Shadow and Fire."
+    end)
+    demons.school:SetPoint("TOPRIGHT", -3, 0)
 
     demons.empty = UI.Text(content, "GameFontDisable")
-    demons.empty:SetPoint("TOPLEFT", 0, -34)
-    demons.empty:SetWidth(INNER)
+    demons.empty:SetPoint("TOPLEFT", 2, -40)
     demons.empty:SetText("No demons learned yet.")
 
     demons.sacHeading = UI.Text(content, "GameFontNormal")
     demons.sacHeading:SetText("Demonic Sacrifice")
     demons.sacRow = NewRow(content)
 
-    demons.best = UI.Text(content, "GameFontHighlight", C.green)
-    demons.best:SetWidth(INNER)
-    demons.legend = UI.Text(content, "GameFontHighlightSmall")
-    demons.legend:SetWidth(INNER)
+    demons.best = UI.Text(content, "GameFontHighlight")
+    demons.best:SetWidth(INNER - 4)
     demons.foot = UI.Text(content, "GameFontDisableSmall")
-    demons.foot:SetWidth(INNER)
+    demons.foot:SetWidth(INNER - 4)
     demons.foot:SetSpacing(2)
 end
 
@@ -297,45 +303,31 @@ local function RefreshDemons(content)
     local res = ns.demo and ns.PetCalc.DemoResult() or ns.PetCalc.Evaluate()
     demons.res = res
     local schoolName = D.SCHOOL_NAME[res.school]
-    demons.school:SetLabel("Your spells: " .. schoolName)
+    demons.school:Sync()
 
     local top = 0
     for _, row in ipairs(res.rows) do top = math.max(top, row.total or 0) end
     if res.sacrifice and res.sacrifice.youDps then top = math.max(top, res.sacrifice.youDps) end
-    local scale = top > 0 and (BAR_W / top) or 0
 
-    local y = -28
+    local y = -34
+    local unmeasured = {}
     for i, row in ipairs(res.rows) do
         local r = demons.rows[i] or NewRow(content)
         demons.rows[i] = r
         r.row = row
-        r:ClearAllPoints()
-        r:SetPoint("TOPLEFT", 0, y)
-        r.icon:SetTexture(row.icon)
-        local best = (res.bestKey == row.key)
-        r.name:SetText(row.name .. (best and ("  " .. UI.Hex(C.green) .. "best|r") or ""))
-        if row.total then
-            r.value:SetText((row.source == "estimate" and "~" or "") .. ("%d"):format(row.total))
-            r.value:SetTextColor(C.white[1], C.white[2], C.white[3])
-        else
-            r.value:SetText("?")
-            r.value:SetTextColor(C.gray[1], C.gray[2], C.gray[3])
-        end
-        SetBar(r, row.petDps, row.petDps and row.youDps, scale)
-
-        local gain = row.youDps and ("you +%d"):format(row.youDps) or ("you +%.0f%%"):format((row.youPct or 0) * 100)
+        Place(r, y)
         local state
-        if row.source == "live" then
-            state = UI.Hex(C.green) .. "out now|r"
-        elseif row.source == "seen" then
-            state = Gray("measured " .. UI.FormatAge(row.age))
-        elseif row.source == "estimate" then
-            state = Gray("estimate")
-        end
+        if row.source == "live" then state = "out now"
+        elseif row.source == "estimate" then state = "estimate" end
         if row.unmeasured or not row.petDps then
-            r.sub:SetText(UI.Hex(C.orange) .. "summon it once to measure it|r")
+            state = "not measured"
+            unmeasured[#unmeasured + 1] = row.name
+        end
+        r.name:SetText(row.name .. (state and ("  " .. Gray("(" .. state .. ")")) or ""))
+        if row.total then
+            SetBar(r, row.total, top, (row.source == "estimate" and "~" or "") .. ("%d dps"):format(row.total))
         else
-            r.sub:SetText(("demon %d  \194\183  %s%s"):format(row.petDps, gain, state and ("  \194\183  " .. state) or ""))
+            SetBar(r, 0, top, "?")
         end
         r:Show()
         y = y - ROW_H
@@ -351,22 +343,20 @@ local function RefreshDemons(content)
     -- Demonic Sacrifice
     local sac = res.sacrifice
     if sac then
-        y = y - 8
+        y = y - 10
         demons.sacHeading:ClearAllPoints()
-        demons.sacHeading:SetPoint("TOPLEFT", 0, y)
+        demons.sacHeading:SetPoint("TOPLEFT", 2, y)
         demons.sacHeading:Show()
         y = y - 18
         local r = demons.sacRow
         r.row = { isSacrifice = true, title = "Sacrifice your " .. sac.name, pct = sac.pct, pact = sac.pact }
-        r:ClearAllPoints()
-        r:SetPoint("TOPLEFT", 0, y)
-        r.icon:SetTexture(sac.icon)
+        Place(r, y)
         r.name:SetText("Sacrifice your " .. sac.name)
-        r.value:SetText(sac.youDps and ("+%d"):format(sac.youDps) or ("+%d%%"):format(sac.pct * 100))
-        r.value:SetTextColor(C.white[1], C.white[2], C.white[3])
-        SetBar(r, nil, sac.youDps, scale)
-        r.sub:SetText(("+%d%% %s for you  \194\183  %s"):format(sac.pct * 100, schoolName,
-            sac.pact and "adds to a demon kept out" or "instead of a demon"))
+        if sac.youDps then
+            SetBar(r, sac.youDps, top, ("+%d dps"):format(sac.youDps))
+        else
+            SetBar(r, 0, top, ("+%d%% %s"):format(sac.pct * 100, schoolName))
+        end
         r:Show()
         y = y - ROW_H
     else
@@ -374,33 +364,30 @@ local function RefreshDemons(content)
         demons.sacRow:Hide()
     end
 
-    -- Verdict, legend and what the numbers assume
-    y = y - 8
+    -- Verdict and what the numbers assume
+    y = y - 10
     demons.best:ClearAllPoints()
-    demons.best:SetPoint("TOPLEFT", 0, y)
+    demons.best:SetPoint("TOPLEFT", 2, y)
     demons.best:SetText(res.best or "")
     if res.best then y = y - (demons.best:GetStringHeight() or 12) - 8 end
 
-    demons.legend:ClearAllPoints()
-    demons.legend:SetPoint("TOPLEFT", 0, y)
-    demons.legend:SetText(("%s the demon's own damage    %s added to your spells"):format(
-        UI.Swatch(C.warlock), UI.Swatch(C.green)))
-    y = y - 18
-
     local me = res.me
-    local foot
+    local foot = ""
+    if #unmeasured > 0 then
+        foot = table.concat(unmeasured, ", ") .. ": summon it once to measure it. "
+    end
     if not me then
-        foot = "Your own dps couldn't be estimated, so your gains show as percentages. /swh dps <number> sets it."
+        foot = foot .. "Your own dps couldn't be estimated, so your gains show as percentages. /swh dps <number> sets it."
     elseif me.source == "manual" then
-        foot = ("Your spells: %d dps, set by you (/swh dps auto to estimate)."):format(me.dps)
+        foot = foot .. ("Your spells: %d dps, set by you (/swh dps auto to estimate)."):format(me.dps)
     else
-        foot = ("Your spells: about %d dps, estimated from %s. /swh dps <number> sets it yourself."):format(
+        foot = foot .. ("Your spells: about %d dps, estimated from %s. /swh dps <number> sets it yourself."):format(
             me.dps, me.spell or "your main spell")
     end
     if res.talents.soulLink then foot = foot .. " Soul Link is counted as up." end
-    foot = foot .. " Not counted: Demonic Brand, mana, utility."
+    foot = foot .. " Not counted: Demonic Brand, mana, utility. Hover a demon for the breakdown."
     demons.foot:ClearAllPoints()
-    demons.foot:SetPoint("TOPLEFT", 0, y)
+    demons.foot:SetPoint("TOPLEFT", 2, y)
     demons.foot:SetText(foot)
     y = y - (demons.foot:GetStringHeight() or 36)
 
@@ -412,14 +399,14 @@ Panel.AddTab("demons", "Demons", BuildDemons, RefreshDemons)
 ----------------------------------------------------------------------
 -- Tab: Options
 ----------------------------------------------------------------------
-local options = { checks = {}, sizes = {} }
+local options = { checks = {} }
 local SIZES = { { "Small", 26 }, { "Medium", 32 }, { "Large", 40 } }
 
 local function BuildOptions(content)
     local y = 0
     local function heading(text)
         local h = UI.Text(content, "GameFontNormal")
-        h:SetPoint("TOPLEFT", 0, y - 4)
+        h:SetPoint("TOPLEFT", 2, y - 4)
         h:SetText(text)
         y = y - 24
     end
@@ -427,7 +414,7 @@ local function BuildOptions(content)
         local c = UI.Check(content, label, get, function(v) set(v); ns.MarkDirty() end)
         c:SetPoint("TOPLEFT", 0, y)
         options.checks[#options.checks + 1] = c
-        y = y - 26
+        y = y - UI.CHECK_SIZE                          -- boxes stacked edge to edge
     end
 
     heading("Remind me about")
@@ -441,30 +428,20 @@ local function BuildOptions(content)
     heading("Reminder icons")
     check("Keep showing them during fights",
         function() return ns.db.combat end, function(v) ns.db.combat = v end)
-    check("Glow while something is missing",
-        function() return ns.db.pulse end, function(v) ns.db.pulse = v end)
     check("Lock in place (untick to drag them)",
         function() return ns.db.locked end,
         function(v) ns.db.locked = v; ns.Strip.ApplyLock() end)
 
-    y = y - 4
     local label = UI.Text(content, "GameFontHighlight")
-    label:SetPoint("TOPLEFT", 4, y - 5)
-    label:SetText("Size")
-    local x = 46
-    for _, s in ipairs(SIZES) do
-        local b = UI.Button(content, s[1], function()
-            ns.db.iconSize = s[2]
-            ns.MarkDirty()
-            Panel.Refresh()
-        end, true)
-        b:SetWidth(72)
-        b:SetPoint("TOPLEFT", x, y)
-        b.size = s[2]
-        options.sizes[#options.sizes + 1] = b
-        x = x + 72 + 4
-    end
-    y = y - 32
+    label:SetPoint("TOPLEFT", 4, y - 8)
+    label:SetText("Icon size")
+    local sizes = {}
+    for _, s in ipairs(SIZES) do sizes[#sizes + 1] = { s[1], s[2] } end
+    options.size = UI.Dropdown(content, "iconSize", 120, sizes,
+        function() return ns.db.iconSize end,
+        function(v) ns.db.iconSize = v; ns.MarkDirty(); Panel.Refresh() end)
+    options.size:SetPoint("TOPLEFT", 90, y - 2)
+    y = y - 36
 
     if ns.Options and ns.Options.Ready() then       -- warlocks only: other classes have no button
         heading("Minimap")
@@ -475,8 +452,8 @@ local function BuildOptions(content)
     end
 
     options.hint = UI.Text(content, "GameFontDisableSmall")
-    options.hint:SetPoint("TOPLEFT", 0, y)
-    options.hint:SetWidth(INNER)
+    options.hint:SetPoint("TOPLEFT", 2, y)
+    options.hint:SetWidth(INNER - 4)
     options.hint:SetSpacing(2)
     options.hint:SetText("Reminders only appear while something is missing. Click one to cast it (out of combat). "
         .. "Right-click one to quiet it for 10 minutes.")
@@ -485,7 +462,7 @@ end
 
 local function RefreshOptions()
     for _, c in ipairs(options.checks) do c:Sync() end
-    for _, b in ipairs(options.sizes) do b:SetSelected(b.size == ns.db.iconSize) end
+    options.size:Sync()
     return options.height + (options.hint:GetStringHeight() or 36)
 end
 

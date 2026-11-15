@@ -13,7 +13,7 @@ A small row of icons appears only while something is missing, and disappears whe
 - **Demon Armor / Demon Skin** missing, or under 2 minutes left when you are out of combat
 - **Firestone / Spellstone** missing from your weapon, or about to run out
 
-Out of combat, click an icon to cast the missing buff. During a fight the icons only show: the game doesn't let addons put up clickable cast buttons mid-combat. The icons look like action bar buttons: purple border = missing, orange = running out (with a countdown).
+Out of combat, click an icon to cast the missing buff. During a fight the icons only show: the game doesn't let addons put up clickable cast buttons mid-combat. The icons are action bar buttons; a buff that is running out shows its time left under its icon.
 
 Right-click an icon to quiet it for 10 minutes. Shift + right-click turns that reminder off. Nothing shows while you are dead or mounted.
 

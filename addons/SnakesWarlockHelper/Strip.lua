@@ -1,16 +1,28 @@
--- Snakes Warlock Helper: the reminder strip. A row of small icons that exists only while
--- something is missing. Out of combat an icon can be clicked to cast the missing buff;
--- in combat the icons are display-only, because the game doesn't let addons show or move
--- clickable cast buttons during a fight.
+-- Snakes Warlock Helper: the reminder strip. A row of icons that exists only while something is
+-- missing. Out of combat an icon can be clicked to cast the missing buff; in combat the icons are
+-- display-only, because the game doesn't let addons show or move clickable cast buttons during a
+-- fight.
+--
+-- Each icon is a stand-alone action button (ActionButtonTemplate at its own 45 x 45, drawn the way
+-- the game draws buttons without bar art). The row sits in one frame scaled to the chosen icon
+-- size, the way Edit Mode scales an action bar, with the action bar's 6 px gap. A buff running out
+-- shows its time under the icon like the buff frame does; nothing is printed on the icon.
 local _, ns = ...
 local UI = ns.UI
 local C = UI.color
 local Strip = {}
 ns.Strip = Strip
 
-local GAP = 6
+local SIZE = UI.ACTION_SIZE          -- 45, ActionButtonTemplate
+local GAP = 6                        -- between action bar buttons
+local TIMER_H = 14                   -- room under the row for a countdown
+local MOVER_W = 180                  -- the drag box is at least this wide on screen, for its label
 local icons, buttons = {}, {}
 local current = {}
+
+local function Scale()
+    return ((ns.db and ns.db.iconSize) or 32) / SIZE
+end
 
 local function UseKeyDown()
     local ok, v
@@ -56,33 +68,16 @@ end
 -- Frames
 ----------------------------------------------------------------------
 local function NewIcon(i)
-    local ic = CreateFrame("Frame", nil, Strip.frame)
-    -- Built like an action bar button: slot, masked icon, icon frame, then the bar's coloured
-    -- border (purple: missing, orange: running out) and its spell-highlight glow.
-    UI.IconFrame(ic, (ns.db and ns.db.iconSize) or 32)
-    ic.border = UI.IconOverlay(ic, "UI-HUD-ActionBar-IconFrame-Border", 2)
-    ic.glow = UI.IconOverlay(ic, "UI-HUD-ActionBar-IconFrame-Mouseover", 3, true)
-    ic.hl = UI.IconOverlay(ic, "UI-HUD-ActionBar-IconFrame-Mouseover", 4, true)
-    ic.hl:Hide()
-    ic.timer = ic:CreateFontString(nil, "OVERLAY", "NumberFontNormal")
-    ic.timer:SetPoint("BOTTOM", 0, 3)
-
-    -- Breathing glow. Animation support differs between clients, so it is optional.
-    pcall(function()
-        local group = ic.glow:CreateAnimationGroup()
-        group:SetLooping("BOUNCE")
-        local a = group:CreateAnimation("Alpha")
-        a:SetFromAlpha(0.9)
-        a:SetToAlpha(0.1)
-        a:SetDuration(1.2)
-        a:SetSmoothing("IN_OUT")
-        ic.pulse = group
-    end)
-
-    -- Hovered without a cast button on top (during a fight, in the demo): the bar's highlight.
-    ic:EnableMouse(true)
-    ic:SetScript("OnEnter", function(self) self.hl:Show(); ShowTip(self) end)
-    ic:SetScript("OnLeave", function(self) self.hl:Hide(); HideTip() end)
+    local ic = UI.ActionIcon(Strip.bar)
+    -- The countdown hangs under the icon (AuraButtonArtTemplate's Duration: GameFontNormalSmall,
+    -- TOP to the icon's BOTTOM). It lives on the unscaled strip frame so it stays readable at
+    -- every icon size.
+    ic.timer = Strip.frame:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+    ic.timer:SetPoint("TOP", ic, "BOTTOM", 0, -1)
+    -- Hovered without a cast button on top (during a fight, in the demo): the button's own
+    -- highlight shows, plus the tooltip.
+    ic:SetScript("OnEnter", function(self) ShowTip(self) end)
+    ic:SetScript("OnLeave", HideTip)
     ic:SetScript("OnMouseUp", function(self, button)
         if button == "RightButton" then RightClick(self.entry) end
     end)
@@ -96,9 +91,14 @@ local function NewButton(i)
     b:SetFrameStrata("MEDIUM")
     b:SetFrameLevel(Strip.frame:GetFrameLevel() + 10)
     if UseKeyDown() then b:RegisterForClicks("AnyDown", "AnyUp") else b:RegisterForClicks("AnyUp") end
-    -- the action bar's own hover and pressed art
-    if b.SetHighlightAtlas then b:SetHighlightAtlas("UI-HUD-ActionBar-IconFrame-Mouseover", "ADD") end
-    if b.SetPushedAtlas then b:SetPushedAtlas("UI-HUD-ActionBar-IconFrame-Down") end
+    -- The template's own hover and pressed art, at the template's sizes (the button is scaled
+    -- to the icon, so it is 45 x 45 in its own units).
+    if b.SetHighlightAtlas then
+        b:SetHighlightAtlas("UI-HUD-ActionBar-IconFrame-Mouseover")
+        UI.PlaceState(b:GetHighlightTexture(), nil, 46, 45)
+        b:SetPushedAtlas("UI-HUD-ActionBar-IconFrame-AddRow-Down")
+        UI.PlaceState(b:GetPushedTexture(), "OVERLAY", 51, 51)
+    end
     b:SetScript("OnEnter", function(self) ShowTip(self.icon) end)
     b:SetScript("OnLeave", HideTip)
     b:SetScript("PostClick", function(self, button, down)
@@ -107,6 +107,42 @@ local function NewButton(i)
     b:Hide()
     buttons[i] = b
     return b
+end
+
+-- Edit Mode's selection box (EditModeSystemSelectionTemplate in
+-- Blizzard_EditMode/Shared/EditModeSystemTemplates.xml): a nine-slice of the
+-- editmode-actionbar-selected kit with the system's name in GameFontHighlightLarge.
+local SELECTION_LAYOUT = {
+    TopRightCorner = { atlas = "%s-NineSlice-Corner", mirrorLayout = true, x = 8, y = 8 },
+    TopLeftCorner = { atlas = "%s-NineSlice-Corner", mirrorLayout = true, x = -8, y = 8 },
+    BottomLeftCorner = { atlas = "%s-NineSlice-Corner", mirrorLayout = true, x = -8, y = -8 },
+    BottomRightCorner = { atlas = "%s-NineSlice-Corner", mirrorLayout = true, x = 8, y = -8 },
+    TopEdge = { atlas = "_%s-NineSlice-EdgeTop" },
+    BottomEdge = { atlas = "_%s-NineSlice-EdgeBottom" },
+    LeftEdge = { atlas = "!%s-NineSlice-EdgeLeft" },
+    RightEdge = { atlas = "!%s-NineSlice-EdgeRight" },
+    Center = { atlas = "%s-NineSlice-Center", x = -8, y = 8, x1 = 8, y1 = -8 },
+}
+
+local function NewMover(f)
+    local nine = UI.HasTemplate("NineSliceCodeTemplate") and NineSliceUtil and NineSliceUtil.ApplyLayout
+    local m = CreateFrame("Frame", nil, f, nine and "NineSliceCodeTemplate" or nil)
+    m:SetFrameLevel(f:GetFrameLevel() + 20)
+    m:SetAllPoints(f)
+    if nine then pcall(NineSliceUtil.ApplyLayout, m, SELECTION_LAYOUT, "editmode-actionbar-selected") end
+    m.label = m:CreateFontString(nil, "OVERLAY", "GameFontHighlightLarge")
+    m.label:SetPoint("CENTER")
+    m.label:SetText("Warlock reminders")
+    m:EnableMouse(true)
+    m:RegisterForDrag("LeftButton")
+    m:SetScript("OnDragStart", function()
+        if not InCombatLockdown() then f:StartMoving(); f.moving = true end
+    end)
+    m:SetScript("OnDragStop", function()
+        if f.moving then f:StopMovingOrSizing(); f.moving = nil; UI.SavePoint(f, "stripPoint") end
+    end)
+    m:Hide()
+    return m
 end
 
 local function Create()
@@ -119,34 +155,10 @@ local function Create()
     f:SetMovable(true)
     f:Hide()
 
-    -- Shown only while unlocked: a box to drag the strip by.
-    -- A dialog-style box, like the game's own move handles.
-    local m = CreateFrame("Frame", nil, f, "BackdropTemplate")
-    Strip.mover = m
-    m:SetFrameLevel(f:GetFrameLevel() + 20)
-    m:SetPoint("CENTER", f, "CENTER", 0, 7)
-    if m.SetBackdrop then
-        m:SetBackdrop({
-            bgFile = "Interface\\DialogFrame\\UI-DialogBox-Background-Dark",
-            edgeFile = UI.TOOLTIP_BORDER, edgeSize = 12, tile = true, tileSize = 32,
-            insets = { left = 3, right = 3, top = 3, bottom = 3 },
-        })
-        m:SetBackdropBorderColor(C.gold[1], C.gold[2], C.gold[3], 1)
-        m:SetBackdropColor(1, 1, 1, 0.6)
-    end
-    m.label = UI.Text(m, "GameFontNormalSmall", nil, "CENTER")
-    m.label:SetPoint("TOP", 0, -6)
-    m.label:SetText("Warlock reminders: drag me")
-    m:EnableMouse(true)
-    m:RegisterForDrag("LeftButton")
-    m:SetScript("OnDragStart", function()
-        if not InCombatLockdown() then f:StartMoving(); f.moving = true end
-    end)
-    m:SetScript("OnDragStop", function()
-        if f.moving then f:StopMovingOrSizing(); f.moving = nil; UI.SavePoint(f, "stripPoint") end
-    end)
-    m:Hide()
+    Strip.bar = CreateFrame("Frame", nil, f)      -- holds the icons; scaled to the icon size
+    Strip.bar:SetSize(SIZE, SIZE)
 
+    Strip.mover = NewMover(f)
     Strip.RestorePosition()
 end
 
@@ -160,8 +172,10 @@ end
 function Strip.Show(list)
     Create()
     current = list or {}
-    local n, size = #current, ns.db.iconSize or 32
+    local n = #current
     local now = GetTime()
+    local scale = Scale()
+    Strip.bar:SetScale(scale)
 
     for i = 1, math.max(n, #icons) do
         local e, ic = current[i], icons[i]
@@ -169,33 +183,29 @@ function Strip.Show(list)
             ic = ic or NewIcon(i)
             e.expiresAt = e.remaining and (now + e.remaining) or nil
             ic.entry = e
-            UI.SizeIconFrame(ic, size)
             ic:ClearAllPoints()
-            ic:SetPoint("LEFT", Strip.frame, "LEFT", (i - 1) * (size + GAP), 0)
+            ic:SetPoint("TOPLEFT", Strip.bar, "TOPLEFT", (i - 1) * (SIZE + GAP), 0)
             ic.tex:SetTexture(e.icon)
-            local c = (e.state == "expiring") and C.orange or C.warlock
-            ic.border:SetVertexColor(c[1], c[2], c[3], 1)
-            ic.glow:SetVertexColor(c[1], c[2], c[3], 1)
-            if e.state == "expiring" or not ns.db.pulse then ic.glow:Hide() else ic.glow:Show() end
-            ic.timer:SetTextColor(C.white[1], C.white[2], C.white[3])
             ic:Show()
-            if ic.pulse then
-                if ns.db.pulse and e.state ~= "expiring" then
-                    if not ic.pulse:IsPlaying() then ic.pulse:Play() end
-                else
-                    ic.pulse:Stop()
-                end
-            end
+            ic.timer:Show()
         elseif ic then
             ic.entry = nil
-            if ic.pulse then ic.pulse:Stop() end
+            ic.timer:SetText("")
+            ic.timer:Hide()
             ic:Hide()
         end
     end
 
-    -- The strip is anchored by its centre, so it grows evenly to both sides.
-    Strip.frame:SetSize(math.max(1, n) * size + math.max(0, n - 1) * GAP, size)
-    Strip.mover:SetSize(math.max(Strip.frame:GetWidth() + 24, 190), size + 38)
+    -- Wide enough for the icons, or for the drag box while unlocked. Anchored by its centre,
+    -- so the row grows evenly to both sides.
+    local slots = math.max(n, 1)
+    local width = slots * SIZE + (slots - 1) * GAP
+    Strip.bar:SetSize(width, SIZE)
+    local screenW = width * scale
+    if not ns.db.locked then screenW = math.max(screenW, MOVER_W) end
+    Strip.frame:SetSize(screenW, SIZE * scale + TIMER_H)
+    Strip.bar:ClearAllPoints()                    -- the row is centred in the strip
+    Strip.bar:SetPoint("TOP", Strip.frame, "TOP", 0, 0)
     if n > 0 or not ns.db.locked then Strip.frame:Show() else Strip.frame:Hide() end
     Strip.UpdateTimers()
     Strip.ApplySecure()
@@ -207,8 +217,8 @@ function Strip.UpdateTimers()
     for i = 1, #current do
         local e, ic = current[i], icons[i]
         if ic and e then
-            if e.expiresAt and e.expiresAt > now then
-                ic.timer:SetText(UI.FormatTimer(e.expiresAt - now))
+            if e.state == "expiring" and e.expiresAt and e.expiresAt > now then
+                UI.SetDuration(ic.timer, e.expiresAt - now)
             else
                 ic.timer:SetText("")
             end
@@ -219,6 +229,7 @@ end
 -- Click-to-cast overlays. Only touched out of combat; dropped when a fight starts.
 function Strip.ApplySecure()
     if not Strip.frame or InCombatLockdown() then return end
+    local scale = Scale()
     for i = 1, math.max(#current, #buttons) do
         local e, b = current[i], buttons[i]
         if e and (e.spell or e.macro) and not ns.demo then
@@ -227,6 +238,7 @@ function Strip.ApplySecure()
             b:SetAttribute("type1", e.macro and "macro" or "spell")
             b:SetAttribute("spell", e.spell)
             b:SetAttribute("macrotext", e.macro)
+            b:SetScale(scale)
             b:ClearAllPoints()
             b:SetAllPoints(icons[i])
             b:Show()
