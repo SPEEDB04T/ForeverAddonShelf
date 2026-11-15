@@ -696,11 +696,16 @@ function ns.Vendor(id)
 end
 
 -- The look score 1-10 the worth rests on, and where it came from: "rating"
--- (a person rated it) or "grade" (the measure of its textures), or "none".
+-- (a person rated it), "estimate" (judged by eye from a render when the list
+-- was built), "grade" (the measure of its textures), or "none".
 function ns.LookScore(id, it)
   local r = ns.Rating(id)
   if r then
     return r, "rating"
+  end
+  local e = it and tonumber(it.est)
+  if e and e >= 1 and e <= 10 then
+    return e, "estimate"
   end
   local g = it and WORTH_GRADE_LOOK[it.grade]
   if g then
@@ -719,7 +724,8 @@ function ns.Worth(id, it)
   end
   local look, from = ns.LookScore(id, it)
   local times = 1 + 0.2 * look * look
-  local why = { ("look %d/10%s: %.1f times"):format(look, from == "grade" and (" (" .. it.grade .. ")") or from == "none" and " (not rated)" or "", times) }
+  local why = { ("look %d/10%s: %.1f times"):format(look, from == "grade" and (" (" .. it.grade .. ")")
+    or from == "estimate" and " (estimate)" or from == "none" and " (not rated)" or "", times) }
   local q = WORTH_QUALITY[it.q or 2]
   if q then
     times = times * q
@@ -763,8 +769,9 @@ function ns.Price(id)
   if worth then
     info.fair, info.fairN, info.worthWhy, info.times = worth, 1, w.why, w.times
     info.fairBasis = w.lookFrom == "rating" and "its vendor price and its rated look"
+      or w.lookFrom == "estimate" and "its vendor price and its estimated look"
       or w.lookFrom == "grade" and "its vendor price and its measured look" or "its vendor price"
-    info.sure = w.lookFrom == "rating" and "high" or w.lookFrom == "grade" and "medium" or "low"
+    info.sure = w.lookFrom == "rating" and "high" or (w.lookFrom == "estimate" or w.lookFrom == "grade") and "medium" or "low"
     info.value, info.source = worth, info.fairBasis
   end
   return info
@@ -877,17 +884,96 @@ function ns.ShowCommon()
   return db and db.opts and db.opts.showCommon == true or false
 end
 
--- Why the piece counts as easy, common gear, or nil when it does not.
+-- How much of the list counts as common: the most common N percent of pieces by
+-- drop data (it.common, 0 the rarest to 100 the most common).
+ns.COMMON_CUT_DEFAULT = 25
+ns.COMMON_CUT_MAX = 60
+
+function ns.CommonCut()
+  local n = db and db.opts and tonumber(db.opts.commonCut)
+  if not n then
+    return ns.COMMON_CUT_DEFAULT
+  end
+  return math.max(0, math.min(ns.COMMON_CUT_MAX, math.floor(n + 0.5)))
+end
+
+function ns.SetCommonCut(n)
+  n = tonumber(n)
+  if not n then
+    return false
+  end
+  db.opts = db.opts or {}
+  db.opts.commonCut = math.max(0, math.min(ns.COMMON_CUT_MAX, math.floor(n + 0.5)))
+  ns.Fire("ITEMS")
+  return true
+end
+
+-- Why the piece counts as easy, common gear, or nil when it does not. With drop
+-- data: among the most common ns.CommonCut() percent of the list. Without it
+-- (a few pieces no spawned mob drops): a green world drop up to level 30.
 -- info is unused (kept for callers that pass ns.Price(id)).
 function ns.Common(it, info)
   if not it or it.custom then
     return nil
   end
-  if (it.q or 2) <= 2 and not it.inst and it.src ~= "fishing" and (it.req or 0) <= COMMON_MAX_REQ then
+  local cut = ns.CommonCut()
+  local c = tonumber(it.common)
+  if c then
+    if cut > 0 and c >= 100 - cut then
+      local d = it.drop
+      return ("one of the most common %d%% of pieces%s"):format(cut,
+        d and d.hours and (": about " .. ns.Hours(d.hours) .. " a copy farming " .. (d.mob or "it")) or "")
+    end
+    return nil
+  end
+  if cut > 0 and (it.q or 2) <= 2 and not it.inst and it.src ~= "fishing" and (it.req or 0) <= COMMON_MAX_REQ then
     return ("a green world drop of level %d: players levelling there loot them by the dozen"):format(it.req or 0)
   end
   return nil
 end
+
+-- "40 minutes", "1 hour", "87 hours"
+function ns.Hours(h)
+  h = tonumber(h) or 0
+  if h < 1 then
+    local m = math.max(1, math.floor(h * 60 + 0.5))
+    return m == 1 and "1 minute" or ("%d minutes"):format(m)
+  end
+  local n = h < 10 and math.floor(h * 2 + 0.5) / 2 or math.floor(h + 0.5)
+  return (n == 1 and "1 hour" or (n == math.floor(n) and "%d hours" or "%.1f hours"):format(n))
+end
+
+-- One line on where the piece drops, from the loot tables (it.drop), or nil:
+-- "Drops from Ragefire Trogg (level 13-16 elite, Ragefire Chasm): 1 in 1,750 kills,
+-- about 87 hours a copy farming alone"
+function ns.DropText(it)
+  local d = it and it.drop
+  if type(d) ~= "table" or not d.mob then
+    return nil
+  end
+  local tags = {}
+  if d.lo then
+    tags[1] = d.lo == d.hi and ("level %d"):format(d.lo) or ("level %d-%d"):format(d.lo, d.hi or d.lo)
+  end
+  if d.rare then
+    tags[#tags + 1] = "rare spawn"
+  elseif d.elite then
+    tags[#tags + 1] = "elite"
+  end
+  if d.zone then
+    tags[#tags + 1] = d.zone .. (d.inst and " (dungeon)" or "")
+  end
+  local per = ""
+  local pct = tonumber(d.pct)
+  if pct and pct > 0 then
+    local n = math.floor(100 / pct + 0.5)
+    per = n <= 1 and ": every kill" or (": 1 in %s kills"):format(BreakUpLargeNumbers and BreakUpLargeNumbers(n) or tostring(n))
+  end
+  local hrs = d.hours and (", about %s a copy %s"):format(ns.Hours(d.hours), d.inst and "for one player of a group" or "farming alone") or ""
+  return ("Drops from %s (%s)%s%s"):format(d.mob, table.concat(tags, ", "), per, hrs)
+end
+
+ns.DROP_SOURCE = "estimate from the CMaNGOS Classic loot tables and an assumed kill rate"
 
 -- false for a cropped piece while cropped pieces are hidden (unless a rating
 -- or yes keeps it), and for an easy, common piece while those are hidden.
@@ -1111,9 +1197,17 @@ local function FarmHardness(id, it)
   if it.src == "fishing" then
     return 0.6, 0, 0
   end
-  local lvl = Clamp(((it.req or 1) - 5) / 50, 0, 1)
-  local h = 0.35 * lvl + ((it.q or 2) >= 3 and 0.2 or 0) + 0.25 * Clamp((it.pool or 200) / 400, 0, 1)
-    + (it.inst and 0.2 or 0)
+  local h
+  local d = it.drop
+  if type(d) == "table" and tonumber(d.hours) and tonumber(it.common) then
+    -- from the loot tables: hours a copy for one farmer (1 hour 0, 1000 hours 1), and
+    -- how much of it the whole realm loots against the other pieces
+    h = 0.65 * Clamp(math.log10(math.max(1, d.hours)) / 3, 0, 1) + 0.35 * (1 - Clamp(it.common / 100, 0, 1))
+  else
+    local lvl = Clamp(((it.req or 1) - 5) / 50, 0, 1)
+    h = 0.35 * lvl + ((it.q or 2) >= 3 and 0.2 or 0) + 0.25 * Clamp((it.pool or 200) / 400, 0, 1)
+      + (it.inst and 0.2 or 0)
+  end
   local spots = #ns.SpotsForItem(id)
   h = h - 0.04 * math.max(0, math.min(spots, 6) - 2)
   local seen = db and db.dropLvl and db.dropLvl[id]
@@ -1208,6 +1302,12 @@ function ns.Buy(id, info)
     else
       con(("its look is rated only %d/10"):format(look))
     end
+  elseif lookFrom == "estimate" then
+    if look >= 7 then
+      pro(("its look is estimated at %d/10 (rate it yourself in the Review tab)"):format(look))
+    else
+      con(("its look is estimated at only %d/10 (rate it yourself in the Review tab)"):format(look))
+    end
   elseif lookFrom == "grade" then
     con(("its look is not rated yet: its worth guesses from its %s grade (rate it in the Review tab)"):format(it.grade))
   else
@@ -1252,12 +1352,16 @@ function ns.Buy(id, info)
   if it.src == "fishing" then
     pro("it is fished up, not dropped by mobs")
   elseif h >= 0.65 then
-    pro(it.inst and ("slow to farm: it drops only in %s"):format(it.inst)
+    local d = it.drop
+    pro(d and d.hours and ("slow to farm: about %s a copy from %s"):format(ns.Hours(d.hours), d.mob or "its best mob")
+      or it.inst and ("slow to farm: it drops only in %s"):format(it.inst)
       or ("slow to farm: level %d-%d mobs, one of about %d drops at that level"):format(lo, hi, it.pool or 200))
   elseif h < 0.35 then
     local spot = ns.SpotsForItem(id, 1)[1]
-    b.easyFarm = { lo = lo, hi = hi, spot = spot and ns.SpotLabel(spot.spot) }
-    con(("easy to farm: level %d-%d mobs%s"):format(lo, hi, b.easyFarm.spot and (", e.g. " .. b.easyFarm.spot) or ""))
+    local d = it.drop
+    b.easyFarm = { lo = lo, hi = hi, spot = d and d.mob and (d.mob .. (d.zone and (" in " .. d.zone) or "")) or spot and ns.SpotLabel(spot.spot) }
+    con(d and d.hours and ("easy to farm: about %s a copy from %s"):format(ns.Hours(d.hours), b.easyFarm.spot)
+      or ("easy to farm: level %d-%d mobs%s"):format(lo, hi, b.easyFarm.spot and (", e.g. " .. b.easyFarm.spot) or ""))
   end
   if drops > 0 then
     con(("it has dropped %d %s for you"):format(drops, drops == 1 and "time" or "times"))
@@ -2476,8 +2580,15 @@ local function OnTooltipItem(tooltip, data)
     tooltip:AddLine(("%.1f times its vendor price (%s): %s."):format(info.times or 0, ns.Money(info.vendor or 0),
       table.concat(info.worthWhy or {}, ", ")), 0.6, 0.6, 0.6, true)
   end
+  local dropText = ns.DropText(it)
   if it.src == "fishing" then
     tooltip:AddLine(it.srcNote or "Fished up, not a mob drop.", 1, 1, 1, true)
+  elseif dropText then
+    if it.inst and not (it.drop.inst and it.drop.zone == it.inst) then
+      tooltip:AddLine("Drops in " .. it.inst .. " (dungeon).", 1, 1, 1, true)
+    end
+    tooltip:AddLine(dropText .. ".", 1, 1, 1, true)
+    tooltip:AddLine("(" .. ns.DROP_SOURCE .. ")", 0.6, 0.6, 0.6, true)
   elseif it.inst then
     tooltip:AddLine("Drops in " .. it.inst .. " (dungeon).", 1, 1, 1, true)
   else
@@ -2683,9 +2794,14 @@ SlashCmdList.SLUTMOGSCOUT = function(input)
       ns.Print("Usage: |cffffff00/smog buy|r <item link, ID or name of a piece on the list>")
     end
   elseif cmd == "common" then
-    ns.SetShowCommon(not ns.ShowCommon())
-    ns.Print(("Easy, common pieces (green world drops up to level %d): %s"):format(
-      COMMON_MAX_REQ, ns.ShowCommon() and "shown" or "hidden"))
+    local n = tonumber(rest)
+    if n then
+      ns.SetCommonCut(n)
+    else
+      ns.SetShowCommon(not ns.ShowCommon())
+    end
+    ns.Print(("The most common %d%% of pieces (by how often they drop): %s. |cffffff00/smog common 40|r sets the share."):format(
+      ns.CommonCut(), ns.ShowCommon() and "shown" or "hidden"))
   elseif cmd == "config" or cmd == "options" or cmd == "opt" then
     if HasKit() then
       ns.Kit.Open()
@@ -2730,7 +2846,7 @@ SlashCmdList.SLUTMOGSCOUT = function(input)
     print("  |cffffff00/smog cropped|r  show or hide cropped pieces")
     print("  |cffffff00/smog buy|r <item>  find the cheapest copy listed and ask to buy it")
     print("  |cffffff00/smog grade|r <item> <bikini, skimpy, cropped or auto>  set a piece's grade yourself")
-    print(("  |cffffff00/smog common|r  show or hide easy, common pieces (green world drops up to level %d)"):format(COMMON_MAX_REQ))
+    print("  |cffffff00/smog common|r  show or hide the most common pieces; |cffffff00/smog common 40|r hides the most common 40% (0-60)")
     print("  |cffffff00/smog hints|r  pieces off the list that are priced like transmog pieces")
     print("  |cffffff00/smog verify|r  check the built-in list against this game build")
     print("  |cffffff00/smog selftest|r  check that this game has what the addon needs")

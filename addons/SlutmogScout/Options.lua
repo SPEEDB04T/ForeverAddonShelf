@@ -26,6 +26,12 @@ local function Rows()
       tip = "Adds the last scanned price and where to farm it to the tooltip of a tracked piece. Same as /smog tooltip.",
       get = GetOpt("tooltip"), set = SetOpt("tooltip") },
 
+    { kind = "header", text = "List" },
+    { kind = "slider", label = "Hide the most common", min = 0, max = ns.COMMON_CUT_MAX or 60, step = 5, format = "%d%%",
+      tip = "Hides that share of the list: the pieces that drop most often across a realm (from the Classic loot tables), never worth flipping. 0 hides none. Filter > Show easy, common pieces shows them anyway. Same as /smog common 40.",
+      get = function() return ns.CommonCut() end,
+      set = function(v) ns.SetCommonCut(v) end },
+
     { kind = "header", text = "Window" },
     { kind = "slider", label = "Window size", min = 60, max = 200, step = 5, format = "%d%%",
       tip = "Makes the whole window bigger or smaller. Same as dragging its bottom-right corner, or /smog scale 120.",

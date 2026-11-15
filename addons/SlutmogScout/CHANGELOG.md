@@ -1,5 +1,28 @@
 # Changelog
 
+## 1.13.0
+
+The list now knows how often each piece drops and how good each one looks.
+
+- **Drop data.** Every piece's tooltip names the best mob to farm it, with its level and zone, the odds
+  per kill and about how long one copy takes, for example "Drops from Twilight Lord Everun (level 60,
+  rare spawn, Silithus): 1 in 244 kills, about 241 hours a copy farming alone". The farm guide's header
+  for a piece says the same. The numbers are estimates from the CMaNGOS Classic loot tables (the open
+  Classic server database) and an assumed kill rate: how many players are around each level, quest
+  targets, elites, rares and dungeons. Forever's real loot can differ.
+- **Hide the most common pieces.** Easy, common gear is now the share of the list that the whole realm
+  loots most often, not every green up to level 30. The new "Hide the most common" slider in the options
+  window sets the share, 25% by default, 0 to 60% (`/smog common 40` does the same). Filter > Show easy,
+  common pieces still shows them. Buy advice and the farm scores use the same data.
+- **Every piece rated for its look.** Each BoE chest and leg piece was rated 1-10 by eye from a render on
+  a female body, with matching outfits (Lofty, Vanguard, Jade and others) and pieces that player
+  transmog guides praise rated a little higher. These are estimates; your own rating in the Review tab
+  always wins. The worth uses the estimate until you rate a piece, and the Review grid shows it in grey
+  (~7/10).
+- **19 pieces off the list, 1 on.** Tribal and crude looks (fur loincloths, wooden strap harnesses, ogre
+  and gnoll gear) rated 3/10 or less are left off; the Review tab says why. Chief Brigadier Leggings,
+  rated 7/10, joins the list. Knight's Breastplate now counts as skimpy, not cropped.
+
 ## 1.12.1
 
 - **Fixed: blank models in the Review grid.** Going to another tab and back (or closing and opening the

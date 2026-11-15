@@ -258,8 +258,15 @@ function ns.FillItemTooltip(tip, id)
   else
     local spots = ns.SpotsForItem(id, 5)
     local lo, hi, measured = ns.MobRange(it)
+    local dropText = ns.DropText(it)
+    if dropText then
+      tip:AddLine(dropText .. ".", w1, w2, w3, true)
+      tip:AddLine("(" .. ns.DROP_SOURCE .. ")", g1, g2, g3, true)
+    end
     if it.inst then
       tip:AddLine("Drops in " .. it.inst .. " (dungeon).", w1, w2, w3, true)
+    elseif dropText then
+      tip:AddLine(("Other level %d-%d farm spots:"):format(lo, hi), w1, w2, w3, true)
     elseif measured then
       tip:AddLine(("Level %d-%d mobs (rule of thumb, widened by your own drops). Best level matches:"):format(lo, hi), w1, w2, w3, true)
     else
@@ -706,6 +713,10 @@ local function RefreshFarm()
     if it.src == "fishing" then
       farmHeader:SetText(ItemName(itemFilter, it) .. "  " .. Grey("fished up, not a mob drop"))
       farmView.empty:SetText("No farm spot: this piece is fished up, not dropped by mobs. " .. (it.srcNote or ""))
+    elseif it.drop and it.drop.mob then
+      local d = it.drop
+      farmHeader:SetText(ItemName(itemFilter, it) .. "  " .. Grey(("best: %s%s, about %s a copy"):format(d.mob,
+        d.zone and (" in " .. d.zone) or "", ns.Hours(d.hours))))
     elseif it.inst then
       farmHeader:SetText(ItemName(itemFilter, it) .. "  " .. Grey("drops in " .. it.inst))
     else
@@ -861,6 +872,9 @@ local function ReviewDetail(p)
   local look = s.look or "not measured"
   if s.grade then
     look = s.grade .. ": " .. look
+  end
+  if tonumber(s.est) and not (p.why and p.why:find("estimate", 1, true)) then
+    look = ("estimated %d/10%s; "):format(s.est, s.estNote and (" (" .. s.estNote .. ")") or "") .. look
   end
   if p.why and not p.onList then
     return p.why .. "; " .. look
@@ -1026,7 +1040,9 @@ local function RefreshReview()
     tile:SetShown(p ~= nil)
     if p then
       tile.name:SetText(ReviewItemName(p))
-      tile.rating:SetText(FlagLabel(p.flag))
+      -- the player's own rating, else the estimate the list ships with, in grey
+      tile.rating:SetText(p.flag ~= nil and FlagLabel(p.flag)
+        or tonumber(p.src.est) and Grey(("~%d/10"):format(p.src.est)) or "")
       tile.info:SetText(Grey(("%s %d%s"):format(TypeLabel(p.src), p.src.req or 1,
         p.src.skin and (", " .. p.src.skin .. "% bare") or "")))
       tile.selected:SetShown(p.id == state.reviewSel)
@@ -1403,7 +1419,7 @@ local function CreateFilterDropdown()
     root:CreateCheckbox("Show cropped pieces", ns.ShowCropped, function()
       ns.SetShowCropped(not ns.ShowCropped())
     end)
-    -- easy, common gear: green world drops up to level 30
+    -- easy, common gear: the most common share of the list by drop data (options slider)
     root:CreateCheckbox("Show easy, common pieces", ns.ShowCommon, function()
       ns.SetShowCommon(not ns.ShowCommon())
     end)
