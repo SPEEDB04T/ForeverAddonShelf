@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.15.1
+
+- **Slutmog post uses your Slutmog Shop prices.** A piece you priced in Slutmog Shop now opens at that
+  price. Pieces without a shop price still start 1 silver under the lowest other listing. The window
+  still shows the other listings, so you can compare.
+
 ## 1.15.0
 
 Post your slutmog pieces from your bags without setting each one up in the Sell tab.

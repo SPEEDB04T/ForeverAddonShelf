@@ -2336,11 +2336,47 @@ function ns.PostablePieces()
   return out
 end
 
--- The game's own default price (Blizzard_AuctionHouseSellFrame): 1 silver under
--- the lowest listing. With none listed by others: your own listing, then what you
--- asked last time, then the game's fallback of 1.5x the vendor price.
-function ns.DefaultPostPrice(id, facts)
+-- The price you set for the piece in Slutmog Shop, read from its saved wares
+-- (SuccuDev, 2026-11-15: "why isnt it using the prices I have listed in my shop").
+-- A ware with the same item string as the bag copy wins over one with only the same ID.
+local function ItemString(link)
+  return type(link) == "string" and link:match("item:[%-%d:]+") or nil
+end
+
+function ns.ShopPrice(id, link)
+  local ok, price = pcall(function()
+    local shop = SlutmogShopDB
+    local wares = type(shop) == "table" and shop.wares
+    if type(wares) ~= "table" then
+      return nil
+    end
+    local want, found = ItemString(link), nil
+    for _, w in ipairs(wares) do
+      if type(w) == "table" and w.unpriced ~= true and Num(w.price) and w.price > 0 then
+        local wid = Num(w.id) or (type(w.link) == "string" and tonumber(w.link:match("item:(%d+)")))
+        if wid == id then
+          if want and ItemString(w.link) == want then
+            return w.price
+          end
+          found = found or w.price
+        end
+      end
+    end
+    return found
+  end)
+  return ok and price or nil
+end
+
+-- The price the popup starts at: your Slutmog Shop price; else the game's own
+-- default (Blizzard_AuctionHouseSellFrame), 1 silver under the lowest listing.
+-- With none listed by others: your own listing, then what you asked last time,
+-- then the game's fallback of 1.5x the vendor price.
+function ns.DefaultPostPrice(id, facts, link)
   local s = Silver()
+  local shop = ns.ShopPrice(id, link)
+  if shop then
+    return RoundPrice(shop), "your Slutmog Shop price"
+  end
   if facts and facts.low then
     return RoundPrice(facts.low - s), "1 silver under the lowest other listing (the game's own default)"
   end
@@ -2620,7 +2656,8 @@ ShowPostPopup = function()
   if post.last[e.id] then
     price, why = post.last[e.id], "what you gave the copy before"
   else
-    price, why = ns.DefaultPostPrice(e.id, f)
+    local info = SlotItem(e.bag, e.slot)
+    price, why = ns.DefaultPostPrice(e.id, f, info and Text(info, "hyperlink"))
   end
   local deposit
   local loc = SlotLocation(e.bag, e.slot)
