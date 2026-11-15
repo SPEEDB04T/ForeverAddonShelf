@@ -1,5 +1,25 @@
 # Changelog
 
+## 1.14.0
+
+The Market list gives you the facts to judge a piece by and stops telling you what to buy.
+
+- **No more buy calls.** "Buy up to", "worth buying", "not worth buying" and the for/against lists are
+  gone from the list, the tooltips, the chat and the buy popup. The Worth buying filter is gone too.
+- **New columns.** "x Vendor" shows the lowest price as a multiple of the vendor price (near 1x, little
+  can be lost). "Stock" shows how many are listed, with the usual number from your earlier scans in grey.
+  "Farm" shows about how long one copy takes to farm alone. The Look text and Mob lvl columns moved into
+  the tooltip, which gives the item name more room.
+- **New and cheaper.** A piece listed that wasn't listed in the scan before is marked "new"; one whose
+  price dropped is marked "cheaper". Filter > New or cheaper shows only those. After a scan, one chat line
+  names them.
+- **When to scan.** The line at the bottom says how old your prices are: green when fresh, with the minutes
+  until the next scan is worth it, gold when a scan is due, red when the prices are over 3 hours old.
+  Hover over Scan or Slutmog scan for the same. Opening the auction house with old prices reminds you once in chat
+  (it scans by itself instead if Options > Scan at the auction house is on).
+- **Shorter tooltip.** One block each for the look, the auction house (lowest, stock, the next listings,
+  your price range), the worth and vendor price, items with the same look, and where it drops.
+
 ## 1.13.1
 
 - **Rating column in the Market list.** Click its header to rank pieces by how good they look. It shows

@@ -777,6 +777,84 @@ function ns.Price(id)
   return info
 end
 
+-- What changed since the scan before: "new" when the last scan found a piece
+-- the scan before did not, "cheaper" when its lowest price dropped (second
+-- return: that earlier price). nil when it is not listed or nothing is known.
+function ns.Fresh(id)
+  local p = db.prices[id]
+  if not (p and (p.qty or 0) > 0) then
+    return nil
+  end
+  local was, now = Num(p.was), Num(p.min)
+  if not (was and now) then
+    return nil
+  end
+  if was == 0 then
+    return "new"
+  elseif now < was then
+    return "cheaper", was
+  end
+  return nil
+end
+
+-- The lowest and highest lowest-price of a piece over your scans, and how
+-- many scans listed it.
+function ns.PriceRange(id)
+  local p = db.prices[id]
+  local hist = type(p) == "table" and p.hist
+  if type(hist) ~= "table" then
+    return nil
+  end
+  local lo, hi, n = nil, nil, 0
+  for _, h in ipairs(hist) do
+    local v = type(h) == "table" and Num(h[2]) or nil
+    if v and v > 0 then
+      lo, hi, n = math.min(lo or v, v), math.max(hi or v, v), n + 1
+    end
+  end
+  return lo, hi, n
+end
+
+-- When to scan. Returns a level and a sentence for the window:
+-- "none" (never scanned), "fresh" (under 30 min), "due" (under 3 h) or "stale".
+ns.SCAN_FRESH, ns.SCAN_STALE = 30 * 60, 3 * 3600
+function ns.ScanAge()
+  local last = db and Num(db.lastScan)
+  return last and math.max(0, time() - last) or nil
+end
+
+local function AgeText(secs)
+  if secs < 90 then
+    return "just now"
+  elseif secs < 5400 then
+    return ("%d min ago"):format(math.floor(secs / 60))
+  elseif secs < 172800 then
+    return ("%d h ago"):format(math.floor(secs / 3600))
+  end
+  return ("%d days ago"):format(math.floor(secs / 86400))
+end
+ns.AgeText = AgeText
+
+function ns.ScanAdvice()
+  local age = ns.ScanAge()
+  local open = ns.AuctionHouseOpen and ns.AuctionHouseOpen()
+  if not age then
+    return "none", open and "No scan yet: click Scan." or "No scan yet: open the auction house to scan."
+  end
+  local found = Num(db.lastScanNew)
+  local news = found and found > 0 and (" It found %d new or cheaper %s."):format(found, found == 1 and "listing" or "listings") or ""
+  if age < ns.SCAN_FRESH then
+    local wait = math.max(1, math.ceil((ns.SCAN_FRESH - age) / 60))
+    return "fresh", ("Scanned %s.%s Next scan worth it in about %d min."):format(AgeText(age), news, wait)
+  end
+  local where = open and "click Scan" or "open the auction house to scan"
+  if age < ns.SCAN_STALE then
+    return "due", ("Scanned %s: time for another scan, %s.%s"):format(AgeText(age), where, news)
+  end
+  return "stale", ("Scanned %s: these prices are old, many listings are gone or new. %s."):format(AgeText(age),
+    open and "Click Scan" or "Open the auction house to scan")
+end
+
 -- Why a piece is hard to come by. The second return is true when at least one
 -- reason is strong; "only N listed now" alone is not, most pieces are scarce.
 function ns.Rarity(id, info)
@@ -1189,6 +1267,21 @@ local function EarlierQty(p)
   return n > 0 and sum / n or nil
 end
 
+-- Listed now, and the usual count in up to three earlier scans that listed it.
+function ns.Stock(id)
+  local p = db.prices[id]
+  if not p then
+    return nil
+  end
+  return Num(p.qty), EarlierQty(p)
+end
+
+-- The prices of the other single copies, cheapest first, read after the last
+-- scan (only for pieces with two or more listed). nil when not read.
+function ns.NextListings(id)
+  return LadderPrices(db.prices[id])
+end
+
 -- How slowly the piece comes back onto the market, 0 (anyone farms it in
 -- minutes) to 1. Higher mob level, blue or better, dungeon-only and a big pool
 -- of other drops at its level make it slower; more farm spots and drops you
@@ -1523,6 +1616,8 @@ local function Finish()
           db.prices[id] = p
         end
         p.hist = p.hist or {}
+        -- the lowest price of the scan before (0: not listed then), for ns.Fresh
+        p.was = (p.scans or 0) > 0 and ((p.qty or 0) > 0 and Num(p.min) or 0) or nil
         p.scans = (p.scans or 0) + 1
         p.t = now
         if f and f.min then
@@ -1542,6 +1637,13 @@ local function Finish()
     end
   end
   db.lastScan = now
+  local fresh = 0
+  for id in pairs(scan.ids) do
+    if items[id] and ns.Shown(items[id]) and ns.Fresh(id) then
+      fresh = fresh + 1
+    end
+  end
+  db.lastScanNew = fresh
   scan.active = false
   scan.pending = nil
   StopTicker()
@@ -1794,21 +1896,35 @@ local function LadderCandidates()
   return out
 end
 
+-- After a scan: the pieces listed new or cheaper than in the scan before,
+-- the best looks first.
 local function ReportDeals()
-  local buys = ns.BuyList()
-  if #buys == 0 then
+  local list = {}
+  for id, it in pairs(items) do
+    local kind, was = ns.Fresh(id)
+    if kind and ns.Shown(it) and ns.InLevelRange(it) then
+      local look = ns.LookScore(id, it)
+      list[#list + 1] = { id = id, it = it, kind = kind, was = was, look = look or 0 }
+    end
+  end
+  if #list == 0 then
     return
   end
+  table.sort(list, function(a, b)
+    if a.look ~= b.look then
+      return a.look > b.look
+    end
+    return a.id < b.id
+  end)
   local parts = {}
-  for i = 1, math.min(3, #buys) do
-    local b = buys[i]
-    local it = items[b.id]
-    parts[#parts + 1] = ("%s up to %s (resale %s, %s risk)"):format(it and it.name or ("item " .. b.id), ns.Money(b.upTo),
-      ns.Money(b.resale), b.risk)
+  for i = 1, math.min(3, #list) do
+    local f = list[i]
+    local p = db.prices[f.id]
+    parts[#parts + 1] = ("%s %s (%s)"):format(f.it.name or ("item " .. f.id), ns.Money(Num(p.min) or 0),
+      f.kind == "new" and "new" or ("was " .. ns.Money(f.was)))
   end
-  ns.Print(("%d %s worth buying: %s%s. The Market list's Filter > Worth buying lists %s, best first."):format(#buys,
-    #buys == 1 and "piece looks" or "pieces look", table.concat(parts, ", "),
-    #buys > 3 and (" and %d more"):format(#buys - 3) or "", #buys == 1 and "it" or "them"))
+  ns.Print(("%d new or cheaper since your last scan: %s%s. Filter > New or cheaper lists %s."):format(#list,
+    table.concat(parts, ", "), #list > 3 and (" and %d more"):format(#list - 3) or "", #list == 1 and "it" or "them"))
 end
 
 StopLadder = function(report)
@@ -1988,20 +2104,17 @@ function ns.StartPurchase(id)
   return true
 end
 
--- What the confirm popup says about the price, from the buy score.
+-- What the confirm popup says about the price: facts to judge it by.
 local function PurchaseNote(id, price)
   local info = ns.Price(id)
-  local b = info.low and ns.Buy(id, info)
-  if not b then
-    return nil
+  local parts = {}
+  if info.vendor and info.vendor > 0 then
+    parts[#parts + 1] = ("%.1fx its vendor price (%s)"):format(price / info.vendor, ns.Money(info.vendor))
   end
-  if b.buy then
-    if price <= b.upTo then
-      return ("Worth buying: pay at most %s (resale about %s)."):format(ns.Money(b.upTo), ns.Money(b.resale))
-    end
-    return ("|cffff2020More than the %s it is worth paying.|r"):format(ns.Money(b.upTo))
+  if info.fair then
+    parts[#parts + 1] = ("its slutmog worth is about %s"):format(ns.Money(info.fair))
   end
-  return b.stop and ("|cffff2020Not worth buying:|r %s."):format(b.stop) or nil
+  return #parts > 0 and (table.concat(parts, "; ") .. ".") or nil
 end
 
 local function ShowPurchasePopup(text)
@@ -2563,14 +2676,17 @@ local function OnTooltipItem(tooltip, data)
   if info.low then
     tooltip:AddDoubleLine("Lowest in your last scan", ns.Money(info.low) .. (" |c%s(%d listed in all)|r"):format(GreyHex(), info.qty or 0))
     local b = ns.Buy(id, info)
-    if b and b.buy then
-      tooltip:AddDoubleLine(("Worth buying up to %s (%s risk)"):format(ns.Money(b.upTo), b.risk), "resale " .. ns.Money(b.resale))
-    elseif b and b.stop then
-      local g = GRAY_FONT_COLOR
-      tooltip:AddLine("Not worth buying: " .. b.stop .. ".", g and g.r or 0.5, g and g.g or 0.5, g and g.b or 0.5, true)
-    end
     if b and b.cheaper and items[b.cheaper.id] then
       tooltip:AddDoubleLine("Same look, cheaper: " .. items[b.cheaper.id].name, ns.Money(b.cheaper.low))
+    end
+    local alt = type(it.alt) == "table" and it.alt or {}
+    local g = GRAY_FONT_COLOR
+    if (Num(alt.made) or 0) > 0 then
+      tooltip:AddLine(("A crafted item has this look (%s)."):format(it.altName or "made by a profession"),
+        g and g.r or 0.5, g and g.g or 0.5, g and g.b or 0.5, true)
+    elseif (Num(alt.plain) or 0) > 0 then
+      tooltip:AddLine(("A white or grey item has this look (%s)."):format(it.altName or "a plain item"),
+        g and g.r or 0.5, g and g.g or 0.5, g and g.b or 0.5, true)
     end
   elseif info.qty ~= nil then
     tooltip:AddLine("Not listed in your last scan.", 1, 1, 1)
@@ -2659,8 +2775,14 @@ frame:SetScript("OnEvent", function(_, event, arg1)
         return
       end
       ns.Fire("AH_SHOW")
-      if db.opts.autoScan and not scan.active and time() - (db.lastScan or 0) > 30 * 60 then
+      local age = ns.ScanAge()
+      local due = not age or age > ns.SCAN_FRESH
+      if db.opts.autoScan and not scan.active and due then
         ns.StartScan()
+      elseif due and not scan.active and time() - (ns.lastNudge or 0) > ns.SCAN_FRESH then
+        ns.lastNudge = time()
+        ns.Print((age and ("Last scan %s. "):format(AgeText(age)) or "No scan yet. ")
+          .. "Click Slutmog scan above the auction house for fresh prices (Options > Scan at the auction house does it by itself).")
       end
     end)
   elseif event == "AUCTION_HOUSE_CLOSED" then

@@ -85,19 +85,19 @@ local COLS = {
   { key = "low", label = "Lowest", width = 96, padL = 0, padR = 14, align = "RIGHT", numeric = true,
     tip = "Lowest price on the auction house in your last scan." },
   { key = "name", label = "Item", fill = true, padL = 10, align = "LEFT" },
-  { key = "type", label = "Type", width = 102, padL = 10, align = "LEFT" },
-  { key = "look", label = "Look", width = 160, padL = 10, align = "LEFT",
-    tip = "Measured from the item's texture: how much of the torso or legs it leaves bare." },
-  { key = "rating", label = "Rating", width = 62, padL = 10, align = "RIGHT", numeric = true,
-    tip = "How good it looks, 1-10: your own rating (or SuccuDev's) in colour, else the estimate the list ships with in grey (~7). Rate a piece in the Review tab. Click to sort the best looks first." },
-  { key = "value", label = "Worth", width = 94, padL = 10, align = "RIGHT", numeric = true,
-    tip = "What the piece should fetch as a slutmog: its vendor price times its look (your rating, else SuccuDev's, else the list's estimate, else its measured grade), its quality and its rarity. Auction prices are left out on purpose: at a launch they climb as players make gold. Grey when it is not listed right now." },
-  { key = "seen", label = "Seen %", width = 62, padL = 10, align = "RIGHT", numeric = true,
-    tip = "Share of your scans in which the piece was listed at all." },
-  { key = "mob", label = "Mob lvl", width = 66, padL = 10, align = "RIGHT", numeric = true,
-    tip = "Level of the mobs it is expected to drop from. A rule of thumb (required level to required level + 5), widened by drops you measured yourself." },
-  { key = "qty", label = "Available", width = 80, padL = 10, padR = 10, align = "RIGHT", numeric = true,
-    tip = "How many are on the auction house in your last scan." },
+  { key = "type", label = "Type", width = 96, padL = 10, align = "LEFT" },
+  { key = "rating", label = "Rating", width = 58, padL = 10, align = "RIGHT", numeric = true,
+    tip = "How good it looks, 1-10: your own rating (or SuccuDev's) in colour, else the estimate the list ships with in grey (~7). Rate a piece in the Review tab." },
+  { key = "value", label = "Worth", width = 90, padL = 10, align = "RIGHT", numeric = true,
+    tip = "An estimate of what it fetches as a slutmog: its vendor price times its look, quality and rarity. Auction prices are left out: at a launch they climb as players make gold. Grey when it is not listed right now." },
+  { key = "vendor", label = "x Vendor", width = 66, padL = 10, align = "RIGHT", numeric = true,
+    tip = "The lowest price as a multiple of the vendor price. A vendor always pays its vendor price, so near 1x little can be lost." },
+  { key = "qty", label = "Stock", width = 90, padL = 10, padR = 10, align = "RIGHT", numeric = true,
+    tip = "How many are listed now, with the usual number from your earlier scans in grey. Many more than usual: sellers are piling in. Fewer: some sold." },
+  { key = "seen", label = "Seen %", width = 54, padL = 10, align = "RIGHT", numeric = true,
+    tip = "Share of your scans in which the piece was listed at all. Low: it rarely comes up." },
+  { key = "farm", label = "Farm", width = 74, padL = 10, align = "RIGHT", numeric = true,
+    tip = "About how long one copy takes to farm alone, from the Classic loot tables and an assumed kill rate. Long: few copies reach the auction house. Grey: only the mob level is known." },
 }
 do
   local fixed = 0
@@ -123,7 +123,7 @@ for i, def in ipairs(TAB_DEFS) do
 end
 
 -- listedOnly starts on: the Market list shows what can be bought now
-local state = { tab = "market", armor = "all", listedOnly = true, buyOnly = false, sortKey = "value", sortAsc = false, farmItem = nil,
+local state = { tab = "market", armor = "all", listedOnly = true, freshOnly = false, sortKey = "value", sortAsc = false, farmItem = nil,
   reviewShow = "todo", reviewSel = nil, reviewIndex = 1, reviewPage = 1, female = true, wholeBody = false }
 local win, marketView, farmView, measuredView, reviewView, statusText, scanButton, farmHeader, farmClear, listedCheck, listedText
 local levelBox
@@ -210,89 +210,121 @@ function ns.FillItemTooltip(tip, id)
   local g1, g2, g3 = GOLD[1], GOLD[2], GOLD[3]
   local w1, w2, w3 = WHITE[1], WHITE[2], WHITE[3]
   local e1, e2, e3 = GREY[1], GREY[2], GREY[3]
+  local function pair(left, right)
+    tip:AddDoubleLine(left, right, g1, g2, g3, w1, w2, w3)
+  end
+  local function note(text)
+    tip:AddLine(text, e1, e2, e3, true)
+  end
   tip:AddLine(" ")
-  tip:AddLine("|cffff66aaSlutmog|r" .. ns.GradeLabel(it) .. ": " .. (it.look or "revealing"),
-    w1, w2, w3, true)
+  tip:AddLine("|cffff66aaSlutmog|r" .. ns.GradeLabel(it) .. ": " .. (it.look or "revealing"), w1, w2, w3, true)
+  local look, lookFrom = ns.LookScore(id, it)
+  if lookFrom == "rating" then
+    pair("Look", ("%d/10 (rated)"):format(look))
+  elseif lookFrom == "estimate" then
+    pair("Look", ("~%d/10 (estimate)"):format(look))
+    if it.estNote and it.estNote ~= "" then
+      note(it.estNote)
+    end
+  end
+
+  -- the auction house now
+  tip:AddLine(" ")
   if info.low then
-    tip:AddDoubleLine("Lowest in your last scan", ns.Money(info.low) .. " " .. Grey(("(%d listed in all)"):format(info.qty or 0)), g1, g2, g3, w1, w2, w3)
-  end
-  if info.fair then
-    tip:AddDoubleLine("Slutmog worth", ns.Money(info.fair, not info.low), g1, g2, g3, w1, w2, w3)
-    tip:AddLine(("%.1f times its vendor price (%s): %s. From %s, %s confidence."):format(info.times or 0, ns.Money(info.vendor or 0),
-      table.concat(info.worthWhy or {}, ", "), info.fairBasis or "?", info.sure or "low"), e1, e2, e3, true)
-    if info.low and info.vendor then
-      tip:AddDoubleLine("Price / vendor price", ("%.1f times"):format(info.low / info.vendor), g1, g2, g3, w1, w2, w3)
+    local qty, usual = ns.Stock(id)
+    pair("Lowest now", ns.Money(info.low))
+    pair("Listed now", tostring(qty or info.qty or 0) .. (usual and Grey((" (usually %d)"):format(math.floor(usual + 0.5))) or ""))
+    local kind, was = ns.Fresh(id)
+    if kind == "new" then
+      tip:AddLine("New since the scan before.", 0.25, 1, 0.25)
+    elseif kind == "cheaper" then
+      tip:AddLine("Cheaper than in the scan before (" .. ns.Money(was) .. ").", 0.25, 1, 0.25)
     end
+    local nextL = ns.NextListings(id)
+    if nextL and #nextL > 1 then
+      local parts = {}
+      for i = 2, math.min(4, #nextL) do
+        parts[#parts + 1] = ns.Money(nextL[i])
+      end
+      pair("Next listings", table.concat(parts, ", "))
+    end
+  elseif info.lastSeen then
+    pair("Last seen", Ago(info.lastSeen) .. " at " .. ns.Money(info.lastMin))
+  elseif info.qty then
+    note("Not listed in your scans.")
   else
-    tip:AddLine("No worth yet: the game has not given its vendor price.", e1, e2, e3)
+    note("Not scanned yet.")
   end
+  local lo, hi, n = ns.PriceRange(id)
+  if n and n >= 2 and info.scans then
+    pair("Your scans", ("%s to %s"):format(ns.Money(lo), ns.Money(hi)) .. Grey((", listed in %d of %d"):format(n, info.scans)))
+  elseif info.seenPct then
+    pair("Listed in", ("%d%% of your scans"):format(Pct(info.seenPct)))
+  end
+
+  -- worth and the floor
+  if info.fair then
+    pair("Slutmog worth (estimate)", ns.Money(info.fair, not info.low))
+    note(("%.1fx its vendor price: %s."):format(info.times or 0, table.concat(info.worthWhy or {}, ", ")))
+  end
+  if info.vendor and info.vendor > 0 then
+    pair("Vendor price", ns.Money(info.vendor) .. (info.low and Grey((" (lowest is %.1fx)"):format(info.low / info.vendor)) or ""))
+  end
+
+  -- other items with its look
+  local alt = type(it.alt) == "table" and it.alt or {}
   local b = info.low and ns.Buy(id, info) or nil
-  if b then
-    tip:AddLine(" ")
-    if b.buy then
-      tip:AddDoubleLine("Worth buying up to", ns.Money(b.upTo), g1, g2, g3, w1, w2, w3)
-      tip:AddLine(("Resale about %s; one earns about %s after the 5%% cut and the deposit. Risk: %s.%s"):format(
-        ns.Money(b.resale), ns.Money(math.floor(b.gain)), b.risk,
-        b.count > 1 and (" %d are listed at or under that price, %s in all."):format(b.count, ns.Money(b.cost)) or ""),
-        w1, w2, w3, true)
-    else
-      tip:AddLine("Not worth buying: " .. b.stop .. ".", w1, w2, w3, true)
-    end
-    if b.cheaper and ns.Items()[b.cheaper.id] then
-      tip:AddDoubleLine("Same look, cheaper: " .. ns.Items()[b.cheaper.id].name, ns.Money(b.cheaper.low), g1, g2, g3, w1, w2, w3)
-    end
-    if #b.pros > 0 then
-      tip:AddLine("For: " .. table.concat(b.pros, "; ") .. ".", e1, e2, e3, true)
-    end
-    if #b.cons > 0 then
-      tip:AddLine("Against: " .. table.concat(b.cons, "; ") .. ".", e1, e2, e3, true)
-    end
+  if b and b.cheaper and ns.Items()[b.cheaper.id] then
+    pair("Same look, cheaper", ns.Items()[b.cheaper.id].name .. " " .. ns.Money(b.cheaper.low))
   end
-  if info.seenPct then
-    tip:AddDoubleLine("Listed in", ("%d%% of your scans"):format(Pct(info.seenPct)), g1, g2, g3, w1, w2, w3)
+  if (tonumber(alt.made) or 0) > 0 then
+    note(("A crafted item has this look (%s)."):format(it.altName or "made by a profession"))
+  elseif (tonumber(alt.plain) or 0) > 0 then
+    note(("A white or grey item has this look (%s)."):format(it.altName or "a plain item"))
   end
-  if not info.low and info.lastSeen then
-    tip:AddDoubleLine("Last seen", Ago(info.lastSeen) .. " at " .. ns.Money(info.lastMin), g1, g2, g3, w1, w2, w3)
+  local boe, bop = tonumber(alt.boe) or 0, tonumber(alt.bop) or 0
+  local same = {}
+  if boe > 0 then
+    same[#same + 1] = ("%d other BoE %s"):format(boe, boe == 1 and "item" or "items")
   end
+  if bop > 0 then
+    same[#same + 1] = ("%d bind-on-pickup %s"):format(bop, bop == 1 and "item" or "items")
+  end
+  if #same > 0 then
+    note("Same look on " .. table.concat(same, " and ") .. ".")
+  elseif it.shared == 1 then
+    note("No other item has this look.")
+  end
+
+  -- where it comes from
   tip:AddLine(" ")
   if it.src == "fishing" then
     tip:AddLine(it.srcNote or "Fished up, not a mob drop.", w1, w2, w3, true)
   else
-    local spots = ns.SpotsForItem(id, 5)
-    local lo, hi, measured = ns.MobRange(it)
     local dropText = ns.DropText(it)
     if dropText then
       tip:AddLine(dropText .. ".", w1, w2, w3, true)
-      tip:AddLine("(" .. ns.DROP_SOURCE .. ")", g1, g2, g3, true)
-    end
-    if it.inst then
+    elseif it.inst then
       tip:AddLine("Drops in " .. it.inst .. " (dungeon).", w1, w2, w3, true)
-    elseif dropText then
-      tip:AddLine(("Other level %d-%d farm spots:"):format(lo, hi), w1, w2, w3, true)
-    elseif measured then
-      tip:AddLine(("Level %d-%d mobs (rule of thumb, widened by your own drops). Best level matches:"):format(lo, hi), w1, w2, w3, true)
     else
-      tip:AddLine(("Probably a world drop from about level %d-%d mobs (rule of thumb). Best level matches:"):format(lo, hi), w1, w2, w3, true)
-    end
-    for _, s in ipairs(spots) do
-      tip:AddDoubleLine("  " .. ns.SpotLabel(s.spot), ("%d-%d"):format(s.spot.lo, s.spot.hi), w1, w2, w3, e1, e2, e3)
+      local mlo, mhi = ns.MobRange(it)
+      local names = {}
+      for _, sp in ipairs(ns.SpotsForItem(id, 3)) do
+        names[#names + 1] = ns.SpotLabel(sp.spot)
+      end
+      tip:AddLine(("World drop from about level %d-%d mobs%s (rule of thumb)."):format(mlo, mhi,
+        #names > 0 and (", e.g. " .. table.concat(names, "; ")) or ""), w1, w2, w3, true)
     end
   end
   local drops = ns.Drops(id)
   if drops then
-    tip:AddLine(" ")
-    tip:AddLine("Dropped for you in:", g1, g2, g3)
+    local parts = {}
     for _, d in ipairs(SortedCounts(drops)) do
-      tip:AddDoubleLine("  " .. d.name, "x" .. d.n, w1, w2, w3, w1, w2, w3)
+      parts[#parts + 1] = ("%s x%d"):format(d.name, d.n)
     end
-    local seen = ns.db.dropLvl[id]
-    if type(seen) == "table" and seen.lo then
-      tip:AddLine(("  from level %d-%d mobs"):format(seen.lo, seen.hi), e1, e2, e3)
-    end
+    tip:AddLine("Dropped for you: " .. table.concat(parts, ", ") .. ".", w1, w2, w3, true)
   end
-  tip:AddLine(" ")
-  tip:AddLine("Click: where to farm it. Ctrl-click: try it on.", e1, e2, e3)
-  tip:AddLine("Shift-click: link in chat. Right-click: search the auction house.", e1, e2, e3)
+  note("Click: farm guide. Right-click: search the auction house. Ctrl-click: try on. Shift-click: link.")
 end
 
 local function ShowItemTooltip(owner, id)
@@ -501,20 +533,16 @@ for _, col in ipairs(COLS) do
   NUMERIC[col.key] = col.numeric
 end
 
--- The short note after a piece's name: what to pay for a buy, or that farming
--- it yourself is the cheaper way.
-local function BuyNote(b)
-  if not b then
-    return ""
+local FRESH_TEXT = { new = "|cff40ff40new|r", cheaper = "|cff40ff40cheaper|r" }
+
+-- Farm time of one copy, short: "40 min", "2.5 h", "87 h".
+local function ShortHours(h)
+  if h < 1 then
+    return ("%d min"):format(math.max(1, math.floor(h * 60 + 0.5)))
+  elseif h < 10 then
+    return (("%.1f h"):format(h):gsub("%.0 h", " h"))
   end
-  if b.buy then
-    return "  " .. Grey("buy up to") .. " " .. ns.Money(b.upTo)
-      .. Grey((b.count > 1 and (" x%d"):format(b.count) or "") .. (", %s risk"):format(b.risk))
-  end
-  if b.easyFarm then
-    return "  " .. Grey(("cheaper to farm: level %d-%d mobs"):format(b.easyFarm.lo, b.easyFarm.hi))
-  end
-  return ""
+  return ("%d h"):format(math.floor(h + 0.5))
 end
 
 -- Rows for the market list. Numeric columns use -1 for "no value"; those rows
@@ -524,26 +552,26 @@ local function MarketData()
   for id, it in pairs(ns.Items()) do
     local info = ArmorFilter(it) and ns.Price(id)
     if info and ns.Shown(it, info) then
-      local buy = info.low and ns.Buy(id, info) or nil
-      if (not state.listedOnly or info.low) and (not state.buyOnly or (buy and buy.buy)) then
+      local fresh = info.low and ns.Fresh(id) or nil
+      if (not state.listedOnly or info.low) and (not state.freshOnly or fresh) then
         local lo, hi = ns.MobRange(it)
         local look, lookFrom = ns.LookScore(id, it)
         local rated = lookFrom == "rating" or lookFrom == "estimate"
+        local _, usual = ns.Stock(id)
+        local hours = type(it.drop) == "table" and tonumber(it.drop.hours) or nil
         rows[#rows + 1] = {
-          rating = rated and look or -1, ratingFrom = lookFrom,
-          id = id, it = it, info = info, lo = lo, hi = hi, buy = buy,
-          name = it.name or "", type = TypeLabel(it), look = (it.grade and (it.grade .. ": ") or "") .. (it.look or ""),
+          rating = rated and look or -1, ratingFrom = lookFrom, fresh = fresh, usual = usual, hours = hours,
+          id = id, it = it, info = info, lo = lo, hi = hi,
+          name = it.name or "", type = TypeLabel(it),
           low = info.low or -1, qty = (info.qty and info.qty > 0) and info.qty or -1, value = info.value or -1,
-          seen = info.seenPct or -1, mob = (it.src == "fishing" or it.inst) and -1 or lo,
+          vendor = (info.low and info.vendor and info.vendor > 0) and info.low / info.vendor or -1,
+          seen = info.seenPct or -1, farm = hours or -1,
         }
       end
     end
   end
   local key, asc, numeric = state.sortKey, state.sortAsc, NUMERIC[state.sortKey]
   table.sort(rows, function(a, b)
-    if state.buyOnly and a.buy.score ~= b.buy.score then
-      return a.buy.score > b.buy.score -- the best buy first
-    end
     local av, bv = a[key], b[key]
     if numeric then
       local amiss, bmiss = av < 0, bv < 0
@@ -594,9 +622,8 @@ local function RefreshMarket()
     row.icon:SetTexture(ItemIcon(d.id))
     local c = row.cells
     c.name:SetText(ItemName(d.id, d.it) .. (d.it.custom and (" " .. Grey("*")) or "")
-      .. BuyNote(d.buy))
+      .. (d.fresh and ("  " .. FRESH_TEXT[d.fresh]) or ""))
     c.type:SetText(d.type)
-    c.look:SetText(d.look)
     if d.rating < 0 then
       c.rating:SetText("")
     elseif d.ratingFrom == "estimate" then
@@ -612,20 +639,30 @@ local function RefreshMarket()
     else
       c.low:SetText(Grey("?"))
     end
-    c.qty:SetText(d.info.qty and d.info.qty > 0 and d.info.qty or "")
+    if d.info.qty and d.info.qty > 0 then
+      c.qty:SetText(d.info.qty .. (d.usual and (" " .. Grey(("(%s)"):format(math.floor(d.usual + 0.5)))) or ""))
+    else
+      c.qty:SetText("")
+    end
+    c.vendor:SetText(d.vendor >= 0 and ("%.1fx"):format(d.vendor) or "")
     row.buyButton:SetShown(d.info.low ~= nil and ahOpen)
     -- grey: a remembered price for a piece that is not listed right now
     c.value:SetText(ns.Money(d.info.value, d.info.value ~= nil and not d.info.low))
     c.seen:SetText(d.info.seenPct and ("%d%%"):format(Pct(d.info.seenPct)) or "")
-    if d.it.src == "fishing" then
-      c.mob:SetText("fishing")
+    if d.hours then
+      c.farm:SetText(ShortHours(d.hours))
+    elseif d.it.src == "fishing" then
+      c.farm:SetText(Grey("fishing"))
     elseif d.it.inst then
-      c.mob:SetText("dungeon")
+      c.farm:SetText(Grey("dungeon"))
     else
-      c.mob:SetText(("%d-%d"):format(d.lo, d.hi))
+      c.farm:SetText(Grey(("lvl %d-%d"):format(d.lo, d.hi)))
     end
   end
-  if state.listedOnly and not state.buyOnly then
+  if state.freshOnly then
+    marketView.empty:SetText(ns.db.lastScan and "Nothing is new or cheaper than in the scan before. Untick Filter > New or cheaper to see every piece."
+      or "No scan yet. Open the auction house and scan.")
+  elseif state.listedOnly then
     marketView.empty:SetText(ns.db.lastScan and "None of these pieces was listed in your last scan. Scan again, or untick Filter > Listed now only to see every piece."
       or "No scan yet. Open the auction house and scan, or untick Filter > Listed now only to see every piece.")
   else
@@ -1173,6 +1210,26 @@ end
 -------------------------------------------------------------------------------
 -- Window
 -------------------------------------------------------------------------------
+-- the scan advice's colour: green when fresh, gold when due, red when stale
+local SCAN_HEX = { fresh = "ff40c040", due = "ffffd100", stale = "ffff5050", none = "ffffd100" }
+
+local function ScanTooltip(self)
+  GameTooltip:SetOwner(self, "ANCHOR_TOP")
+  GameTooltip:AddLine("Slutmog scan")
+  local level, advice = ns.ScanAdvice()
+  local r, g, b = 1, 0.82, 0
+  if level == "fresh" then
+    r, g, b = 0.25, 0.75, 0.25
+  elseif level == "stale" then
+    r, g, b = 1, 0.31, 0.31
+  end
+  GameTooltip:AddLine(advice, r, g, b, true)
+  GameTooltip:AddLine(ns.db.opts.autoScan and "Scans by itself when you open the auction house and the prices are over 30 min old."
+    or "Options > Scan at the auction house scans by itself when the prices are over 30 min old.", 1, 1, 1, true)
+  GameTooltip:Show()
+end
+ns.ScanTooltip = ScanTooltip
+
 local function UpdateStatus()
   if not win then
     return
@@ -1183,7 +1240,7 @@ local function UpdateStatus()
     scanButton:SetText("Scanning")
     scanButton:Disable()
   elseif ns.ladder and ns.ladder.active then
-    statusText:SetText(("Checking the other listings of possible buys... %d left"):format(#ns.ladder.queue + (ns.ladder.current and 1 or 0)))
+    statusText:SetText(("Reading the next listings of pieces with several copies... %d left"):format(#ns.ladder.queue + (ns.ladder.current and 1 or 0)))
     scanButton:SetText("Scan")
     scanButton:SetEnabled(ns.AuctionHouseOpen())
   elseif state.tab == "review" then
@@ -1198,9 +1255,9 @@ local function UpdateStatus()
       n = n + 1
     end
     local hidden = ns.CheckHidden()
-    statusText:SetText(("%d pieces tracked. Last scan: %s.%s%s"):format(n, Ago(ns.db.lastScan),
-      hidden > 0 and (" %d hidden by the game-build check (/smog verify)."):format(hidden) or "",
-      ns.AuctionHouseOpen() and "" or " Open the auction house to scan."))
+    local level, advice = ns.ScanAdvice()
+    statusText:SetText(("|c%s%s|r  %d pieces tracked.%s"):format(SCAN_HEX[level] or SCAN_HEX.due, advice, n,
+      hidden > 0 and (" %d hidden by the game-build check (/smog verify)."):format(hidden) or ""))
     scanButton:SetText("Scan")
     scanButton:SetEnabled(ns.AuctionHouseOpen())
   end
@@ -1347,7 +1404,7 @@ local function SelectTab(key)
 end
 
 local function FilterIsDefault()
-  return state.armor == "all" and state.listedOnly and not state.buyOnly and not ns.ShowCropped() and not ns.ShowCommon()
+  return state.armor == "all" and state.listedOnly and not state.freshOnly and not ns.ShowCropped() and not ns.ShowCommon()
     and state.reviewShow == "todo"
 end
 
@@ -1385,10 +1442,10 @@ local function CreateFilterDropdown()
         state.listedOnly = not state.listedOnly
         Refresh()
       end)
-      root:CreateCheckbox("Worth buying", function()
-        return state.buyOnly
+      root:CreateCheckbox("New or cheaper", function()
+        return state.freshOnly
       end, function()
-        state.buyOnly = not state.buyOnly
+        state.freshOnly = not state.freshOnly
         Refresh()
       end)
     end
@@ -1442,7 +1499,7 @@ local function CreateFilterDropdown()
     return nil
   end
   if pcall(dd.SetIsDefaultCallback, dd, FilterIsDefault) and pcall(dd.SetDefaultCallback, dd, function()
-    state.armor, state.listedOnly, state.buyOnly, state.reviewShow = "all", true, false, "todo"
+    state.armor, state.listedOnly, state.freshOnly, state.reviewShow = "all", true, false, "todo"
     if ns.ShowCropped() then
       ns.SetShowCropped(false)
     end
@@ -1486,9 +1543,9 @@ local function CreateFilterButtons(startX)
   dealsCheck:SetHitRectInsets(0, -100, 0, 0)
   dealsText = win:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
   dealsText:SetPoint("LEFT", dealsCheck, "RIGHT", 2, 0)
-  dealsText:SetText("Worth buying")
+  dealsText:SetText("New or cheaper")
   dealsCheck:SetScript("OnClick", function(self)
-    state.buyOnly = self:GetChecked() and true or false
+    state.freshOnly = self:GetChecked() and true or false
     Refresh()
   end)
   croppedCheck = CreateFrame("CheckButton", nil, win, "UICheckButtonTemplate")
@@ -2097,6 +2154,9 @@ local function CreateWindow()
     ns.StartScan()
   end)
   scanButton:SetPoint("RIGHT", win, "TOPRIGHT", -12, -49)
+  pcall(scanButton.SetMotionScriptsWhileDisabled, scanButton, true) -- the tooltip shows while the auction house is closed
+  scanButton:SetScript("OnEnter", ScanTooltip)
+  scanButton:SetScript("OnLeave", GameTooltip_Hide)
   filterButton = CreateFilterDropdown()
   if not filterButton then
     CreateFilterButtons(tabsX)
@@ -2249,12 +2309,7 @@ local function EnsureAuctionHouseButton()
     ns.Toggle(nil, true)
     ns.StartScan()
   end)
-  ahButton:SetScript("OnEnter", function(self)
-    GameTooltip:SetOwner(self, "ANCHOR_TOP")
-    GameTooltip:AddLine("Slutmog Scout")
-    GameTooltip:AddLine("Scan the auction house for revealing BoE drops and open the list.", 1, 1, 1, true)
-    GameTooltip:Show()
-  end)
+  ahButton:SetScript("OnEnter", ScanTooltip)
   ahButton:SetScript("OnLeave", GameTooltip_Hide)
 end
 
