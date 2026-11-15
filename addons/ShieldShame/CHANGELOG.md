@@ -1,5 +1,10 @@
 # Changelog
 
+## 1.2.1 (2026-11-15)
+
+- When the options window or minimap button is missing after an update, the message now says
+  a `/reload` brings them (on WoW Forever a reload loads new files), not a game restart.
+
 ## 1.2.0 (2026-11-15)
 
 - Per fight, not all time (SuccuDev: "theres no point to all time it should be per fight,

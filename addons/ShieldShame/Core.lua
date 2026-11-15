@@ -18,7 +18,7 @@ local ADDON, ns = ...
 
 local floor, max, min = math.floor, math.max, math.min
 
-ns.VERSION = "1.2.0"
+ns.VERSION = "1.2.1"
 
 ----------------------------------------------------------------------
 -- The shields on WoW Forever (talentsforever.com data.json, beta client 1.60.1.70755,
@@ -917,7 +917,7 @@ ns.QueueRefresh = QueueRefresh
 ----------------------------------------------------------------------
 local function HasKit()
     if ns.Kit and ns.Options and ns.Options.Ready and ns.Options.Ready() then return true end
-    ns.Print("the options window and the minimap button appear after you restart the game once.")
+    ns.Print("the options window and the minimap button appear after a /reload.")
     return false
 end
 

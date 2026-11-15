@@ -120,7 +120,7 @@ local function MakeButton()
     b:SetScript("OnLeave", function() GameTooltip:Hide() end)
     b:SetScript("OnClick", function(_, mouseButton)
         if mouseButton == "RightButton" then
-            if HasKit() then ns.Kit.Open() else ns.Print("the options window appears after you restart the game once.") end
+            if HasKit() then ns.Kit.Open() else ns.Print("the options window appears after a /reload.") end
         else
             ns.PrintSummary()
         end
