@@ -57,7 +57,7 @@ local function Rows()
               .. "when the player is missing health. Same as /fdots hpfull.",
           get = Get("hpAlways"), set = Set("hpAlways") },
         { kind = "choice", label = "Names",
-          tip = "A small name above each dot, in the nameplate's own name font. "
+          tip = "A name above each dot, outlined, in a lighter tint of the class colour. "
               .. "In a battleground, Your target keeps the screen clearer. Same as /fdots names.",
           options = {
               { "off", "Off" },
@@ -65,6 +65,9 @@ local function Rows()
               { "all", "Everyone" },
           },
           get = Get("names"), set = Set("names") },
+        { kind = "slider", label = "Name size", min = 8, max = 20, step = 1, format = "%d",
+          tip = "Size of the names above the dots (12 by default). Same as /fdots namesize.",
+          get = Get("nameSize"), set = Set("nameSize") },
 
         { kind = "header", text = "Nameplates" },
         { kind = "check", label = "Click through hidden plates",

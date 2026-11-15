@@ -15,6 +15,7 @@
     /fdots hp bar|fill|off
     /fdots hpfull     -> keep the health line visible at full health
     /fdots names off|target|all
+    /fdots namesize <8-20>
     /fdots where all|pvp -> everywhere, or only in battlegrounds and arenas
     /fdots group      -> highlight your own party (bigger dot, drawn on top) on / off
     /fdots npcs       -> also turn friendly NPCs and pets into small green dots
@@ -39,7 +40,9 @@ local PLATES_CVAR = "nameplateShowFriendlyPlayers"
 -- the way the world map does it (GroupMembersDataProvider): by size only.
 local BAR_ATLAS    = "UI-HUD-CoolDownManager-Bar"               -- the nameplate's health bar
 local BAR_TEXTURE  = "Interface\\TargetingFrame\\UI-StatusBar"  -- fallback if the atlas is missing
-local NAME_FONT    = "SystemFont_NamePlate_Outlined"            -- the nameplate's name font
+local NAME_FONT    = "SystemFont_NamePlate_Outlined"            -- the nameplate's name font (face only)
+local NAME_FACE    = "Fonts\\FRIZQT__.TTF"                      -- its face, if the font object is missing
+local NAME_LIGHTEN = 0.35     -- names: class colour moved a third of the way to white, so dark classes read
 local BORDER_ALPHA = 0.8      -- NamePlateFriendlyFrameOptions.defaultBorderColor (black, 0.8)
 local NAME_GAP     = 4        -- the 2 px target border + the game's 2 px name spacing
 local MARKER_SIZE  = 22       -- the game's RaidTargetFrame size
@@ -67,6 +70,7 @@ local DEFAULTS = {
     hp           = "bar",   -- "bar" (line under the dot) | "fill" (the dot drains) | "off"
     hpAlways     = false,   -- false: the line only shows when health is missing
     names        = "all",   -- "off" | "target" | "all"
+    nameSize     = 12,      -- name text size (the nameplate's own is 9, too small to read)
     where        = "all",   -- "all" | "pvp" (battlegrounds and arenas only)
     groupRing    = true,
     combatPlates = false,   -- friendly player nameplates only while you are in combat
@@ -324,6 +328,27 @@ local function SetPad(tex, anchor, pad)
     tex:SetPoint("BOTTOMRIGHT", anchor, "BOTTOMRIGHT", pad, -pad)
 end
 
+-- Names: the nameplate's own face, larger (db.nameSize), outlined and with a
+-- shadow, so they read over bright and dark ground alike.
+local function NameFace()
+    local fo = _G[NAME_FONT]
+    local face = fo and fo.GetFont and fo:GetFont()
+    return type(face) == "string" and face ~= "" and face or NAME_FACE
+end
+
+local function SetNameFont(fs)
+    local size = max(8, min(20, (db and db.nameSize) or 12))
+    if not fs:SetFont(NameFace(), size, "OUTLINE") then
+        fs:SetFont(NAME_FACE, size, "OUTLINE")
+    end
+    fs:SetShadowColor(0, 0, 0, 1)
+    fs:SetShadowOffset(1, -1)
+end
+
+local function NameColor(r, g, b)
+    return r + (1 - r) * NAME_LIGHTEN, g + (1 - g) * NAME_LIGHTEN, b + (1 - b) * NAME_LIGHTEN
+end
+
 local function CreateWidget(plate, sample)   -- sample: a preview dot, not tied to a nameplate
     local w = CreateFrame("Frame", nil, plate)
     w.plate = plate
@@ -377,13 +402,8 @@ local function CreateWidget(plate, sample)   -- sample: a preview dot, not tied 
     bar:SetFrameLevel((hp:GetFrameLevel() or 0) + 1)
     w.hp, w.hpBar = hp, bar
 
-    -- The nameplate's own name font (outlined), falling back to a game font.
     local name = w:CreateFontString(nil, "OVERLAY")
-    if not pcall(name.SetFontObject, name, NAME_FONT) or not name:GetFont() then
-        name:SetFontObject("GameFontHighlightSmall")
-        local font, fontSize = name:GetFont()
-        if font and fontSize then name:SetFont(font, fontSize, "OUTLINE") end
-    end
+    SetNameFont(name)
     name:SetPoint("BOTTOM", w, "TOP", 0, NAME_GAP)
     name:Hide()
     w.name = name
@@ -535,9 +555,10 @@ local function Paint(w, r, g, b, size, atlas, mode, showName)
     end
 
     if showName then
+        SetNameFont(w.name)                       -- follows the Name size setting
         w.name:ClearAllPoints()
         w.name:SetPoint("BOTTOM", w, "TOP", 0, NAME_GAP)
-        w.name:SetTextColor(r, g, b)
+        w.name:SetTextColor(NameColor(r, g, b))
         w.name:SetAlpha(1)
         w.name:Show()
     else
@@ -1062,7 +1083,7 @@ local function PrintStatus()
     print(PREFIX .. (db.enabled and "on" or "OFF") .. "  |  style " .. db.style
         .. " (dot " .. db.dotSize .. ", icon " .. db.iconSize .. ")"
         .. "  |  hp " .. db.hp .. (hpBroken and " (off after errors)" or (db.hpAlways and ", always shown" or ", only when hurt"))
-        .. "  |  names " .. db.names
+        .. "  |  names " .. db.names .. " (size " .. db.nameSize .. ")"
         .. "  |  where " .. db.where
         .. "  |  party highlight " .. OnOff(db.groupRing)
         .. "  |  nameplates only in combat " .. OnOff(db.combatPlates)
@@ -1075,7 +1096,7 @@ local function PrintHelp()
     print(PREFIX .. "commands:")
     print("  /fdots style dot|icon   -  /fdots size <4-64>   -  /fdots y <-100..100>")
     print("  /fdots hp bar|fill|off   -  /fdots hpfull (show the health line at full health)")
-    print("  /fdots names off|target|all   -  /fdots where all|pvp (pvp = only battlegrounds and arenas)")
+    print("  /fdots names off|target|all   -  /fdots namesize <8-20>   -  /fdots where all|pvp (pvp = only battlegrounds and arenas)")
     print("  /fdots group (your own party: bigger dot, drawn on top)   -  /fdots npcs   -  /fdots click [on|off]")
     print("  /fdots plates (friendly player nameplates on/off)   -  /fdots combat (friendly nameplates only in combat)")
     print("  /fdots on|off   -  /fdots reset   -  /fdots debug   -  /fdots preview (one dot of each kind, for a minute)")
@@ -1226,6 +1247,11 @@ SlashCmdList.FRIENDDOTS = function(msg)
         if not n then print(PREFIX .. "/fdots size <4-64>  (sets the size of the current style)") return end
         n = floor(max(4, min(64, n)) + 0.5)
         if db.style == "icon" then db.iconSize = n else db.dotSize = n end
+
+    elseif cmd == "namesize" then
+        local n = tonumber(arg)
+        if not n then print(PREFIX .. "/fdots namesize <8-20>  (size of the names above the dots)") return end
+        db.nameSize = floor(max(8, min(20, n)) + 0.5)
 
     elseif cmd == "y" then
         local n = tonumber(arg)

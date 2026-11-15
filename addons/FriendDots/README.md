@@ -10,7 +10,7 @@ For WoW Forever (Interface 16001).
 
 - **Dot**: 12 px circle in the player's class colour with the nameplate's thin dark border.
 - **Health**: a 2 px line under the dot, drawn with the nameplate's own health bar in the player's class colour (friendly nameplates colour health by class). It only appears when the player is missing health. Dead and offline players are dimmed.
-- **Name**: a small name above each dot, in the nameplate's own outlined 9 px name font and the player's class colour. `/fdots names target` shows only your target's, `/fdots names off` none.
+- **Name**: a name above each dot, in the nameplate's own typeface at 12 (the game's 9 is hard to read), with an outline and a shadow so it reads over snow and dark ground alike. It is a lighter tint of the class colour, so dark classes (warlock, shaman) stay readable. `/fdots namesize <8-20>` or the Name size slider changes the size; `/fdots names target` shows only your target's name, `/fdots names off` none.
 - **Target**: the border of your target's dot turns white, as the game's nameplate border does. That dot is also drawn on top of its neighbours.
 - **Your party**: members of your own party get a bigger dot (by the same ratio the world map uses for party members) and are drawn on top of other dots, so you can pick them out of the rest of the team.
 - **Raid markers** (skull, star...) stay visible and sit above the dot.
@@ -34,6 +34,7 @@ For WoW Forever (Interface 16001).
 | `/fdots hp bar` / `fill` / `off` | Health as a line under the dot, as the dot itself draining, or not at all |
 | `/fdots hpfull` | Keep the health line visible at full health |
 | `/fdots names all` / `target` / `off` | Name above the dot: always (the default), only your target, or never |
+| `/fdots namesize <8-20>` | Size of the names (12 by default) |
 | `/fdots where all` / `pvp` | Dots everywhere, or only inside battlegrounds and arenas |
 | `/fdots group` | Highlight on members of your own party (bigger dot, drawn on top) on / off |
 | `/fdots npcs` | Also turn friendly NPCs and pets into smaller green dots |

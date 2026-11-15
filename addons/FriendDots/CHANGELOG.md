@@ -1,5 +1,14 @@
 # Changelog
 
+## 1.4.5
+
+Names you can read.
+
+- Bigger: 12 instead of the nameplate's 9, in the same typeface.
+- An outline and a dark shadow, so names read over snow, sand and dark ground.
+- A lighter tint of the class colour, so dark classes (warlock, shaman) stay readable. The dot keeps the full class colour.
+- New "Name size" slider in the options (8 to 20), and `/fdots namesize <8-20>`.
+
 ## 1.4.4
 
 - Names are on: a small name above each dot, in the nameplate's own 9 px outlined name font and the player's class colour. This update turns names on once for everyone who had the old default (off); `/fdots names target` or `off`, or the Names choice in the options, changes it, and that choice sticks.
