@@ -52,7 +52,7 @@ local SHORT = {
     noaddon = "no addon", offline = "offline", out = "", none = "",
 }
 
-local frame, title, count, note, benchHead, moreNote
+local frame, title, count, note, benchHead, moreNote, ignoredNote
 local button                    -- the Follow button
 local rows, benchRows = {}, {}
 local commands = {}
@@ -496,6 +496,11 @@ function UI.Create()
     moreNote:SetJustifyH("LEFT")
     moreNote:Hide()
 
+    ignoredNote = frame:CreateFontString(nil, "OVERLAY", "GameFontDisableSmall")
+    ignoredNote:SetJustifyH("LEFT")
+    ignoredNote:SetWordWrap(false)
+    ignoredNote:Hide()
+
     CommandButton("Call line", "Call line", "Sends this order to everyone in the group with the addon. The first player leads; each of the others gets a Follow button for the player ahead of them.",
         function() Line.Call() end)
     CommandButton("Regroup", "Regroup", "Nudges everyone who is off the line: they get a chat line naming whom to follow, and a sound.",
@@ -618,6 +623,16 @@ function UI.Refresh()
         top = top + ROW_H - 3
     else
         moreNote:Hide()
+    end
+    -- messages the addon could not match to anyone in the group: said quietly, details in /line status
+    if Line.ignoredTotal > 0 then
+        Place(ignoredNote, top + 4)
+        ignoredNote:SetText(("%d message%s from outside the group ignored (/line status)"):format(
+            Line.ignoredTotal, Line.ignoredTotal == 1 and "" or "s"))
+        ignoredNote:Show()
+        top = top + ROW_H
+    else
+        ignoredNote:Hide()
     end
 
     -- "Call line" lights up, the way the game marks a button it wants pressed,

@@ -7,7 +7,7 @@
 -- player passes that on, so everyone sees who is on the line.
 local ADDON, ns = ...
 local issecret = ns.issecret
-local Norm, FullUnitName, Qualified = ns.Norm, ns.FullUnitName, ns.Qualified
+local UnitKey, RealmAgrees = ns.UnitKey, ns.RealmAgrees
 
 local L = {}
 ns.Line = L
@@ -78,6 +78,40 @@ end
 local function SameName(a, b)
     if not a or not b then return false end
     return a == b or Short(a) == Short(b)
+end
+
+-- Which group member a name means: a message's sender ("First Last-CAMWOWUS1Realm9RPPvP"),
+-- a name inside a message, or a name the game reports. Found by the name the
+-- group's units give, keeping its space; the realm only chooses between players
+-- with the same name. Returns the member's key, or nil when nobody in the group has it.
+function L.Lookup(raw)
+    if issecret(raw) or type(raw) ~= "string" or raw == "" then return nil end
+    local members = L.members
+    if members[raw] then return raw end
+    local who, suffix = raw:match("^([^%-]+)%-(.+)$")
+    who = who or raw
+    local found, count = {}, 0
+    for key, m in pairs(members) do
+        if not m.demo and m.base == who then
+            count = count + 1
+            found[count] = key
+        end
+    end
+    if count == 1 then return found[1] end
+    if count == 0 then return nil end
+    -- several players with this name: the realm decides
+    local own = ns.OwnRealms()
+    for i = 1, count do
+        local m = members[found[i]]
+        if suffix and m.realm and RealmAgrees(suffix, m.realm) then return found[i] end
+        if not m.realm then
+            if not suffix then return found[i] end
+            for _, r in ipairs(own) do
+                if RealmAgrees(suffix, r) then return found[i] end
+            end
+        end
+    end
+    return nil
 end
 
 local function ClassOf(unit)
@@ -239,12 +273,38 @@ end
 -- "/line order ann bob": those names in that order first, everyone else already in the line behind them.
 function L.SetOrder(text)
     local order, seen = {}, {}
-    for word in tostring(text or ""):gmatch("[^%s,>]+") do
-        local name = Resolve(word)
-        if not name then return end
+    local function put(name)
         if not seen[name] then
             seen[name] = true
             order[#order + 1] = name
+        end
+    end
+    text = tostring(text or "")
+    if text:find("[,>]") then
+        -- "Ann Lee, Bob Ray > Cid Fox": names whole, spaces and all
+        for part in text:gmatch("[^,>]+") do
+            if part:find("%S") then
+                local name = Resolve(part)
+                if not name then return end
+                put(name)
+            end
+        end
+    else
+        -- "ann bob" or "ann lee bob ray": names are two words here, so two words
+        -- that make one name are taken together, otherwise one word
+        local words = {}
+        for w in text:gmatch("%S+") do words[#words + 1] = w end
+        local i = 1
+        while i <= #words do
+            local name = words[i + 1] and L.Find(words[i] .. " " .. words[i + 1])
+            if name then
+                i = i + 2
+            else
+                name = Resolve(words[i])
+                if not name then return end
+                i = i + 1
+            end
+            put(name)
         end
     end
     if #order == 0 then
@@ -325,8 +385,10 @@ function L.Recompute(quiet)
         L.target, L.place = nil, nil
     else
         local order, index = {}, {}
-        for _, name in ipairs(line.raw) do
-            if L.members[name] and not index[name] then
+        for _, raw in ipairs(line.raw) do
+            -- a name from a message is matched again each time: its player may join later
+            local name = L.Lookup(raw)
+            if name and not index[name] then
                 order[#order + 1] = name
                 index[name] = #order
             end
@@ -392,12 +454,13 @@ function L.Rebuild()
     local old = L.members
     local members, roster = {}, {}
 
-    local function add(name, unit, class, rank)
-        name = Norm(name)
+    -- keyed by the unit's own name as the roster gives it
+    local function add(unit, class, rank)
+        local name, base, realm = UnitKey(unit)
         if not name or members[name] then return end
         local m = old[name]
         if not m or m.demo then m = { name = name } end
-        m.unit = unit
+        m.unit, m.base, m.realm = unit, base, realm
         if type(class) == "string" then m.class = class end
         if rank ~= nil then m.rank = rank end
         m.isPlayer = (name == ns.playerName)
@@ -408,21 +471,22 @@ function L.Rebuild()
     local grouped = (IsInGroup and IsInGroup()) and true or false
     if grouped and InRaid() then
         for i = 1, GetNumGroupMembers() do
-            local ok, name, rank, _, _, _, class = pcall(GetRaidRosterInfo, i)
-            if ok and not issecret(name) and not issecret(rank) and not issecret(class) then
-                add(name, "raid" .. i, class, type(rank) == "number" and rank or nil)
+            local ok, _, rank, _, _, _, class = pcall(GetRaidRosterInfo, i)
+            if ok then
+                if issecret(rank) then rank = nil end
+                if issecret(class) then class = nil end
+                add("raid" .. i, class, type(rank) == "number" and rank or nil)
             end
         end
     elseif grouped then
-        add(ns.playerName, "player", ns.playerClass, LeaderRank("player"))
+        add("player", ns.playerClass, LeaderRank("player"))
         for i = 1, 4 do
             local unit = "party" .. i
-            local name = FullUnitName(unit)
-            if name then add(name, unit, ClassOf(unit), LeaderRank(unit)) end
+            add(unit, ClassOf(unit), LeaderRank(unit))
         end
     end
     if ns.playerName and not members[ns.playerName] then
-        add(ns.playerName, "player", ns.playerClass, LeaderRank("player"))
+        add("player", ns.playerClass, LeaderRank("player"))
     end
 
     if L.demo then
@@ -528,7 +592,62 @@ end
 -- the last message (cleared by the next one that goes out).
 local refused
 function L.CommsProblem()
-    return L.CommsBlocked() or refused
+    local p = L.CommsBlocked() or refused
+    if L.ignoredTotal > 0 then
+        local note = ("%d message%s ignored from players not found in the group"):format(
+            L.ignoredTotal, L.ignoredTotal == 1 and "" or "s")
+        p = p and (p .. "; " .. note) or note
+    end
+    return p
+end
+
+-- The last 40 messages in and out, kept in the saved settings (written at /reload
+-- and logout), so what really happened in the game can be read afterwards.
+local LOG_SIZE = 40
+function L.LogComm(dir, channel, sender, unit, result, msg)
+    local db = ns.db
+    if not db then return end
+    if type(db.commLog) ~= "table" then db.commLog = {} end
+    local log = db.commLog
+    local entry = {
+        t = ServerTime(),
+        dir = dir,
+        ch = (not issecret(channel)) and tostring(channel or "") or "hidden",
+        from = sender,
+        unit = unit,
+        res = (result ~= nil and not issecret(result)) and tostring(result) or nil,
+        msg = type(msg) == "string" and msg:sub(1, 40) or nil,
+    }
+    log[#log + 1] = entry
+    while #log > LOG_SIZE do table.remove(log, 1) end
+end
+
+-- Messages from someone the addon could not find in the group: counted and shown, not lost.
+L.ignored = {}          -- [sender] = { n, why }
+L.ignoredTotal = 0
+local function Ignore(sender, why)
+    local e = L.ignored[sender]
+    if not e then
+        e = { n = 0 }
+        L.ignored[sender] = e
+    end
+    e.n, e.why = e.n + 1, why
+    L.ignoredTotal = L.ignoredTotal + 1
+    ns.dirty = true
+end
+
+-- "3 messages from X ignored: not found in the group", the most frequent first; nil when none.
+function L.IgnoredNotes()
+    local list = {}
+    for sender, e in pairs(L.ignored) do list[#list + 1] = { sender = sender, n = e.n, why = e.why } end
+    if #list == 0 then return nil end
+    table.sort(list, function(a, b) return a.n > b.n end)
+    local out = {}
+    for i, e in ipairs(list) do
+        if i > 5 then break end
+        out[#out + 1] = ("%d message%s from %s ignored: %s"):format(e.n, e.n == 1 and "" or "s", e.sender, e.why)
+    end
+    return out
 end
 
 local function Enqueue(msg)
@@ -547,7 +666,7 @@ local function EnqueueLine()
     if not line then return end
     local chunks, cur = {}, ""
     for _, name in ipairs(line.order) do
-        local q = Qualified(name)
+        local q = name      -- as the roster gives it: the realm only when the game gives one
         if cur ~= "" and #cur + 1 + #q > 200 then
             chunks[#chunks + 1] = cur
             cur = q
@@ -583,6 +702,7 @@ local function Flush(now)
             return
         end
         local ok, result = pcall(C_ChatInfo.SendAddonMessage, PREFIX, msg, channel)
+        L.LogComm("out", channel, ns.playerName, "player", ok and (result == nil and "nil" or result) or "error", msg)
         if not ok then
             -- the game rejects this very message: after a few tries give up on it,
             -- so everything behind it is not stuck for good
@@ -636,7 +756,7 @@ function L.OnFollowBegin(name)
     if issecret(name) or type(name) ~= "string" or name == "" then
         L.following = L.target or "?"       -- the game won't say who: take it to be the line
     else
-        L.following = Norm(name) or "?"
+        L.following = L.Lookup(name) or name
     end
     if L.directAt and GetTime() - L.directAt < 2 then L.directWorks = true end
     if L.OnLine() then
@@ -796,12 +916,23 @@ local function TellPlace(by)
 end
 
 function L.OnAddonMessage(prefix, text, channel, sender)
-    if issecret(prefix) or issecret(text) or issecret(sender) then return end
-    if prefix ~= PREFIX or type(text) ~= "string" then return end
-    local from = Norm(sender)
-    if not from or from == ns.playerName then return end
-    local m = L.members[from]
-    if not m or m.demo then return end      -- only people in the group are listened to
+    if issecret(prefix) or prefix ~= PREFIX then return end
+    local hidden = issecret(sender) or type(sender) ~= "string"
+    local from = (not hidden) and L.Lookup(sender) or nil
+    local m = from and L.members[from]
+    local readable = not issecret(text) and type(text) == "string"
+    L.LogComm("in", channel, hidden and "hidden" or sender, m and (m.isPlayer and "player" or m.unit) or "nobody",
+        nil, readable and text or "hidden")
+    if m and m.isPlayer then return end     -- our own message coming back
+    if not m or m.demo then
+        -- only people in the group are listened to, but nothing is dropped without a trace
+        Ignore(hidden and "a hidden sender" or sender, hidden and "the game hid who sent it" or "not found in the group")
+        return
+    end
+    if not readable then
+        Ignore(from, "the game hid the message")
+        return
+    end
     local f = Split(text, ";")
     local kind = f[1]
     if kind == "S" then
@@ -850,7 +981,7 @@ function L.OnAddonMessage(prefix, text, channel, sender)
         local raw, seen = {}, {}
         for i = 1, parts do
             for _, word in ipairs(Split(p.got[i], ",")) do
-                local name = (#word <= 80 and not word:find("[|%c]")) and Norm(word) or nil
+                local name = (#word <= 80 and word ~= "" and not word:find("[|%c]")) and (L.Lookup(word) or word) or nil
                 if name and not seen[name] and #raw < MAX_LINE then
                     seen[name] = true
                     raw[#raw + 1] = name
@@ -960,6 +1091,10 @@ function L.PrintStatus()
         if not (line and line.index[name]) then bench[#bench + 1] = name end
     end
     if line and #bench > 0 then ns.Print("  not in the line: " .. table.concat(bench, ", ")) end
+    local notes = L.IgnoredNotes()
+    if notes then
+        for _, note in ipairs(notes) do ns.Print("  " .. note .. ".") end
+    end
     if L.target then
         ns.Print(("you follow %s%s."):format(L.target, L.OnLine() and "" or " (not following right now)"))
     end

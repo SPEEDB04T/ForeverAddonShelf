@@ -1,5 +1,13 @@
 # Changelog
 
+## 1.1.2
+
+- Fixed: players' copies of the addon probably never heard each other, so a called line never arrived and nobody got a Follow button. The server writes the realm in a message's sender differently from how the game names it ("First Last-CAMWOWUS1Realm9RPPvP" against "RPPvP"), and every message whose sender didn't match was thrown away without a word. Players are now found by their name as the group shows it, space included; the realm only decides between two players with the same name.
+- Names inside a called line are matched the same way when they arrive.
+- Messages from someone the addon can't find in the group are counted: the window says how many, and `/line status` says from whom and why.
+- The last 40 messages in and out are kept in the saved settings, to see afterwards what really happened.
+- `/line order` takes full names: `/line order Ann Lee, Bob Ray` (first names alone still work).
+
 ## 1.1.1
 
 - Calling a line now says what it did: the one who leads gets no Follow button (the players behind them do), how many players got one, and which players have no Follow Line and need **Announce**.

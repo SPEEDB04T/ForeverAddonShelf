@@ -54,30 +54,45 @@ end
 ----------------------------------------------------------------------
 -- Names
 ----------------------------------------------------------------------
--- The short form the game uses in this group: "Name" on the player's realm, "Name-Realm" elsewhere.
-function ns.Norm(name)
-    if issecret(name) or type(name) ~= "string" or name == "" then return nil end
-    if Ambiguate then
-        local ok, short = pcall(Ambiguate, name, "none")
-        if ok and type(short) == "string" and not issecret(short) and short ~= "" then name = short end
-    end
-    return name
-end
+-- Character names on this client are often two words ("First Last"), and the
+-- realm is spelled two ways at once: GetNormalizedRealmName() says "RPPvP" while
+-- the server writes message senders as "First Last-CAMWOWUS1Realm9RPPvP". So a
+-- name is never cut at a space, and players are found by the name the group's
+-- units give (Line.Lookup), with the realm only to choose between equal names.
 
-function ns.FullUnitName(unit)
+-- A group unit's name as the roster gives it: "First Last", or "First Last-Realm"
+-- when the game gives a realm (another realm). Also the bare name and the realm.
+function ns.UnitKey(unit)
     local ok, name, realm = pcall(UnitName, unit)
     if not ok or issecret(name) or issecret(realm) or type(name) ~= "string" or name == "" then return nil end
-    -- the realm the way addon messages spell it ("Name-RealmName"), without spaces
-    if type(realm) == "string" and realm ~= "" then name = name .. "-" .. realm:gsub("[%s%-]", "") end
-    return ns.Norm(name)
+    if type(realm) ~= "string" or realm == "" then realm = nil end
+    return realm and (name .. "-" .. realm) or name, name, realm
 end
 
--- Names go out with their realm so players from another realm read them right.
-function ns.Qualified(name)
-    if name:find("-", 1, true) or not GetNormalizedRealmName then return name end
-    local ok, realm = pcall(GetNormalizedRealmName)
-    if ok and type(realm) == "string" and realm ~= "" and not issecret(realm) then return name .. "-" .. realm end
-    return name
+-- "Roleplay PvP", "RPPvP" and "CAMWOWUS1Realm9RPPvP" squeezed to compare them.
+function ns.Squeeze(s)
+    if type(s) ~= "string" or issecret(s) then return "" end
+    return (s:lower():gsub("[^%w]", ""))
+end
+
+-- Does a realm as a sender spells it agree with this one? Equal, or one ends or starts with the other.
+function ns.RealmAgrees(a, b)
+    a, b = ns.Squeeze(a), ns.Squeeze(b)
+    if a == "" or b == "" then return false end
+    if a == b then return true end
+    local long, short = a, b
+    if #short > #long then long, short = short, long end
+    return long:sub(-#short) == short or long:sub(1, #short) == short
+end
+
+-- The player's own realm, both spellings the client knows.
+function ns.OwnRealms()
+    local out = {}
+    for _, f in ipairs({ GetNormalizedRealmName, GetRealmName }) do
+        local ok, v = pcall(f)
+        if ok and type(v) == "string" and v ~= "" and not issecret(v) then out[#out + 1] = v end
+    end
+    return out
 end
 
 function ns.InCombat()
@@ -184,7 +199,8 @@ local function Init()
 
     local _, class = UnitClass("player")
     ns.playerClass = (not issecret(class)) and class or nil
-    ns.playerName = ns.FullUnitName("player") or UnitName("player")
+    ns.playerName = ns.UnitKey("player")
+    if type(ns.db.commLog) ~= "table" then ns.db.commLog = {} end
 
     -- each part on its own, so one failing does not take the others with it
     ns.Safe(ns.UI.Create)
@@ -220,8 +236,10 @@ end
 
 function ns.ResetSettings()
     local db = ns.db
+    local log = db.commLog      -- the message log is not a setting: it stays
     for k in pairs(db) do db[k] = nil end
     for k, v in pairs(defaults) do db[k] = v end
+    db.commLog = type(log) == "table" and log or {}
     ns.UI.ApplyLayout()
     if ns.Kit then ns.Kit.RefreshMinimap() end
     ns.Print("settings reset.")
@@ -239,7 +257,7 @@ local function Help()
     ns.Print("  /line call  - send the line as it is ordered in the window (also: /line go)")
     ns.Print("  /line stop  - end the line")
     ns.Print("  /line regroup  - nudge everyone who is off the line")
-    ns.Print("  /line order <names>  - set the order, the first name leads (the rest keep their places behind)")
+    ns.Print("  /line order <names>  - set the order, the first name leads (the rest keep their places behind); commas between full names")
     ns.Print("  /line head <name> | add <name> | remove <name> | reverse | distance")
     ns.Print("  /line announce  - post the order in group chat, for players without the addon")
     ns.Print("  /line who auto | leader | anyone  - whose line calls you take (now: " .. ns.db.who .. ")")

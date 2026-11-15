@@ -56,7 +56,9 @@ If a player leaves the group, the line closes up by itself: whoever was behind t
 | `/line demo` | four pretend players, to see how it looks without a group |
 | `/line reset` | every setting back to how it started |
 
-A name's first letters are enough wherever a player is named.
+A name's first letters are enough wherever a player is named. For `/line order`, put commas between full names (`/line order Ann Lee, Bob Ray`), or give first names only (`/line order ann bob`).
+
+`/line status` also lists messages the addon ignored because it could not find their sender in the group.
 
 ## Whose calls you take
 
