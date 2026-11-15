@@ -1,5 +1,10 @@
 # Changelog
 
+## 1.7.1
+
+- Fixed: "Don't be shy, show some thigh." and "Put the booty back in Booty Bay." could come up for a chest piece. They are legs-only now, and no ad that names a body area can come up for a piece it does not fit.
+- A set is one top and one bottom: two tops or two bottoms can no longer be paired, and the right-click menu only offers the other kind.
+
 ## 1.7.0
 
 - When it is time for another ad (the reminder), a small window opens in the middle of the screen: the next ad as it will read, the ware's icon (click to try it on), a big **Post ad** button and **Reroll**. **Not now** closes it and asks again after the reminder time. It waits for the end of a fight and stays away while the shop window is open. Options > "Show a Post button with the reminder" turns it off; `/slutshop prompt` shows it now.

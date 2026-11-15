@@ -48,8 +48,6 @@ ns.AD_POOLS = {
         "Bought one for his girlfriend's character. She's very popular in guild now.",
         "Going to sit on the Stormwind fountain all night anyway? Dress for it.",
         "Last buyer hasn't paid for a portal since.",
-        "Don't be shy, show some thigh.",
-        "Put the booty back in Booty Bay.",
         "This look will outlast your guild.",
         "Nefarian drops better stats. He doesn't drop a better look.",
         "Tier 2 covers too much anyway.",
@@ -85,6 +83,8 @@ ns.AD_POOLS = {
     legs = {
         "You look at your character from behind all day. Give yourself a view.",
         "Don't wear a robe over it. That's the good part.",
+        "Don't be shy, show some thigh.",
+        "Put the booty back in Booty Bay.",
     },
     chest = {
         "Take your tabard off. It's covering the good part.",

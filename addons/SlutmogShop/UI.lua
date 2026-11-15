@@ -221,7 +221,7 @@ local function WareMenu(row, i)
             local sub = root:CreateButton("Sell as a set with")
             local nested = type(sub) == "table" and type(sub.CreateButton) == "function"
             for j, other in ipairs(ns.db.wares) do
-                if j ~= i and other.link then
+                if j ~= i and other.link and ns.IsBottom(j) ~= ns.IsBottom(i) then    -- a top with a bottom
                     if nested then
                         sub:CreateButton(ns.WareName(other), function() ns.PairWares(i, j) end)
                     else

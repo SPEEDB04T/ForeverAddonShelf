@@ -15,7 +15,7 @@
 -- works too). A reminder in your own chat says when it is time for the next one.
 local ADDON, ns = ...
 
-ns.VERSION = "1.7.0"
+ns.VERSION = "1.7.1"
 ns.TITLE = "Slutmog Shop"
 ns.ICON = "Interface\\Icons\\INV_Misc_Coin_02"
 ns.ACCENT = { 0.96, 0.55, 0.78 }
@@ -434,6 +434,7 @@ local function IsBottom(w)
         for _, p in ipairs(e.pools) do
             if p == "legs" then return true end
         end
+        return false                -- a piece on the list: the list says what it is
     end
     local fn = (C_Item and C_Item.GetItemInfo) or GetItemInfo
     if type(fn) == "function" and w.link then
@@ -467,11 +468,17 @@ local function DropSets(key)
     end
 end
 
--- Wares i and j are sold as a set from now on. Whichever is the legs goes second.
+function ns.IsBottom(i)
+    local w = db.wares[i]
+    return w ~= nil and IsBottom(w)
+end
+
+-- Wares i and j are sold as a set from now on: one top and one bottom. The legs go second.
 function ns.PairWares(i, j)
     local a, b = db.wares[i], db.wares[j]
     if not (a and b and a.link and b.link) or i == j then return false end
-    if IsBottom(a) and not IsBottom(b) then a, b = b, a end
+    if IsBottom(a) == IsBottom(b) then return false end     -- a set is one top and one bottom
+    if IsBottom(a) then a, b = b, a end
     local ka, kb = WareKey(a.link), WareKey(b.link)
     if not (ka and kb) or ka == kb then return false end
     DropSets(ka)
@@ -1015,6 +1022,7 @@ end
 local function ComposeSetAd(wi, j, shop)
     local w, w2 = db.wares[wi], db.wares[j]
     if not (w and w2 and w.link and w2.link) or w.unpriced or w2.unpriced then return nil end
+    if IsBottom(w) or not IsBottom(w2) then return nil end  -- the set lines say "top and bottom"
     if db.stockOnly and not InStock(w2) then return nil end
     local where = ns.Where(w)
     if ns.Where(w2) ~= where or type(ns.SET_TAILS) ~= "table" then return nil end
