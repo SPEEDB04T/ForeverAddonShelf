@@ -1,5 +1,9 @@
 # Changelog
 
+## 1.10.3
+
+- Mailbox: somebody who only targets you gets a little tease now, the way a girl plays with someone looking at her on the street: "catches Bob looking and smiles.", "glances back at Bob over a shoulder.", "pretends not to see Bob, then winks.", "glances back at Bob. Twice." No sales talk, nothing more than that.
+
 ## 1.10.2
 
 - Mailbox: somebody who only targets you gets friendly shop talk now ("catches Bob window shopping.", "nods at Bob. Yes, it's for sale."), never the flirty lines. Those stay for people who kiss, wink, flirt or whisper first.

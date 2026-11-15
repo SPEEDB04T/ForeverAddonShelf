@@ -45,10 +45,13 @@ local WHISPER_REPLY = { nil, "WINK", "whisper" }
 -- The replies: custom emotes, shown in chat as "Smuttanie <line>". {name} is the other player.
 -- Every group but "look" also draws on "any".
 M.LINES = {
-    -- for somebody who only targeted you: friendly shop talk, nothing more (SuccuDev: "its too ERPY for people just targeting me")
-    look = { "notices {name} looking and lets them.", "catches {name} window shopping.", "nods at {name}. Yes, it's for sale.",
-             "waves {name} over to the mailbox.", "smiles at {name}. Everything here is for sale.",
-             "sees {name} checking out the outfit and points at the price tag." },
+    -- for somebody who only targeted you: slight, cute teasing, what a girl does on the street when she
+    -- catches someone looking (SuccuDev: "its too ERPY for people just targeting me", "still too eager. it needs
+    -- to be very slight, like winking and smiling etc", "think what a cute girl would do on the street to tease someone")
+    look = { "catches {name} looking and smiles.", "winks at {name}, then looks away.", "glances back at {name} over a shoulder.",
+             "catches {name}'s eye and bites back a smile.", "twirls a lock of hair and smiles at {name}.",
+             "pretends not to see {name}, then winks.", "giggles and looks away from {name}.",
+             "gives {name} a tiny wave.", "glances back at {name}. Twice." },
     kiss = { "catches {name}'s kiss and keeps it somewhere warm.", "blows {name} a kiss back. That one's on the house." },
     wink = { "winks back at {name}. Slower." },
     flirt = { "flirts back at {name}, then quotes a price.", "laughs at {name}'s line and lets them try another." },
