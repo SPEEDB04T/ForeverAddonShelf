@@ -72,9 +72,11 @@ local function Rows()
         { kind = "slider", label = "Target's level above yours", min = 0, max = 3, step = 1, format = "+%d",
           tip = "0 for monsters of your level, 3 for a raid boss. Higher targets are missed and resist more.",
           get = Get("targetLevelDiff"), set = SetCalc("targetLevelDiff") },
-        { kind = "check", label = "Windfury on the off hand can proc",
+        { kind = "check", label = "Off-hand Windfury can proc",
+          tip = "Windfury on the off-hand weapon can proc too. Turn it off if it never does for you.",
           get = Get("windfuryOffhandProcs"), set = SetCalc("windfuryOffhandProcs") },
-        { kind = "check", label = "Windfury on both hands shares one cooldown",
+        { kind = "check", label = "Windfury shares one cooldown",
+          tip = "Windfury on both hands shares one cooldown, so two Windfury weapons proc less than twice as often.",
           get = Get("windfurySharedCooldown"), set = SetCalc("windfurySharedCooldown") },
         { kind = "slider", label = "Rockbiter threat as a tank", min = 1, max = 4, step = 0.1, format = "x%.1f",
           tip = "How much more threat Rockbiter's damage is counted as in tank mode.",
@@ -84,7 +86,8 @@ local function Rows()
           get = Get("pvpSlowBonus"), set = SetCalc("pvpSlowBonus") },
 
         { kind = "header", text = "Warnings" },
-        { kind = "check", label = "Warn when a fight starts without an imbue",
+        { kind = "check", label = "Warn about a missing imbue",
+          tip = "Warns on screen when a fight starts and a weapon has no imbue.",
           get = Get("warnMissing"), set = Set("warnMissing") },
 
         { kind = "header", text = "Minimap" },

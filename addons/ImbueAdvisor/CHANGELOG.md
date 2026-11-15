@@ -1,3 +1,7 @@
+## 1.4.1
+- The options window and the minimap button are redrawn by the shared kit: they now copy the game's own Options rows and its round minimap button.
+- Three option names are shorter so each fits on one line; the rest of the sentence is in the option's tooltip.
+
 ## 1.4.0
 - The two hand buttons are now drawn like the game's own weapon-enchant icons next to your buffs: the icon with its enchant border and the time left in small text under it. Nothing is written on the icon any more.
 - What is on the weapon shows in that text: gold (white in the last 90 seconds) when the imbue is on, yellow when a different one is, "None" in red with a grey icon when the weapon has nothing. In the last 30 seconds the icon fades in and out, as the game does.
