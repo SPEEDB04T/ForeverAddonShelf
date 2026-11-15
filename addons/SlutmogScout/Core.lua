@@ -2625,11 +2625,11 @@ function ns.WipePrices()
   ns.Fire("SCAN")
 end
 
--- Kit.lua and Options.lua are new in 1.2.0. The game only finds new files after a full restart,
--- so right after an update a /reload runs this file without them: say so instead of erroring.
+-- Kit.lua and Options.lua are new in 1.2.0. If the addon was updated while the game ran and
+-- they are not loaded yet, say so instead of erroring. On WoW Forever a /reload loads new files.
 local function HasKit()
   if ns.Kit and ns.Options then return true end
-  ns.Print("The options window and the minimap button appear after you restart the game once (this update added new files, and /reload does not load those).")
+  ns.Print("The options window and the minimap button appear after a /reload (this update added new files).")
   return false
 end
 

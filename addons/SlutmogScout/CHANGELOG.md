@@ -1,5 +1,10 @@
 # Changelog
 
+## 1.11.1
+
+- When the options window or the minimap button is missing right after an update, the chat line now says
+  a /reload brings them (on WoW Forever a /reload loads an addon's new files). It said to restart the game.
+
 ## 1.11.0
 
 Rate every piece 1-10 in a big grid, and worth from the vendor price instead of auction prices.
