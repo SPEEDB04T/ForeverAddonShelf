@@ -6,7 +6,7 @@ Advertise your slutmog wares with one click. Each ad names your shop and the nex
 
 ## Ready-made ads
 
-Every piece on the slutmog list (the 148 items Slutmog Scout lists) comes with about 55 ready-made ads that wink at the player who wants their character to look hot. A ware in your bags and a ware on the auction house get different endings: open the auction house once and the shop knows which of your wares are up for sale, and at what buyout. Suggestive, never explicit. For example:
+Every piece on the slutmog list (the 148 items Slutmog Scout lists) comes with about 55 ready-made ads that wink at the player who wants their character to look hot. A ware in your bags and a ware on the auction house get different endings: open the auction house once and the shop knows which of your wares are up for sale, and at what buyout. With Slutmog Scout installed, a ware you have been undercut on is left out until you are the cheapest again. Suggestive, never explicit. For example:
 
 > Keep getting ganked, never getting camped? Give them a reason to stay. [Tyrant's Legplates], 10 gold pieces at Smuttanie's Necessities.
 
@@ -58,6 +58,7 @@ Openers and ad lines take turns, each used once before any repeats. If an ad is 
 | `/slutshop remove [item]` | stop selling it |
 | `/slutshop list` | your wares |
 | `/slutshop scan` | look through your bags for pieces from the slutmog list and put them on the shelf |
+| `/slutshop reroll` | another ad for the same ware |
 | `/slutshop ads [item]` | a piece's ready-made ads (without an item: which wares have them) |
 | `/slutshop channel Trade` | where ads go |
 | `/slutshop options` | the options |

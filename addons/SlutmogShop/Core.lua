@@ -15,7 +15,7 @@
 -- works too). A reminder in your own chat says when it is time for the next one.
 local ADDON, ns = ...
 
-ns.VERSION = "1.4.4"
+ns.VERSION = "1.5.0"
 ns.TITLE = "Slutmog Shop"
 ns.ICON = "Interface\\Icons\\INV_Misc_Coin_02"
 ns.ACCENT = { 0.96, 0.55, 0.78 }
@@ -398,9 +398,21 @@ function ns.Where(w)
     return "bags"
 end
 
+-- Undercut: someone else sells the piece for less than your buyout, so an ad would only send
+-- buyers to them. The shop does not search the auction house itself; Slutmog Scout does (its Sell
+-- tab) and tells other addons the lowest price it saw. Without Scout nothing counts as undercut.
+function ns.Undercut(id)
+    local a = ns.OnAH(id)
+    if not a or type(a.price) ~= "number" or a.price <= 0 then return false end
+    local api = SlutmogScoutAPI
+    if type(api) ~= "table" or type(api.MarketLow) ~= "function" then return false end
+    local ok, low = pcall(api.MarketLow, id)
+    return ok and Readable(low) and type(low) == "number" and low > 0 and low < a.price
+end
+
 local function InStock(w)
     local n = ns.Count(w)
-    return n == nil or n > 0 or (w ~= nil and ns.OnAH(w.id) ~= nil)
+    return n == nil or n > 0 or (w ~= nil and ns.OnAH(w.id) ~= nil and not ns.Undercut(w.id))
 end
 ns.InStock = InStock
 
@@ -1025,6 +1037,23 @@ local function Commit(p)
     plan, planWhy = nil, nil
 end
 
+-- Another ad for the same ware: the one shown is put aside (it comes round again later) and the
+-- ware keeps its turn.
+function ns.Reroll()
+    local p = ns.Next()
+    if not p then return false end
+    if p.kind == "item" then
+        DeckTake(p.deck, p.decks, p.ad)
+    else
+        DeckTake("lines", #db.lines, p.line)
+        if p.opener then DeckTake("openers", #db.openers, p.opener) end
+    end
+    if p.ware and db.order == "random" then db.feature = p.ware end
+    plan, planWhy = nil, nil
+    Changed()
+    return true
+end
+
 function ns.Skip()
     local p = ns.Next()
     if p then Commit(p) end
@@ -1170,6 +1199,7 @@ end
 
 -- Posts the next ad. Call it only from a click, a key press or a slash command.
 function ns.Post()
+    if ns.Recheck then ns.Recheck() end
     if not db then return false end
     local wait = ns.Wait()
     if wait > 0 then
@@ -1401,6 +1431,8 @@ local function Slash(msg)
         ToggleWindow()
     elseif cmd == "post" or cmd == "ad" then
         ns.Post()
+    elseif cmd == "reroll" then
+        if ns.Reroll() then ns.Preview() else Print("nothing to post: " .. tostring(select(2, ns.Next()))) end
     elseif cmd == "skip" or cmd == "next" then
         if ns.Skip() then ns.Preview() else Print("nothing to post: " .. tostring(select(2, ns.Next()))) end
     elseif cmd == "preview" or cmd == "test" then
@@ -1461,7 +1493,8 @@ local function Slash(msg)
         for i, w in ipairs(db.wares) do
             local n = ns.Count(w)
             local stock = n == nil and "" or (n > 0 and (" (" .. n .. " in stock)")
-                or (ns.OnAH(w.id) and " (on the auction house)" or " (none left)"))
+                or (ns.Undercut(w.id) and " (undercut on the auction house, not advertised)"
+                    or (ns.OnAH(w.id) and " (on the auction house)" or " (none left)")))
             if DEFAULT_CHAT_FRAME and DEFAULT_CHAT_FRAME.AddMessage then
                 DEFAULT_CHAT_FRAME:AddMessage(("  %d. %s %s%s"):format(i, w.link or ns.WareName(w),
                     w.unpriced and "no price yet" or ns.PriceText(w.price), stock))
@@ -1512,8 +1545,19 @@ function SlutmogShop_Toggle() ToggleWindow() end
 local stockSeen
 local function StockKey()
     local parts = {}
-    for i, w in ipairs(db.wares) do parts[i] = InStock(w) and ns.Where(w):sub(1, 1) or "0" end
+    for i, w in ipairs(db.wares) do parts[i] = InStock(w) and ns.Where(w):sub(1, 1) or (ns.Undercut(w.id) and "u" or "0") end
     return table.concat(parts)
+end
+
+-- Stock can change without an event of ours (Slutmog Scout reads a lower price: undercut), so
+-- the window asks now and then, and so does a post.
+function ns.Recheck()
+    if not db then return end
+    local now = StockKey()
+    if now ~= stockSeen then
+        stockSeen = now
+        Changed()
+    end
 end
 
 local events = CreateFrame("Frame")

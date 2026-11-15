@@ -309,7 +309,8 @@ local function SyncRows()
         r.icon:SetTexture(texture or EMPTY_SLOT)
         local n = ns.Count(w)
         local onAH = n ~= nil and n <= 0 and ns.OnAH(w.id) ~= nil
-        local out = n ~= nil and n <= 0 and not onAH
+        local under = onAH and ns.Undercut(w.id)
+        local out = n ~= nil and n <= 0 and (not onAH or under)
         if w.link then
             r.name:SetText(out and ns.WareName(w) or w.link)
         else
@@ -326,6 +327,9 @@ local function SyncRows()
         end
         if n == nil then
             r.stock:SetText("")
+        elseif under then
+            r.stock:SetText("Undercut on the AH")
+            r.stock:SetTextColor(Color(RED_FONT_COLOR, 1, 0.1, 0.1))
         elseif onAH then
             r.stock:SetText("On the auction house")
             r.stock:SetTextColor(wr, wg, wb)
@@ -401,9 +405,34 @@ end
 ---------------------------------------------------------------------------
 -- Preview and status
 ---------------------------------------------------------------------------
+local adLink          -- the ware the ad shown is about
+
 local function SyncPreview()
     local p, why = ns.Next()
     local text = frame.preview
+    local w = p and p.ware and ns.db.wares[p.ware]
+    adLink = w and w.link or nil
+    local item = frame.item
+    text:ClearAllPoints()
+    if adLink then
+        local _, _, quality, _, _, texture = ns.ItemInfo(adLink)
+        if not texture and C_Item and type(C_Item.GetItemIconByID) == "function" then
+            local ok, t = pcall(C_Item.GetItemIconByID, ns.ItemID(adLink))
+            if ok then texture = t end
+        end
+        if not (type(SetItemButtonTexture) == "function" and pcall(SetItemButtonTexture, item, texture or EMPTY_SLOT)) then
+            item.icon:SetTexture(texture or EMPTY_SLOT)
+        end
+        if type(SetItemButtonQuality) == "function" then pcall(SetItemButtonQuality, item, quality, adLink) end
+        if type(item.Count) == "table" and item.Count.Hide then item.Count:Hide() end
+        item:Show()
+        text:SetPoint("TOPLEFT", item, "TOPRIGHT", 8, 0)
+    else
+        item:Hide()
+        text:SetPoint("TOPLEFT", frame.previewBox, "TOPLEFT", 9, -8)
+    end
+    text:SetPoint("BOTTOMRIGHT", frame.previewBox, "BOTTOMRIGHT", -9, 8)
+    frame.reroll:SetEnabled(p ~= nil)
     if p then
         text:SetText(p.text)
         text:SetTextColor(Color(HIGHLIGHT_FONT_COLOR, 1, 1, 1))
@@ -426,6 +455,7 @@ end
 
 function UI.Tick()
     if not (frame and frame:IsShown() and ns.db) then return end
+    ns.Recheck()
     local wait = ns.Wait()
     local p = ns.Next()
     local chatType, why = ns.ResolveChannel(ns.db.channel)
@@ -660,12 +690,49 @@ local function BuildPreview(host)
     frame.channel = picker
     picker:SetPoint("LEFT", label, "RIGHT", 10, 0)
 
+    frame.reroll = Button(pv, "Reroll", 70)
+    frame.reroll:SetPoint("TOPRIGHT", pv, "TOPRIGHT", -6, -9)
+    frame.reroll:SetScript("OnClick", function()
+        Sound(SOUNDKIT and SOUNDKIT.IG_MAINMENU_OPTION_CHECKBOX_ON)
+        ns.Reroll()
+    end)
+    OnHover(frame.reroll, "Reroll", "Another ad for the same ware. The one shown is not voted on; it comes round again later.")
+
     frame.count = Text(pv, "GameFontHighlightSmall")
-    frame.count:SetPoint("TOPRIGHT", pv, "TOPRIGHT", -12, -15)
+    frame.count:SetPoint("RIGHT", frame.reroll, "LEFT", -8, 0)
 
     local box = FromTemplate("Frame", pv, "TooltipBackdropTemplate") or CreateFrame("Frame", nil, pv)
     box:SetPoint("TOPLEFT", pv, "TOPLEFT", 6, -36)
     box:SetPoint("BOTTOMRIGHT", pv, "BOTTOMRIGHT", -6, 6)
+    frame.previewBox = box
+    local item = FromTemplate("Button", box, "ItemButtonTemplate") or CreateFrame("Button", nil, box)
+    frame.item = item
+    item:SetSize(37, 37)
+    item:SetPoint("TOPLEFT", box, "TOPLEFT", 9, -9)
+    if not Has(item, "icon") then
+        item.icon = item:CreateTexture(nil, "BORDER")
+        item.icon:SetAllPoints(item)
+    end
+    item:RegisterForClicks("LeftButtonUp")
+    item:SetScript("OnClick", function()
+        if not adLink then return end
+        if type(IsModifiedClick) == "function" and IsModifiedClick("CHATLINK") and type(HandleModifiedItemClick) == "function" then
+            HandleModifiedItemClick(adLink)
+        elseif type(DressUpItemLink) == "function" then
+            pcall(DressUpItemLink, adLink)
+        end
+    end)
+    item:SetScript("OnEnter", function(self)
+        if not (GameTooltip and adLink) then return end
+        GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
+        if pcall(GameTooltip.SetHyperlink, GameTooltip, adLink) then
+            GameTooltip:AddLine(" ")
+            GameTooltip:AddLine("The ware this ad is for. Click to try it on in the dressing room.", Color(NORMAL_FONT_COLOR, 1, 0.82, 0))
+            GameTooltip:Show()
+        end
+    end)
+    item:SetScript("OnLeave", HideTip)
+    item:Hide()
     frame.preview = Text(box, "GameFontHighlightSmall")
     frame.preview:SetPoint("TOPLEFT", box, "TOPLEFT", 9, -8)
     frame.preview:SetPoint("BOTTOMRIGHT", box, "BOTTOMRIGHT", -9, 8)

@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.5.0
+
+- The posting panel shows the ware the next ad is for: its icon next to the ad. Hover it for the tooltip, click it to try the piece on in the dressing room.
+- New Reroll button (and `/slutshop reroll`): another ad for the same ware. The ad shown is not voted on and comes round again later.
+- A ware that is only on the auction house and has been undercut is no longer advertised. Its row says "Undercut on the AH". This needs Slutmog Scout 1.16.1 or newer, which reads the prices (its Sell tab); without Scout nothing counts as undercut.
+
 ## 1.4.4
 
 - Ads reworked from the fourth round of Yes/No votes: the 28 lines voted No are gone (most of the short slogans and the cruder name lines).
