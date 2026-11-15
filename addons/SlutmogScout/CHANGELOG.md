@@ -1,5 +1,29 @@
 # Changelog
 
+## 1.6.0
+
+Only looks people buy for slutmog: each piece is graded, and its price is compared with ordinary gear.
+
+- **Look grade.** Each piece on the list is now bikini, skimpy or cropped. A chest piece is skimpy when the
+  upper chest (the cleavage) or most of the bust is bare. It is a bikini when that is bare and the belly too.
+  A top that covers the whole bust and is listed only for a bare belly or bare shoulders is cropped, for
+  example Infantry Tunic, Sentry's Surcoat or Grizzly Jerkin. Leggings are a bikini when the thigh is bare
+  almost fully, skimpy when about half of it is bare, and cropped otherwise. The grade starts the Look
+  column and the tooltip line.
+- **Cropped pieces are hidden** from the Market list, the buys, the deals and the farm guide values. To see
+  them, use Filter > Show cropped pieces or `/smog cropped`. Of 166 pieces, 65 are cropped, 82 skimpy and
+  19 bikini. Pieces you add yourself have no grade and always show.
+- **Demand.** The scan already reads every chest and leg piece of these armor types. From the pieces that
+  are not on the list, the addon keeps the median lowest price per quality and 5-level band, over your
+  last 5 scans: what ordinary gear of that level sells for. Suppose your scans have listed a piece 3 times or
+  more and its fair value is still under 1.3 times that price. Then nobody pays extra for its look. It is
+  never worth buying and does not count in the farm guide. The Market list says "no demand for the look"
+  after its name. A piece that sells for far more than ordinary gear scores higher.
+- **Pieces the list misses.** Some off-list chest or leg pieces are listed at 3 times ordinary gear of
+  their level or more. After a scan, the chat names the top three, with the `/smog add` command for each,
+  and `/smog hints` lists up to 10. Crafted pieces are left out.
+- A green piece below level 21 no longer counts as rare just because no other item has its look.
+
 ## 1.5.0
 
 What to buy: each listed piece gets a buy score that weighs supply, how easy it is to farm and other items

@@ -122,7 +122,7 @@ end
 
 local state = { tab = "market", armor = "all", listedOnly = false, buyOnly = false, sortKey = "value", sortAsc = false, farmItem = nil }
 local win, marketView, farmView, measuredView, statusText, scanButton, farmHeader, farmClear, listedCheck, listedText
-local filterButton, dealsCheck, dealsText
+local filterButton, dealsCheck, dealsText, croppedCheck, croppedText
 local tabButtons, armorButtons, headerText = {}, {}, {}
 
 local function ItemName(id, it)
@@ -205,7 +205,8 @@ function ns.FillItemTooltip(tip, id)
   local w1, w2, w3 = WHITE[1], WHITE[2], WHITE[3]
   local e1, e2, e3 = GREY[1], GREY[2], GREY[3]
   tip:AddLine(" ")
-  tip:AddLine("|cffff66aaSlutmog|r: " .. (it.look or "revealing"), w1, w2, w3, true)
+  tip:AddLine("|cffff66aaSlutmog|r" .. (it.grade and (" (" .. it.grade .. ")") or "") .. ": " .. (it.look or "revealing"),
+    w1, w2, w3, true)
   if info.low then
     tip:AddDoubleLine("Lowest in your last scan", ns.Money(info.low) .. " " .. Grey(("(%d listed in all)"):format(info.qty or 0)), g1, g2, g3, w1, w2, w3)
   end
@@ -473,6 +474,9 @@ local function BuyNote(b)
     return "  " .. Grey("buy up to") .. " " .. ns.Money(b.upTo)
       .. Grey((b.count > 1 and (" x%d"):format(b.count) or "") .. (", %s risk"):format(b.risk))
   end
+  if b.noDemand then
+    return "  " .. Grey("sells like ordinary gear: no demand for the look")
+  end
   if b.easyFarm then
     return "  " .. Grey(("cheaper to farm: level %d-%d mobs"):format(b.easyFarm.lo, b.easyFarm.hi))
   end
@@ -484,14 +488,14 @@ end
 local function MarketData()
   local rows = {}
   for id, it in pairs(ns.Items()) do
-    if ArmorFilter(it) then
+    if ArmorFilter(it) and ns.Shown(it) then
       local info = ns.Price(id)
       local buy = info.low and ns.Buy(id, info) or nil
       if (not state.listedOnly or info.low) and (not state.buyOnly or (buy and buy.buy)) then
         local lo, hi = ns.MobRange(it)
         rows[#rows + 1] = {
           id = id, it = it, info = info, lo = lo, hi = hi, buy = buy,
-          name = it.name or "", type = TypeLabel(it), look = it.look or "",
+          name = it.name or "", type = TypeLabel(it), look = (it.grade and (it.grade .. ": ") or "") .. (it.look or ""),
           low = info.low or -1, qty = (info.qty and info.qty > 0) and info.qty or -1, value = info.value or -1,
           seen = info.seenPct or -1, mob = (it.src == "fishing" or it.inst) and -1 or lo,
         }
@@ -828,6 +832,9 @@ Refresh = function()
     listedText:SetShown(state.tab == "market")
     dealsCheck:SetShown(state.tab == "market")
     dealsText:SetShown(state.tab == "market")
+    croppedCheck:SetShown(filterUseful)
+    croppedText:SetShown(filterUseful)
+    croppedCheck:SetChecked(ns.ShowCropped())
   end
   marketView:SetShown(state.tab == "market")
   farmView:SetShown(state.tab == "farm")
@@ -926,7 +933,7 @@ local function SelectTab(key)
 end
 
 local function FilterIsDefault()
-  return state.armor == "all" and not state.listedOnly and not state.buyOnly
+  return state.armor == "all" and not state.listedOnly and not state.buyOnly and not ns.ShowCropped()
 end
 
 -- The filter: the game's filter dropdown, as the auction house's search bar
@@ -970,6 +977,12 @@ local function CreateFilterDropdown()
         Refresh()
       end)
     end
+    -- cropped looks: a top that covers the bust, shorts that cover most of the thigh
+    root:QueueSpacer()
+    root:CreateTitle("Look")
+    root:CreateCheckbox("Show cropped pieces", ns.ShowCropped, function()
+      ns.SetShowCropped(not ns.ShowCropped())
+    end)
   end)
   if not ok then
     dd:Hide()
@@ -977,6 +990,9 @@ local function CreateFilterDropdown()
   end
   if pcall(dd.SetIsDefaultCallback, dd, FilterIsDefault) and pcall(dd.SetDefaultCallback, dd, function()
     state.armor, state.listedOnly, state.buyOnly = "all", false, false
+    if ns.ShowCropped() then
+      ns.SetShowCropped(false)
+    end
     Refresh()
   end) then
     dd.smogValidate = true
@@ -1018,6 +1034,16 @@ local function CreateFilterButtons(startX)
   dealsCheck:SetScript("OnClick", function(self)
     state.buyOnly = self:GetChecked() and true or false
     Refresh()
+  end)
+  croppedCheck = CreateFrame("CheckButton", nil, win, "UICheckButtonTemplate")
+  croppedCheck:SetSize(24, 24)
+  croppedCheck:SetPoint("LEFT", dealsCheck, "RIGHT", 100, 0)
+  croppedCheck:SetHitRectInsets(0, -100, 0, 0)
+  croppedText = win:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+  croppedText:SetPoint("LEFT", croppedCheck, "RIGHT", 2, 0)
+  croppedText:SetText("Show cropped")
+  croppedCheck:SetScript("OnClick", function(self)
+    ns.SetShowCropped(self:GetChecked() and true or false)
   end)
 end
 

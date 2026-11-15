@@ -272,6 +272,11 @@ function ns.AddCustom(text)
     db.hidden[id] = nil
     db.custom[id] = nil
     ns.RebuildItems()
+    if not ns.Shown(builtin) then
+      ns.Print(("%s is a built-in piece with a cropped look, hidden for now: |cffffff00/smog cropped|r or Filter > Show cropped pieces shows it."):format(builtin.name))
+      ns.Fire("ITEMS")
+      return
+    end
     ns.Print(("%s is a built-in piece and is on the list."):format(builtin.name))
     ns.Fire("ITEMS")
     return
@@ -565,7 +570,9 @@ function ns.Rarity(id, info)
     add(("listed in only %d%% of your scans"):format(math.floor(info.seenPct * 100 + 0.5)), true)
   end
   if it.shared == 1 then
-    add("no other item in the game has its look", true)
+    -- a common green below level 21 is easy to farm: a look of its own is not
+    -- enough to call it rare
+    add("no other item in the game has its look", (it.q or 2) >= 3 or (it.req or 0) > 20)
   end
   if info.low and info.qty and info.qty <= 2 then
     add(info.qty == 1 and "only one listed now" or "only two listed now", false)
@@ -577,6 +584,9 @@ end
 function ns.Deal(id, info)
   info = info or ns.Price(id)
   local low, fair = info.low, info.fair
+  if not ns.Shown(items[id]) or ns.NoDemand(id, info) then
+    return nil
+  end
   if not (low and fair) or low > fair * DEAL_RATIO or fair * (1 - AH_CUT) - low < DEAL_MIN_GAIN then
     return nil
   end
@@ -608,6 +618,190 @@ function ns.NetValue(id)
   local v = ns.Price(id).value
   return v and v * (1 - AH_CUT) or nil
 end
+
+-------------------------------------------------------------------------------
+-- Look grade and demand. Each built-in piece has a grade: bikini, skimpy or
+-- cropped (a top that covers the bust, shorts that cover most of the thigh).
+-- Cropped pieces stay out of the Market list, the buys and the farm values
+-- unless the player asks for them. Pieces added by the player have no grade.
+--
+-- Demand: the same browse scan returns every chest and leg piece of these
+-- armor types, so the addon keeps the median lowest price of the pieces not on
+-- the list, per quality and 5-level band (the "baseline"). A piece whose fair
+-- value is barely above that baseline sells like ordinary gear: nobody pays
+-- for its look. Off-list pieces listed far above it may be transmog pieces the
+-- list misses.
+-------------------------------------------------------------------------------
+local BASE_KEEP = 5        -- the baseline is the median of the last 5 scans' band medians
+local BASE_MIN_ROWS = 5    -- a band needs 5 ordinary pieces in a scan to count
+local NO_DEMAND = 1.3      -- a fair value under 1.3 times the baseline: no demand for the look
+local NO_DEMAND_SEEN = 3   -- once at least 3 of your scans listed the piece
+local OFF_RATIO = 3        -- an off-list piece listed at 3 times its baseline or more
+local OFF_KEEP = 30
+local OFF_SLOTS = { INVTYPE_CHEST = true, INVTYPE_ROBE = true, INVTYPE_LEGS = true }
+ns.NO_DEMAND, ns.NO_DEMAND_SEEN, ns.OFF_RATIO = NO_DEMAND, NO_DEMAND_SEEN, OFF_RATIO
+
+function ns.ShowCropped()
+  return db and db.opts and db.opts.showCropped == true or false
+end
+
+-- false for a cropped piece while cropped pieces are hidden
+function ns.Shown(it)
+  return it ~= nil and (it.grade ~= "cropped" or ns.ShowCropped())
+end
+
+local function BandKey(q, req)
+  return (q or 2) .. ":" .. math.floor(math.max(1, req or 1) / 5) * 5
+end
+ns.BandKey = BandKey
+
+local function BandBaseline(key)
+  local hist = db and type(db.baseline) == "table" and db.baseline[key]
+  if type(hist) ~= "table" then
+    return nil
+  end
+  local vals = {}
+  for _, v in ipairs(hist) do
+    v = Num(v)
+    if v and v > 0 then
+      vals[#vals + 1] = v
+    end
+  end
+  return Median(vals)
+end
+
+-- What ordinary gear of this quality and level sells for, or nil when the
+-- scans have not seen enough of it.
+function ns.Baseline(q, req)
+  return BandBaseline(BandKey(q, req))
+end
+
+-- Fair value divided by the baseline of its band (nil when either is unknown),
+-- then the baseline.
+function ns.Premium(id, info)
+  local it = items[id]
+  info = info or ns.Price(id)
+  local base = it and it.q and info.fair and ns.Baseline(it.q, it.req)
+  if not base then
+    return nil
+  end
+  return info.fair / base, base
+end
+
+-- True when the piece has been listed in a few scans and its fair value is
+-- barely above ordinary gear of its level.
+function ns.NoDemand(id, info)
+  local prem = ns.Premium(id, info)
+  local p = db and db.prices[id]
+  return prem ~= nil and prem < NO_DEMAND and type(p) == "table" and (Num(p.seen) or 0) >= NO_DEMAND_SEEN
+end
+
+local craftedSet
+local function Crafted(id)
+  if not craftedSet then
+    craftedSet = {}
+    for _, i in ipairs(ns.CRAFTED or {}) do
+      craftedSet[i] = true
+    end
+  end
+  return craftedSet[id] == true
+end
+ns.Crafted = Crafted
+
+-- name, quality, required level and equip slot from the item cache. Asks the
+-- game to load items it does not have yet, so the next scan can use them.
+local function CachedFacts(id)
+  local ok, name, _, q, _, req, _, _, _, equip = pcall(C_Item.GetItemInfo, id)
+  if not ok or type(name) ~= "string" or IsSecret(name) then
+    if C_Item.RequestLoadItemDataByID then
+      pcall(C_Item.RequestLoadItemDataByID, id)
+    end
+    return nil
+  end
+  if type(equip) ~= "string" or IsSecret(equip) then
+    equip = nil
+  end
+  return name, Num(q), Num(req), equip
+end
+
+-- Off-list rows of a scan (id -> lowest price) feed the baseline and the
+-- off-list hints. Everything listed on the auction house can be traded, so the
+-- bind type does not need checking.
+local function UpdateBaseline(other, now)
+  local bands, rows = {}, {}
+  for id, price in pairs(other) do
+    if not (ns.ITEMS[id] or db.custom[id]) then
+      local name, q, req, equip = CachedFacts(id)
+      if name and q and q >= 2 and q <= 4 and equip and OFF_SLOTS[equip] then
+        local key = BandKey(q, req)
+        bands[key] = bands[key] or {}
+        table.insert(bands[key], price)
+        rows[#rows + 1] = { id = id, name = name, q = q, req = req, price = price, key = key }
+      end
+    end
+  end
+  db.baseline = type(db.baseline) == "table" and db.baseline or {}
+  for key, prices in pairs(bands) do
+    if #prices >= BASE_MIN_ROWS then
+      local hist = type(db.baseline[key]) == "table" and db.baseline[key] or {}
+      hist[#hist + 1] = Median(prices)
+      while #hist > BASE_KEEP do
+        table.remove(hist, 1)
+      end
+      db.baseline[key] = hist
+    end
+  end
+  local hints = {}
+  for _, r in ipairs(rows) do
+    local base = BandBaseline(r.key)
+    if base and r.price >= base * OFF_RATIO and not Crafted(r.id) then
+      r.ratio = r.price / base
+      hints[#hints + 1] = r
+    end
+  end
+  table.sort(hints, function(a, b)
+    if a.ratio ~= b.ratio then
+      return a.ratio > b.ratio
+    end
+    return a.id < b.id
+  end)
+  while #hints > OFF_KEEP do
+    hints[#hints] = nil
+  end
+  for _, r in ipairs(hints) do
+    r.key = nil
+  end
+  db.offList = { t = now, list = hints }
+  return hints
+end
+ns.UpdateBaseline = UpdateBaseline
+
+-- Off-list pieces from the last scan that are listed like transmog pieces.
+function ns.OffList()
+  local list = db and type(db.offList) == "table" and type(db.offList.list) == "table" and db.offList.list or {}
+  local out = {}
+  for _, r in ipairs(list) do
+    if type(r) == "table" and Num(r.id) and not (ns.ITEMS[r.id] or db.custom[r.id]) then
+      out[#out + 1] = r
+    end
+  end
+  return out
+end
+
+local function ReportOffList(hints, max)
+  if #hints == 0 then
+    return
+  end
+  local parts = {}
+  for i = 1, math.min(max, #hints) do
+    local r = hints[i]
+    parts[#parts + 1] = ("%s (%s, %.1f times ordinary gear of its level) |cffffff00/smog add %d|r"):format(r.name,
+      ns.Money(r.price), r.ratio, r.id)
+  end
+  ns.Print(("Not on the list, but priced like %s: %s%s."):format(#hints == 1 and "a transmog piece" or "transmog pieces",
+    table.concat(parts, ", "), #hints > max and (" |cffffff00/smog hints|r lists %d more"):format(#hints - max) or ""))
+end
+ns.ReportOffList = ReportOffList
 
 -------------------------------------------------------------------------------
 -- What to buy. One score per listed piece: what reselling it earns after the
@@ -723,7 +917,9 @@ function ns.Buy(id, info)
   local function con(text) b.cons[#b.cons + 1] = text end
   local function stop(text) b.stop = b.stop or text end
   local alt = type(it.alt) == "table" and it.alt or {}
-  if (Num(alt.made) or 0) > 0 then
+  if not ns.Shown(it) then
+    stop("a cropped look (it covers the bust or most of the thigh), which few buy for slutmog")
+  elseif (Num(alt.made) or 0) > 0 then
     stop(("a crafted item has the same look (%s), so anyone can have it made"):format(it.altName or "made by a profession"))
   elseif (Num(alt.plain) or 0) > 0 then
     stop(("a white or grey item has the same look (%s), often sold by a vendor"):format(it.altName or "a plain item"))
@@ -731,6 +927,12 @@ function ns.Buy(id, info)
   if not info.fair then
     stop("no fair value yet: scan a few more times")
     return b
+  end
+  local prem, base = ns.Premium(id, info)
+  b.premium, b.baseline = prem, base
+  if prem and prem < NO_DEMAND and (Num(p and p.seen) or 0) >= NO_DEMAND_SEEN then
+    b.noDemand = true
+    stop(("it sells like ordinary gear of its level (about %s), so nobody pays extra for its look"):format(ns.Money(base)))
   end
 
   -- resale: the fair value, capped by the cheapest listed piece with the same look
@@ -837,8 +1039,19 @@ function ns.Buy(id, info)
     con(("%d bind-on-pickup %s the same look, so some players get it themselves"):format(bop, bop == 1 and "item has" or "items have"))
   end
 
-  b.factors = { sure = c, supply = s, farm = f, look = o }
-  b.mult = c * s * f * o
+  -- demand for the look: what it sells for next to ordinary gear of its level
+  local d = 1
+  if prem then
+    d = Clamp(0.4 + 0.2 * prem, 0.6, 1)
+    if prem >= 2 then
+      pro(("it sells for %.1f times ordinary gear of its level"):format(prem))
+    else
+      con(("it sells for only %.1f times ordinary gear of its level (%s)"):format(prem, ns.Money(base)))
+    end
+  end
+
+  b.factors = { sure = c, supply = s, farm = f, look = o, demand = d }
+  b.mult = c * s * f * o * d
   b.score = math.max(0, b.gain) * b.mult
   b.risk = b.mult >= 0.5 and "low" or b.mult >= 0.3 and "medium" or "high"
   if not b.stop and b.score < BUY_MIN_GAIN then
@@ -1002,8 +1215,10 @@ local function Finish()
   scan.active = false
   scan.pending = nil
   StopTicker()
+  local hints = UpdateBaseline(scan.other or {}, now)
   ns.Print(("Scan done: %d of %d tracked pieces are listed right now (%d search results read).%s"):format(listed, total, scan.rows,
     skipped > 0 and (" %d could not be read and kept their earlier data."):format(skipped) or ""))
+  ReportOffList(hints, 3)
   PricesChanged()
   ns.Fire("SCAN")
   StartLadder()
@@ -1039,6 +1254,12 @@ local function Absorb(results)
             f.key = { itemID = id, itemLevel = Num(key.itemLevel) or 0, itemSuffix = Num(key.itemSuffix) or 0,
               battlePetSpeciesID = 0 }
           end
+        end
+      elseif id and scan.other then
+        -- not on the list: kept for the baseline of ordinary gear
+        local price, qty = Num(r.minPrice), Num(r.totalQuantity)
+        if price and price > 0 and qty and qty > 0 and (not scan.other[id] or price < scan.other[id]) then
+          scan.other[id] = price
         end
       end
     end
@@ -1166,6 +1387,7 @@ function ns.StartScan()
   scan.sent = false
   scan.requested = false
   scan.found = {}
+  scan.other = {}
   scan.unreadable = {}
   scan.classes = classes
   scan.ids = {}
@@ -1226,7 +1448,7 @@ local function LadderCandidates()
     local info = ns.Price(id)
     local alt = type(it.alt) == "table" and it.alt or {}
     if info.low and (info.qty or 0) >= 2 and not (info.fairBasis == "your earlier scans" and info.sure ~= "low")
-        and (Num(alt.made) or 0) == 0 and (Num(alt.plain) or 0) == 0 then
+        and (Num(alt.made) or 0) == 0 and (Num(alt.plain) or 0) == 0 and ns.Shown(it) and not ns.NoDemand(id, info) then
       list[#list + 1] = { id = id, r = info.fair and info.low / info.fair or 1 }
     end
   end
@@ -1395,7 +1617,8 @@ function ns.RankSpots(filter)
   for _, spot in ipairs(ns.SPOTS) do
     local entry = { spot = spot, total = 0, priced = 0, pieces = {} }
     for id, it in pairs(items) do
-      if not filter or filter(it) then
+      -- cropped pieces (while hidden) and pieces nobody pays extra for do not count
+      if (not filter or filter(it)) and ns.Shown(it) and not ns.NoDemand(id) then
         local m = SpotMatch(spot, it)
         if m > 0 then
           local v = ns.NetValue(id)
@@ -1799,7 +2022,8 @@ local function OnTooltipItem(tooltip, data)
     return
   end
   tooltip:AddLine(" ")
-  tooltip:AddLine("|cffff66aaSlutmog|r: " .. (it.look or "revealing"), 1, 1, 1, true)
+  tooltip:AddLine("|cffff66aaSlutmog|r" .. (it.grade and (" (" .. it.grade .. ")") or "") .. ": " .. (it.look or "revealing"),
+    1, 1, 1, true)
   local info = ns.Price(id)
   if info.low then
     tooltip:AddDoubleLine("Lowest in your last scan", ns.Money(info.low) .. (" |c%s(%d listed in all)|r"):format(GreyHex(), info.qty or 0))
@@ -1937,6 +2161,12 @@ function ns.RestoreHidden()
   ns.Fire("ITEMS")
 end
 
+function ns.SetShowCropped(on)
+  db.opts.showCropped = on and true or nil
+  PricesChanged()
+  ns.Fire("ITEMS")
+end
+
 function ns.WipePrices()
   wipe(db.prices)
   db.lastScan = nil
@@ -1976,6 +2206,17 @@ SlashCmdList.SLUTMOGSCOUT = function(input)
     ns.RemoveItem(rest)
   elseif cmd == "restore" then
     ns.RestoreHidden()
+  elseif cmd == "hints" then
+    local hints = ns.OffList()
+    if #hints == 0 then
+      ns.Print("Your last scan found no piece off the list that is priced like a transmog piece.")
+    else
+      ReportOffList(hints, 10)
+    end
+  elseif cmd == "cropped" then
+    ns.SetShowCropped(not ns.ShowCropped())
+    ns.Print("Cropped pieces (tops that cover the bust, shorts that cover most of the thigh): "
+      .. (ns.ShowCropped() and "shown" or "hidden"))
   elseif cmd == "config" or cmd == "options" or cmd == "opt" then
     if HasKit() then
       ns.Kit.Open()
@@ -2014,6 +2255,8 @@ SlashCmdList.SLUTMOGSCOUT = function(input)
     print("  |cffffff00/smog add <item link or id> [note]|r  add your own piece")
     print("  |cffffff00/smog remove <item link or id>|r  take a piece off the list")
     print("  |cffffff00/smog restore|r  bring back removed built-in pieces")
+    print("  |cffffff00/smog cropped|r  show or hide cropped pieces")
+    print("  |cffffff00/smog hints|r  pieces off the list that are priced like transmog pieces")
     print("  |cffffff00/smog verify|r  check the built-in list against this game build")
     print("  |cffffff00/smog selftest|r  check that this game has what the addon needs")
     print("  |cffffff00/smog auto|r  toggle scanning when the auction house opens")
