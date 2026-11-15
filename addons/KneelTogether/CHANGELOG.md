@@ -1,5 +1,9 @@
 # Changelog
 
+## 1.0.5
+
+- The countdown tells the developers' screenshot helper (LookShots) where it is, so they can check how it looks in the game. Without that helper nothing changes.
+
 ## 1.0.4
 
 - Fixed: calls did not reach the rest of the group. The server writes your realm one way in a message's sender and the game another way, and the addon compared the two and quietly threw the message away. It now finds who sent a message by their name in your group.

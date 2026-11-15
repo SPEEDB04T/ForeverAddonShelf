@@ -972,6 +972,48 @@ function Kit.MinimapRow()
 end
 
 ----------------------------------------------------------------------
+-- LookShots (a local helper addon on the developer's machine, never on
+-- the shelf) takes one game screenshot of each listed frame the first time
+-- it shows. The kit lists its own frames under LookShotsTargets.ShelfKit,
+-- which every copy of the kit shares: each copy appends its addon's frames
+-- and never replaces the others' or touches LookShotsTargets[<addon>].
+-- Harmless when LookShots isn't there.
+----------------------------------------------------------------------
+-- Bump on every change to how the kit looks, so LookShots shoots it again. Date and time of
+-- the change: later strings sort higher, and the newest copy's version wins.
+Kit.LOOK = "2026-11-14T2030"
+
+local function ListLooks()
+    local root = LookShotsTargets
+    if root == nil then
+        root = {}
+        LookShotsTargets = root
+    end
+    if type(root) ~= "table" then return end
+    local entry = root.ShelfKit
+    if entry == nil then
+        entry = {}
+        root.ShelfKit = entry
+    end
+    if type(entry) ~= "table" then return end
+    if type(entry.frames) ~= "table" then entry.frames = {} end
+    if type(entry.version) ~= "string" or entry.version < Kit.LOOK then entry.version = Kit.LOOK end
+    local have = {}
+    for _, f in ipairs(entry.frames) do
+        if type(f) == "table" and type(f.label) == "string" then have[f.label] = true end
+    end
+    local function Add(label, frame, pad)
+        label = label .. ": " .. ADDON
+        if have[label] then return end
+        have[label] = true
+        entry.frames[#entry.frames + 1] = { label = label, frame = frame, pad = pad }
+    end
+    if not spec.openOptions then Add("options window", function() return window end) end
+    if Kit.panel then Add("options page", function() return Kit.panel end) end
+    if spec.minimap ~= false then Add("minimap button", function() return button end, 40) end
+end
+
+----------------------------------------------------------------------
 -- Setup. Call it once the saved settings are loaded.
 --   title, icon, accent = { r, g, b }, print = function(msg)
 --   db = function() return <saved settings table> end
@@ -989,4 +1031,5 @@ function Kit.Setup(def)
     if type(def.accent) == "table" then accent = def.accent end
     Kit.RefreshMinimap()
     Run(RegisterPage)
+    Run(ListLooks)
 end

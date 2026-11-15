@@ -62,7 +62,7 @@ local db
 local floor, ceil, max, min = math.floor, math.ceil, math.max, math.min
 local issecret = issecretvalue
 
-local VERSION = "1.0.4"
+local VERSION = "1.0.5"
 if C_AddOns and C_AddOns.GetAddOnMetadata then
     local ok, v = pcall(C_AddOns.GetAddOnMetadata, ADDON_NAME, "Version")
     if ok and type(v) == "string" and v ~= "" and not (issecret and issecret(v)) then VERSION = v end
@@ -348,6 +348,17 @@ local function Error(text)
         pcall(f.AddMessage, f, text, c and c.r or 1, c and c.g or 0.1, c and c.b or 0.1)
     end
 end
+
+-- For LookShots (a screenshot helper on the developer's machine; nothing happens
+-- without it): the banner is shot the first time it shows in each version. Its
+-- frame is 128x128 like ZoneTextFrame while the text is 512 wide, hence the pad.
+LookShotsTargets = LookShotsTargets or {}
+LookShotsTargets["KneelTogether"] = {
+    version = VERSION,
+    frames = {
+        { label = "countdown banner", frame = function() return banner end, pad = 200 },
+    },
+}
 
 function ns.BannerText()
     if not (banner and banner:IsShown()) or Now() - banner.start >= FADE_IN + banner.hold then return nil end
