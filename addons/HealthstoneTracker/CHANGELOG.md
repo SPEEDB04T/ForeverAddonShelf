@@ -1,5 +1,10 @@
 # Changelog
 
+## 1.3.3
+
+- The options window and the minimap button are redrawn by the shared kit our addons use: the options now look like the game's own Options rows, and the minimap button is the game's round one.
+- Two option names were too long and wrapped onto a second line. They are now "Show in every group" and "Click a name to trade a stone"; the rest of each sentence is in that option's tip.
+
 ## 1.3.2
 
 - Fixed: other players' healthstones and soulstones may never have arrived. The server names the sender of an addon message with its own spelling of the realm ("CAMWOWUS1Realm9RPPvP" where the game says "RPPvP"), so the addon did not recognise anyone in the group and dropped every message without a word. It now finds the sender among the group by name and uses the realm only to tell two players of the same name apart. Names with a space ("First Last") work everywhere: the list, trades, soulstone messages.

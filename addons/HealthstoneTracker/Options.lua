@@ -32,7 +32,8 @@ local function Rows()
         { kind = "check", label = "Show soulstones too",
           tip = "Who carries the soulstone buff, and each warlock's own stone, under the healthstone list.",
           get = Get("soul"), set = Set("soul") },
-        { kind = "check", label = "Show in groups without a warlock too",
+        { kind = "check", label = "Show in every group",
+          tip = "Also in groups without a warlock. Same as /hst always.",
           get = Get("always"), set = Set("always") },
         { kind = "check", label = "Lock the window in place",
           tip = "Unticked, you can drag the window by its title.",
@@ -41,8 +42,8 @@ local function Rows()
           get = Get("scale"), set = Set("scale", function() ns.UI.ApplyLayout() end) },
 
         { kind = "header", text = "Warlock" },
-        { kind = "check", label = "Click a name to trade them your stone",
-          tip = "Opens a trade with that player and puts your healthstone in it. Only does something on a warlock.",
+        { kind = "check", label = "Click a name to trade a stone",
+          tip = "Click a player's name in the window: opens a trade with them and puts your healthstone in it. Only does something on a warlock.",
           get = Get("clickTrade"), set = Set("clickTrade") },
 
         { kind = "header", text = "Minimap" },
