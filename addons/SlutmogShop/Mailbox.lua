@@ -43,9 +43,12 @@ local LOOK_REPLY = { nil, "WINK", "look" }
 local WHISPER_REPLY = { nil, "WINK", "whisper" }
 
 -- The replies: custom emotes, shown in chat as "Smuttanie <line>". {name} is the other player.
--- Every group also draws on "any".
+-- Every group but "look" also draws on "any".
 M.LINES = {
-    look = { "notices {name} looking and lets them.", "turns slowly so {name} gets the back view too.", "gives {name} a better angle." },
+    -- for somebody who only targeted you: friendly shop talk, nothing more (SuccuDev: "its too ERPY for people just targeting me")
+    look = { "notices {name} looking and lets them.", "catches {name} window shopping.", "nods at {name}. Yes, it's for sale.",
+             "waves {name} over to the mailbox.", "smiles at {name}. Everything here is for sale.",
+             "sees {name} checking out the outfit and points at the price tag." },
     kiss = { "catches {name}'s kiss and keeps it somewhere warm.", "blows {name} a kiss back. That one's on the house." },
     wink = { "winks back at {name}. Slower." },
     flirt = { "flirts back at {name}, then quotes a price.", "laughs at {name}'s line and lets them try another." },
@@ -141,7 +144,7 @@ local function Pick(v, skip)
     local group = v.reply and v.reply[3] or "any"
     local pool = {}
     for _, l in ipairs(M.LINES[group] or {}) do pool[#pool + 1] = l end
-    if group ~= "any" then
+    if group ~= "any" and group ~= "look" then
         for _, l in ipairs(M.LINES.any) do pool[#pool + 1] = l end
     end
     if #pool == 0 then return nil end

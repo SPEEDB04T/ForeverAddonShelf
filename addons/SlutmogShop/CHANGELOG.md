@@ -1,5 +1,9 @@
 # Changelog
 
+## 1.10.2
+
+- Mailbox: somebody who only targets you gets friendly shop talk now ("catches Bob window shopping.", "nods at Bob. Yes, it's for sale."), never the flirty lines. Those stay for people who kiss, wink, flirt or whisper first.
+
 ## 1.10.1
 
 - Mailbox buttons say what they do: the line on top reads "Your emote: Smuttanie ...", and the buttons are "Send emote to Bob", "Other line" and "Whisper price". In the list they are "Emote" and "Whisper".
