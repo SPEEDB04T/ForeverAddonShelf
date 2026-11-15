@@ -1,5 +1,9 @@
 # Changelog
 
+## 1.3.4
+
+- The window can be photographed by the developer's screenshot helper (LookShots), so its look can be checked in the game. Without that helper nothing changes.
+
 ## 1.3.3
 
 - The options window and the minimap button are redrawn by the shared kit our addons use: the options now look like the game's own Options rows, and the minimap button is the game's round one.

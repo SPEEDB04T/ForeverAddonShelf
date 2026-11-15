@@ -366,6 +366,18 @@ local function NewWindow()
     return f
 end
 
+-- LookShots (a helper on SuccuDev's machine only) takes one game screenshot
+-- of each listed frame per version; harmless when it is not installed. The
+-- hover tooltips are the game's own GameTooltip, and the options window and
+-- minimap button are the shared kit's, which lists them itself.
+LookShotsTargets = type(LookShotsTargets) == "table" and LookShotsTargets or {}
+LookShotsTargets[ADDON] = {
+    version = ns.VERSION,
+    frames = {
+        { label = "window", frame = function() return frame end },
+    },
+}
+
 function UI.Create()
     frame = NewWindow()
     frame:SetSize(MIN_W, TITLE_H + PAD * 2)
