@@ -1,5 +1,22 @@
 # Changelog
 
+## 1.15.0
+
+Post your slutmog pieces from your bags without setting each one up in the Sell tab.
+
+- **Slutmog post.** A new button above the auction house, next to Slutmog scan (or `/smog post`), goes
+  through the pieces on the list in your bags one at a time. Pieces bound to you are left out.
+- **One window per piece.** Each window shows the other listings (the lowest and how many), your own
+  listing, what you asked last time, the vendor price, the slutmog worth estimate and the deposit.
+- **Prefilled price.** The price box starts at the game's own default: 1 silver under the lowest
+  listing by someone else. If only you list the piece, it starts at your own price. If nobody lists it,
+  it starts at what you asked last time, or else at 1.5x the vendor price. Change it if you like.
+- **Enter or Post lists it** for the shortest time, the cheapest deposit. Skip leaves the piece in your
+  bags and Stop ends the run. A second copy of a piece starts at the price you just gave the first.
+- The game lets an addon post only on a click or a key press, so each auction takes one. When the
+  game asks you to confirm a post, the addon shows that confirmation itself, because the game's own
+  window wouldn't confirm an addon's post.
+
 ## 1.14.0
 
 The Market list gives you the facts to judge a piece by and stops telling you what to buy.

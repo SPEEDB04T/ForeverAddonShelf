@@ -1801,6 +1801,10 @@ function ns.StartScan()
     ns.Print("A scan is already running.")
     return
   end
+  if ns.post and ns.post.active then
+    ns.Print("Posting is under way. Scan when it is done.")
+    return
+  end
   StopLadder(false)
   if not ScanApiPresent() then
     ns.Print("This game version lacks the auction house search this addon uses. |cffffff00/smog selftest|r shows what is missing.")
@@ -2077,6 +2081,10 @@ function ns.StartPurchase(id)
     ns.Print("Still reading listings after the scan. Buy again in a few seconds.")
     return false
   end
+  if ns.post and ns.post.active then
+    ns.Print("Posting is under way. Buy when it is done.")
+    return false
+  end
   local okReady, ready = pcall(C_AuctionHouse.IsThrottledMessageSystemReady)
   if not okReady or IsSecret(ready) or not ready then
     ns.Print("The auction house is busy. Click Buy again in a moment.")
@@ -2228,6 +2236,600 @@ local function OnPurchaseCompleted(auctionID)
   ns.Fire("SCAN")
 end
 ns.OnPurchaseCompleted = OnPurchaseCompleted
+
+-------------------------------------------------------------------------------
+-- Posting from the bags (SuccuDev, 2026-11-15: "I need the addon to help me
+-- auto post it to auction house with 2 hour deposits"). Slutmog post goes
+-- through the list pieces in the bags one at a time: it searches the piece's
+-- listings, then a game popup shows the facts and a price box set to the
+-- game's own default (1 silver under the lowest other listing). Enter or Post
+-- lists it for the shortest time, the cheapest deposit. The game lets an addon
+-- post only on a click or a key press, so every auction takes one.
+-------------------------------------------------------------------------------
+local POST_DURATION = 1  -- the shortest auction time: the cheapest deposit
+local POST_TIMEOUT = 10  -- seconds the search or the post may take
+-- active, queue, at, cur: the run; searching, key: a search is out; offer: the popup is up;
+-- pending: posted, waiting for the game; facts[id]: what the search found; last[id]: price given this run
+local post = {}
+ns.post = post
+
+local function PostApiPresent()
+  return C_AuctionHouse ~= nil and C_AuctionHouse.PostItem ~= nil and C_AuctionHouse.SendSearchQuery ~= nil
+    and C_Container ~= nil and C_Container.GetContainerItemInfo ~= nil and C_Container.GetContainerNumSlots ~= nil
+    and ItemLocation ~= nil and ItemLocation.CreateFromBagAndSlot ~= nil
+end
+ns.PostApiPresent = PostApiPresent
+
+local function Later(fn)
+  if C_Timer and C_Timer.After then
+    C_Timer.After(0, fn)
+  else
+    fn()
+  end
+end
+
+local function Silver()
+  return Num(COPPER_PER_SILVER) or 100
+end
+
+local function CopperOK()
+  local ok, yes = pcall(C_AuctionHouse.SupportsCopperValues)
+  return ok and yes == true
+end
+
+-- Prices the auction house takes: whole silver unless the game supports copper.
+local function RoundPrice(copper)
+  copper = math.floor(copper)
+  if CopperOK() then
+    return math.max(copper, 1)
+  end
+  return math.max(math.floor(copper / Silver()) * Silver(), Silver())
+end
+ns.RoundPostPrice = RoundPrice
+
+local function DurationText()
+  local label = AUCTION_DURATION_ONE
+  return type(label) == "string" and label ~= "" and not IsSecret(label) and label:lower() or "2 hours"
+end
+ns.PostDurationText = DurationText
+
+local function Text(t, k)
+  local ok, v = pcall(function() return t[k] end)
+  return ok and type(v) == "string" and not IsSecret(v) and v or nil
+end
+
+local function SlotItem(bag, slot)
+  local ok, info = pcall(C_Container.GetContainerItemInfo, bag, slot)
+  return ok and type(info) == "table" and info or nil
+end
+
+local function SlotLocation(bag, slot)
+  local ok, loc = pcall(ItemLocation.CreateFromBagAndSlot, ItemLocation, bag, slot)
+  return ok and loc or nil
+end
+
+-- The list pieces in the bags that can be sold, in bag order: { bag, slot, id }.
+function ns.PostablePieces()
+  local out = {}
+  if not PostApiPresent() then
+    return out
+  end
+  for bag = 0, Num(NUM_BAG_SLOTS) or 4 do
+    local okN, n = pcall(C_Container.GetContainerNumSlots, bag)
+    n = okN and Num(n) or 0
+    for slot = 1, n do
+      local info = SlotItem(bag, slot)
+      local id = info and Field(info, "itemID")
+      if id and items[id] and not Flag(info, "isBound") and not Flag(info, "isLocked") then
+        local loc = SlotLocation(bag, slot)
+        local valid = loc ~= nil
+        if valid and C_AuctionHouse.IsSellItemValid then
+          local okV, v = pcall(C_AuctionHouse.IsSellItemValid, loc, false)
+          valid = not okV or IsSecret(v) or v ~= false
+        end
+        if valid then
+          out[#out + 1] = { bag = bag, slot = slot, id = id }
+        end
+      end
+    end
+  end
+  return out
+end
+
+-- The game's own default price (Blizzard_AuctionHouseSellFrame): 1 silver under
+-- the lowest listing. With none listed by others: your own listing, then what you
+-- asked last time, then the game's fallback of 1.5x the vendor price.
+function ns.DefaultPostPrice(id, facts)
+  local s = Silver()
+  if facts and facts.low then
+    return RoundPrice(facts.low - s), "1 silver under the lowest other listing (the game's own default)"
+  end
+  if facts and facts.mine then
+    return RoundPrice(facts.mine), "the price of your own listing"
+  end
+  local last = db.posted and db.posted[id]
+  if type(last) == "table" and Num(last.price) then
+    return RoundPrice(last.price), "what you asked last time"
+  end
+  local vendor = ns.Price(id).vendor
+  local mult = Constants and Constants.AuctionConstants and Num(Constants.AuctionConstants.DEFAULT_AUCTION_PRICE_MULTIPLIER) or 1.5
+  local price = vendor and vendor > 0 and vendor * mult or s
+  price = math.max(math.ceil(price / s) * s, s)
+  return price, "the game's default with no listing: 1.5x the vendor price"
+end
+
+local ShowPostPopup, PostNext
+
+local function HidePostPopups()
+  if StaticPopup_Hide then
+    pcall(StaticPopup_Hide, "SLUTMOGSCOUT_POST")
+    pcall(StaticPopup_Hide, "SLUTMOGSCOUT_POST_CONFIRM")
+  end
+end
+
+local function PostStop(reason)
+  if not post.active then
+    return
+  end
+  local done, total, deposits = post.done or 0, post.queue and #post.queue or 0, post.deposits or 0
+  post.active, post.queue, post.cur, post.searching, post.key, post.offer, post.pending, post.facts, post.last, post.retry = nil
+  HidePostPopups()
+  local summary = done > 0 and ("Posted %d of %d, deposits %s."):format(done, total, ns.Money(deposits)) or "Nothing was posted."
+  ns.Print((reason and (reason .. " ") or "") .. summary)
+  ns.Fire("POST")
+end
+ns.StopPosting = PostStop
+
+local function PieceName(e)
+  local it = items[e.id]
+  return it and it.name or ("item " .. e.id)
+end
+
+local function PostSearch()
+  local e = post.cur
+  if not post.active or not e then
+    return
+  end
+  local okReady, ready = pcall(C_AuctionHouse.IsThrottledMessageSystemReady)
+  if okReady and not IsSecret(ready) and ready == false then
+    post.waitSince = post.waitSince or GetTime()
+    if GetTime() - post.waitSince > POST_TIMEOUT then
+      post.waitSince = nil
+      PostStop("Posting stopped: the auction house stayed busy.")
+      return
+    end
+    post.retry = true -- the throttle event or this timer tries again
+    if C_Timer and C_Timer.After then
+      C_Timer.After(1, function()
+        if post.retry and post.cur == e then
+          post.retry = nil
+          PostSearch()
+        end
+      end)
+    end
+    return
+  end
+  post.waitSince, post.retry = nil, nil
+  local key
+  local loc = SlotLocation(e.bag, e.slot)
+  if loc and C_AuctionHouse.GetItemKeyFromItem then
+    local okK, k = pcall(C_AuctionHouse.GetItemKeyFromItem, loc)
+    key = okK and type(k) == "table" and k or nil
+  end
+  key = key or ladder.keys[e.id]
+  if not key then
+    local okM, k = pcall(C_AuctionHouse.MakeItemKey, e.id)
+    key = okM and type(k) == "table" and k or nil
+  end
+  local sorts = { { sortOrder = Enum.AuctionHouseSortOrder.Price, reverseSort = false } }
+  if not key or not pcall(C_AuctionHouse.SendSearchQuery, key, sorts, false) then
+    post.facts[e.id] = { unknown = true }
+    ShowPostPopup()
+    return
+  end
+  post.searching, post.key = e.id, key
+  if C_Timer and C_Timer.After then
+    C_Timer.After(POST_TIMEOUT, function()
+      if post.searching == e.id and post.cur == e then
+        post.searching = nil
+        post.facts[e.id] = { unknown = true }
+        ShowPostPopup()
+      end
+    end)
+  end
+end
+
+-- true when the results were this addon's posting search
+local function OnPostResults(itemKey)
+  if not post.searching or (type(itemKey) == "table" and Field(itemKey, "itemID")) ~= post.searching then
+    return false
+  end
+  local id, key = post.searching, post.key
+  post.searching = nil
+  local okN, n = pcall(C_AuctionHouse.GetNumItemSearchResults, key)
+  n = okN and not IsSecret(n) and Num(n) or 0
+  local f = { count = 0, more = n > PURCHASE_MAX }
+  for i = 1, math.min(n, PURCHASE_MAX) do
+    local ok, r = pcall(C_AuctionHouse.GetItemSearchResultInfo, key, i)
+    if ok and type(r) == "table" then
+      local buy, qty = Field(r, "buyoutAmount"), Field(r, "quantity")
+      if buy and buy > 0 then
+        local unit = math.floor(buy / math.max(qty or 1, 1))
+        if Flag(r, "containsOwnerItem") or Flag(r, "containsAccountItem") then
+          f.mine = math.min(f.mine or unit, unit)
+        else
+          f.low = math.min(f.low or unit, unit)
+          f.count = f.count + 1
+        end
+      end
+    end
+  end
+  post.facts[id] = f
+  if post.cur and post.cur.id == id then
+    ShowPostPopup()
+  end
+  return true
+end
+
+local function MoneyBox(dialog)
+  if type(dialog) ~= "table" then
+    return nil
+  end
+  local m = dialog.MoneyInputFrame or dialog.moneyInputFrame
+  if not m and dialog.GetName then
+    local ok, name = pcall(dialog.GetName, dialog)
+    m = ok and type(name) == "string" and _G[name .. "MoneyInputFrame"] or nil
+  end
+  return m
+end
+
+local function SetDialogPrice(dialog)
+  local m = MoneyBox(dialog)
+  if m and post.offer and MoneyInputFrame_SetCopper then
+    pcall(MoneyInputFrame_SetCopper, m, post.offer.price)
+  end
+end
+
+local function ReadDialogPrice(dialog)
+  local m = MoneyBox(dialog)
+  if m and MoneyInputFrame_GetCopper then
+    local ok, c = pcall(MoneyInputFrame_GetCopper, m)
+    if ok and Num(c) then
+      return Num(c)
+    end
+  end
+  return post.offer and post.offer.price -- no price box: the price the popup names
+end
+
+-- the popup from one of its money boxes, which sit a level deeper than an edit box
+local function DialogOf(frame)
+  local f = frame
+  for _ = 1, 3 do
+    if type(f) ~= "table" then
+      return nil
+    end
+    if f.which == "SLUTMOGSCOUT_POST" then
+      return f
+    end
+    local ok, parent = pcall(function() return f:GetParent() end)
+    f = ok and parent or nil
+  end
+  return nil
+end
+
+local function DefinePostDialogs()
+  if StaticPopupDialogs.SLUTMOGSCOUT_POST then
+    return
+  end
+  StaticPopupDialogs.SLUTMOGSCOUT_POST = {
+    text = "%s",
+    button1 = "Post",
+    button2 = "Stop",
+    button3 = "Skip",
+    hasMoneyInputFrame = 1,
+    OnShow = function(dialog) SetDialogPrice(dialog) end,
+    OnAccept = function(dialog) return ns.ConfirmPost(dialog) end, -- true keeps the popup up
+    EditBoxOnEnterPressed = function(box)
+      local dialog = DialogOf(box)
+      if not ns.ConfirmPost(dialog) and dialog and dialog.Hide then
+        dialog:Hide()
+      end
+    end,
+    OnAlt = function() ns.SkipPost() end,
+    OnCancel = function(_, _, reason)
+      if reason == "clicked" and post.offer then -- Stop or Escape, not the popup being replaced
+        post.offer = nil
+        PostStop("Posting stopped.")
+      end
+    end,
+    timeout = 0,
+    whileDead = true,
+    hideOnEscape = true,
+    preferredIndex = 3,
+  }
+  StaticPopupDialogs.SLUTMOGSCOUT_POST_CONFIRM = {
+    text = "%s",
+    button1 = ACCEPT or "Accept",
+    button2 = CANCEL or "Cancel",
+    OnAccept = function() ns.ConfirmPostWarning() end,
+    OnCancel = function(_, _, reason)
+      if reason == "clicked" and post.pending and post.pending.waiting then
+        local p = post.pending
+        post.pending = nil
+        ns.Print(("Not posted: %s."):format(PieceName(p.entry)))
+        Later(PostNext)
+      end
+    end,
+    timeout = 0,
+    whileDead = true,
+    hideOnEscape = true,
+    showAlert = true,
+    preferredIndex = 3,
+  }
+end
+
+local function PostText(e, f, price, why, deposit)
+  local info = SlotItem(e.bag, e.slot)
+  local link = info and Text(info, "hyperlink") or PieceName(e)
+  local lines = { ("Post %s for %s?  (%d of %d)"):format(link, DurationText(), post.at, #post.queue), "" }
+  if f.unknown then
+    lines[#lines + 1] = "Could not read its listings."
+  elseif f.low then
+    lines[#lines + 1] = ("Lowest other listing: %s (%s listed by others)."):format(ns.Money(f.low),
+      f.more and (f.count .. "+") or tostring(f.count))
+  else
+    lines[#lines + 1] = "No one else lists it now."
+  end
+  if f.mine then
+    lines[#lines + 1] = ("Your own lowest listing: %s."):format(ns.Money(f.mine))
+  end
+  local last = db.posted[e.id]
+  if type(last) == "table" and Num(last.price) then
+    lines[#lines + 1] = ("You last asked %s for it, %s."):format(ns.Money(last.price), AgeText(math.max(time() - (Num(last.t) or time()), 0)))
+  end
+  local p = ns.Price(e.id)
+  local worth = {}
+  if p.vendor and p.vendor > 0 then
+    worth[#worth + 1] = "vendor price " .. ns.Money(p.vendor)
+  end
+  if p.fair then
+    worth[#worth + 1] = "slutmog worth (estimate) " .. ns.Money(p.fair)
+  end
+  if #worth > 0 then
+    local w = table.concat(worth, "; ")
+    lines[#lines + 1] = w:sub(1, 1):upper() .. w:sub(2) .. "."
+  end
+  lines[#lines + 1] = ("Deposit: %s."):format(deposit and ns.Money(deposit) or "unknown")
+  lines[#lines + 1] = ""
+  lines[#lines + 1] = ("The price below (%s) is %s. Enter or Post lists it, Skip leaves it in your bags, Stop ends."):format(ns.Money(price), why)
+  return table.concat(lines, "\n")
+end
+
+ShowPostPopup = function()
+  local e = post.cur
+  if not post.active or not e then
+    return
+  end
+  if not (StaticPopupDialogs and StaticPopup_Show) then
+    PostStop("Posting stopped: the game's popup is missing.")
+    return
+  end
+  DefinePostDialogs()
+  local f = post.facts[e.id] or { unknown = true }
+  local price, why
+  if post.last[e.id] then
+    price, why = post.last[e.id], "what you gave the copy before"
+  else
+    price, why = ns.DefaultPostPrice(e.id, f)
+  end
+  local deposit
+  local loc = SlotLocation(e.bag, e.slot)
+  if loc and C_AuctionHouse.CalculateItemDeposit then
+    local okD, d = pcall(C_AuctionHouse.CalculateItemDeposit, loc, POST_DURATION, 1)
+    deposit = okD and Num(d) or nil
+  end
+  post.offer = { entry = e, price = price, deposit = deposit }
+  local okShow, dialog = pcall(StaticPopup_Show, "SLUTMOGSCOUT_POST", PostText(e, f, price, why, deposit))
+  if not okShow or not dialog then
+    post.offer = nil
+    PostStop("Posting stopped: the price window could not open.")
+    return
+  end
+  SetDialogPrice(dialog)
+end
+
+PostNext = function()
+  if not post.active then
+    return
+  end
+  post.offer, post.pending, post.searching, post.cur = nil, nil, nil, nil
+  if not ns.AuctionHouseOpen() then
+    PostStop("Posting stopped: the auction house is closed.")
+    return
+  end
+  while true do
+    post.at = post.at + 1
+    local e = post.queue[post.at]
+    if not e then
+      PostStop("Posting done.")
+      return
+    end
+    local info = SlotItem(e.bag, e.slot)
+    if info and Field(info, "itemID") == e.id and not Flag(info, "isLocked") then
+      post.cur = e
+      break
+    end
+  end
+  if post.facts[post.cur.id] then
+    ShowPostPopup()
+  else
+    PostSearch()
+  end
+end
+
+-- Starts posting the list pieces in the bags: false (with a chat line) when it cannot start now.
+function ns.StartPosting()
+  if post.active then
+    ns.Print("Posting is already under way: answer its window, or click Stop in it.")
+    return false
+  end
+  if not ns.AuctionHouseOpen() then
+    ns.Print("Open the auction house to post.")
+    return false
+  end
+  if not PostApiPresent() then
+    ns.Print("This game client does not let addons post auctions.")
+    return false
+  end
+  if ns.scan and ns.scan.active then
+    ns.Print("A scan is running. Post when it is done.")
+    return false
+  end
+  if ladder.active then
+    ns.Print("Still reading listings after the scan. Post again in a few seconds.")
+    return false
+  end
+  if purchase.id then
+    ns.Print("Still looking up a piece to buy. Post again in a moment.")
+    return false
+  end
+  local queue = ns.PostablePieces()
+  if #queue == 0 then
+    ns.Print("No piece on the list is in your bags to post (pieces bound to you cannot be sold).")
+    return false
+  end
+  post.active, post.queue, post.at, post.facts, post.last, post.done, post.deposits = true, queue, 0, {}, {}, 0, 0
+  ns.Print(("%d %s on the list in your bags. Each gets a window with its listings and a price; Enter or Post lists it for %s."):format(
+    #queue, #queue == 1 and "piece" or "pieces", DurationText()))
+  ns.Fire("POST")
+  PostNext()
+  return true
+end
+
+-- The popup's Post button or Enter: false when the popup may close, true to keep it up.
+function ns.ConfirmPost(dialog)
+  local o = post.offer
+  if not post.active or not o then
+    return false
+  end
+  local price = ReadDialogPrice(dialog)
+  if not price or price <= 0 then
+    ns.Print("Type a price first.")
+    return true
+  end
+  price = RoundPrice(price)
+  local e = o.entry
+  post.offer = nil
+  if not ns.AuctionHouseOpen() then
+    PostStop("Posting stopped: the auction house is closed.")
+    return false
+  end
+  local info = SlotItem(e.bag, e.slot)
+  local loc = SlotLocation(e.bag, e.slot)
+  if not info or Field(info, "itemID") ~= e.id or not loc then
+    ns.Print(("%s is no longer in that bag slot: skipped."):format(PieceName(e)))
+    Later(PostNext)
+    return false
+  end
+  local ok, needs = pcall(C_AuctionHouse.PostItem, loc, POST_DURATION, 1, nil, price)
+  if not ok then
+    ns.Print(("The game refused to post %s."):format(PieceName(e)))
+    Later(PostNext)
+    return false
+  end
+  local p = { entry = e, loc = loc, price = price, deposit = o.deposit, needs = needs == true }
+  post.pending = p
+  post.last[e.id] = price
+  ns.Print(("Posting %s for %s (%s)..."):format(PieceName(e), ns.Money(price), DurationText()))
+  if C_Timer and C_Timer.After then
+    C_Timer.After(POST_TIMEOUT, function()
+      if post.pending == p and not p.waiting then
+        post.pending = nil
+        ns.Print(("No word from the auction house about %s: check your auctions. Moving on."):format(PieceName(e)))
+        PostNext()
+      end
+    end)
+  end
+  return false
+end
+
+function ns.SkipPost()
+  if not post.active or not post.offer then
+    return
+  end
+  post.offer = nil
+  Later(PostNext)
+end
+
+-- The game asks to confirm some posts. Its own popup would confirm its sell
+-- frame's post, not this one, so this addon shows its own in its place.
+local function OnPostWarning()
+  local p = post.pending
+  if not p then
+    return
+  end
+  p.waiting = true
+  Later(function()
+    if post.pending ~= p then
+      return
+    end
+    if StaticPopup_Hide then
+      pcall(StaticPopup_Hide, "AUCTION_HOUSE_POST_WARNING")
+    end
+    DefinePostDialogs()
+    local warn = type(CONFIRM_AUCTION_POSTING_TEXT) == "string" and CONFIRM_AUCTION_POSTING_TEXT or "The game asks you to confirm this auction."
+    local text = ("%s\n\n%s for %s (%s)."):format(warn, PieceName(p.entry), ns.Money(p.price), DurationText())
+    local okShow, dialog = pcall(StaticPopup_Show, "SLUTMOGSCOUT_POST_CONFIRM", text)
+    if not okShow or not dialog then
+      post.pending = nil
+      PostStop(("Posting stopped: %s needs a confirmation the addon could not show."):format(PieceName(p.entry)))
+    end
+  end)
+end
+
+function ns.ConfirmPostWarning()
+  local p = post.pending
+  if not p or not p.waiting then
+    return
+  end
+  p.waiting = nil
+  if not pcall(C_AuctionHouse.ConfirmPostItem, p.loc, POST_DURATION, 1, nil, p.price) then
+    post.pending = nil
+    ns.Print(("The game refused to post %s."):format(PieceName(p.entry)))
+    Later(PostNext)
+  end
+end
+
+local function OnAuctionCreated()
+  local p = post.pending
+  if not p then
+    return
+  end
+  post.pending = nil
+  db.posted[p.entry.id] = { price = p.price, t = time() }
+  post.done = post.done + 1
+  post.deposits = post.deposits + (p.deposit or 0)
+  local f = post.facts[p.entry.id]
+  if f then
+    f.mine = math.min(f.mine or p.price, p.price)
+  end
+  ns.Print(("Posted %s for %s."):format(PieceName(p.entry), ns.Money(p.price)))
+  PostNext()
+end
+
+local function OnPostFailed(err)
+  local p = post.pending
+  if not p then
+    return
+  end
+  post.pending = nil
+  local why = ""
+  if err ~= nil and AuctionHouseUtil and AuctionHouseUtil.GetErrorText then
+    local ok, t = pcall(AuctionHouseUtil.GetErrorText, err)
+    why = ok and type(t) == "string" and not IsSecret(t) and (" (" .. t .. ")") or ""
+  end
+  PostStop(("Posting stopped: the game could not post %s%s."):format(PieceName(p.entry), why))
+end
 
 -------------------------------------------------------------------------------
 -- Farm ranking
@@ -2733,6 +3335,9 @@ frame:RegisterEvent("AUCTION_HOUSE_BROWSE_FAILURE")
 frame:RegisterEvent("AUCTION_HOUSE_THROTTLED_SYSTEM_READY")
 frame:RegisterEvent("ITEM_SEARCH_RESULTS_UPDATED")
 pcall(frame.RegisterEvent, frame, "AUCTION_HOUSE_PURCHASE_COMPLETED") -- not in every client
+for _, e in ipairs({ "AUCTION_HOUSE_AUCTION_CREATED", "AUCTION_HOUSE_POST_WARNING", "AUCTION_HOUSE_POST_ERROR", "AUCTION_HOUSE_SHOW_ERROR" }) do
+  pcall(frame.RegisterEvent, frame, e)
+end
 frame:SetScript("OnEvent", function(_, event, arg1)
   if event == "ADDON_LOADED" then
     if arg1 ~= ADDON then
@@ -2746,6 +3351,7 @@ frame:SetScript("OnEvent", function(_, event, arg1)
     db.areas = db.areas or {}
     db.dropLvl = db.dropLvl or {}
     db.opts = db.opts or {}
+    db.posted = db.posted or {}
     if db.opts.tooltip == nil then
       db.opts.tooltip = true
     end
@@ -2792,10 +3398,30 @@ frame:SetScript("OnEvent", function(_, event, arg1)
     if StaticPopup_Hide then
       pcall(StaticPopup_Hide, "SLUTMOGSCOUT_BUY")
     end
+    PostStop("Posting stopped: the auction house was closed.")
     ns.Fire("AH_CLOSED")
   elseif event == "AUCTION_HOUSE_PURCHASE_COMPLETED" then
     pcall(OnPurchaseCompleted, arg1)
+  elseif event == "AUCTION_HOUSE_AUCTION_CREATED" then
+    pcall(OnAuctionCreated)
+  elseif event == "AUCTION_HOUSE_POST_WARNING" then
+    pcall(OnPostWarning)
+  elseif event == "AUCTION_HOUSE_POST_ERROR" then
+    pcall(OnPostFailed)
+  elseif event == "AUCTION_HOUSE_SHOW_ERROR" then
+    pcall(OnPostFailed, arg1)
   elseif event == "ITEM_SEARCH_RESULTS_UPDATED" then
+    local okPost, mineP = pcall(OnPostResults, arg1)
+    if not okPost then
+      post.searching = nil
+      if post.active and post.cur then
+        post.facts[post.cur.id] = { unknown = true }
+        pcall(ShowPostPopup)
+      end
+      return
+    elseif mineP then
+      return
+    end
     local okP, mine = pcall(OnPurchaseResults, arg1)
     if not okP then
       purchase.id, purchase.offer = nil, nil
@@ -2827,6 +3453,10 @@ frame:SetScript("OnEvent", function(_, event, arg1)
   elseif event == "AUCTION_HOUSE_THROTTLED_SYSTEM_READY" then
     RunPending()
     LadderStep()
+    if post.retry then
+      post.retry = nil
+      PostSearch()
+    end
   end
 end)
 
@@ -2915,6 +3545,8 @@ SlashCmdList.SLUTMOGSCOUT = function(input)
     else
       ns.Print("Usage: |cffffff00/smog buy|r <item link, ID or name of a piece on the list>")
     end
+  elseif cmd == "post" or cmd == "sell" then
+    ns.StartPosting()
   elseif cmd == "common" then
     local n = tonumber(rest)
     if n then
@@ -2967,6 +3599,7 @@ SlashCmdList.SLUTMOGSCOUT = function(input)
     print("  |cffffff00/smog restore|r  bring back removed built-in pieces")
     print("  |cffffff00/smog cropped|r  show or hide cropped pieces")
     print("  |cffffff00/smog buy|r <item>  find the cheapest copy listed and ask to buy it")
+    print("  |cffffff00/smog post|r  post the pieces on the list in your bags for the shortest time, one window each")
     print("  |cffffff00/smog grade|r <item> <bikini, skimpy, cropped or auto>  set a piece's grade yourself")
     print("  |cffffff00/smog common|r  show or hide the most common pieces; |cffffff00/smog common 40|r hides the most common 40% (0-60)")
     print("  |cffffff00/smog hints|r  pieces off the list that are priced like transmog pieces")
