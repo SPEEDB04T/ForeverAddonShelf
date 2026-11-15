@@ -54,6 +54,13 @@ ns.AD_POOLS = {
         "Gnomes will pretend they were just walking past.",
         "Don't be shy, show some thigh.",
         "Put the booty back in Booty Bay.",
+        "This look will outlast your guild.",
+        "Nefarian drops better stats. He doesn't drop a better look.",
+        "Tier 2 covers too much anyway.",
+        "Your gear gets replaced every raid. This look doesn't.",
+        "The price goes up when the raiders find out. They always find out.",
+        "Cheap now. Wait till the raiders have gold.",
+        "Buy it before someone with an epic mount does.",
     },
     plate = {
         "Hit your 40s and the gentlemen don't stare like they used to? ~ {shop} ~ NOW OPEN for all your mogging needs! {item} only {price}.",
@@ -67,6 +74,7 @@ ns.AD_POOLS = {
     },
     chest = {
         "Take your tabard off. It's covering the good part.",
+        "You'll replace that chest ten times by Naxx. It'll look like this every time.",
     },
     shop_smuttanie = {
         "Long night of grinding with the boys? Smuttanie keeps you ready!",
@@ -84,6 +92,9 @@ ns.AD_POOLS = {
         "Can't find a healer? Smuttanie makes them come running!",
         "{shop}, for all your proclivities. {item}, {price}.",
         "{shop}, for your Goldshire activities. {item}, {price}.",
+        "Worried it won't last till endgame? Smuttanie goes all the way!",
+        "From Ragnaros to Kel'Thuzad, Smuttanie's keeps you barely clad.",
+        "Smuttanie's cheap and Smuttanie's easy. One of those won't last.",
     },
     sets = {
         "A top, a bottom and nothing in between.",

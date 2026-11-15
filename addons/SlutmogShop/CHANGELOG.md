@@ -1,5 +1,9 @@
 # Changelog
 
+## 1.6.1
+
+- Eleven new ad lines on two selling points: the look is bought once and stays on through every gear upgrade up to Naxxramas, and it is cheap now, before the raiders with gold want it.
+
 ## 1.6.0
 
 - Sets: sell a top and a bottom together. Right-click a ware > Sell as a set with > the other piece (or `/slutshop set [top] [bottom]`). On the top's turn the ad links both pieces and gives one price for the pair, the two prices added up. The posting panel shows both icons; a click tries the whole set on.
