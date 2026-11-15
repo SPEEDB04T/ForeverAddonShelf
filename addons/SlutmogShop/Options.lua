@@ -39,6 +39,11 @@ local function Rows()
               { "mine", "Only mine", "Only the openers and ad lines on the Lines tab of the shop window." },
           },
           get = Get("wording"), set = Set("wording") },
+        { kind = "check", label = "Put pieces from my bags on the shelf",
+          tip = "Every piece from the slutmog list in your bags becomes a ware by itself. It has no price at "
+              .. "first and stays out of the ads until you give it one. /slutshop scan looks again, also for "
+              .. "pieces you took off the shelf before.",
+          get = Get("autoAdd"), set = function(v) ns.Set("autoAdd", v); if v then ns.ScanBags() end end },
         { kind = "check", label = "Only wares I still have",
           tip = "Skips wares that are in neither your bags nor your bank, so a sold piece drops out of the ads "
               .. "by itself and comes back when you have another.",

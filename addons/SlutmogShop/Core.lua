@@ -2,8 +2,9 @@
 --
 -- You keep a list of wares (an item and its price). Each click posts one ad for the next ware
 -- to the channel you picked (Trade to start with), with the ware as a real item link and its
--- price. A piece from the slutmog list has ready-made ads of its own (Ads.lua), which take
--- turns; any other ware gets one of your ad lines with a fresh opener and your shop's name,
+-- price. A piece from the slutmog list has ready-made ads (Ads.lua) about how it looks and
+-- about the buyer's life as a player, which take turns; such a piece in your bags goes on the
+-- shelf by itself and waits for a price. Any other ware gets one of your ad lines with a fresh opener and your shop's name,
 -- for example
 --   Hit your 40s and the gentlemen don't stare like they used to? ~ Smuttanie's Necessities ~
 --   NOW OPEN for all your mogging needs! [Tyrant's Legplates] only 10 gold pieces.
@@ -14,7 +15,7 @@
 -- works too). A reminder in your own chat says when it is time for the next one.
 local ADDON, ns = ...
 
-ns.VERSION = "1.1.1"
+ns.VERSION = "1.2.0"
 ns.TITLE = "Slutmog Shop"
 ns.ICON = "Interface\\Icons\\INV_Misc_Coin_02"
 ns.ACCENT = { 0.96, 0.55, 0.78 }
@@ -100,6 +101,7 @@ local DEFAULTS = {
     remind = 5,             -- minutes after an ad until the reminder (0: none)
     sound = true,           -- the reminder plays a sound
     stockOnly = true,       -- skip wares that are in neither your bags nor your bank
+    autoAdd = true,         -- pieces from the slutmog list found in your bags go on the shelf by themselves
     order = "turns",        -- wares take turns ("turns") or come at random ("random")
     prices = "words",       -- "10 gold pieces" ("words") or "10g" ("short")
     wording = "items",      -- a piece's ready-made ads ("items"), turn about ("mixed") or only your lines ("mine")
@@ -289,11 +291,13 @@ local function InitDB()
         if type(w) == "table" and (type(w.id) == "number" or type(w.link) == "string") then
             w.id = w.id or ns.ItemID(w.link)
             w.price = max(0, floor(tonumber(w.price) or 0))
+            w.unpriced = (w.unpriced == true and w.price == 0) or nil
             kept[#kept + 1] = w
         end
     end
     db.wares = kept
     if type(db.decks) ~= "table" then db.decks = {} end
+    if type(db.passed) ~= "table" then db.passed = {} end
     if type(db.log) ~= "table" then db.log = {} end
     if type(db.minimap) ~= "table" then db.minimap = {} end
     if type(db.posts) ~= "number" then db.posts = 0 end
@@ -352,13 +356,19 @@ end
 ---------------------------------------------------------------------------
 -- Wares
 ---------------------------------------------------------------------------
+local bagCount = {}             -- item id -> how many the last bag scan saw (ScanBags fills it)
+
+-- How many of a ware you have: the game's count (bags and bank) or what the bag scan saw,
+-- whichever is higher, in case the game's count comes up short.
 function ns.Count(w)
     if not (w and w.id) then return nil end
+    local seen = bagCount[w.id]
     local fn = (C_Item and C_Item.GetItemCount) or GetItemCount
-    if type(fn) ~= "function" then return nil end
-    local ok, n = pcall(fn, w.id, true)
-    if ok and Readable(n) and type(n) == "number" then return n end
-    return nil
+    if type(fn) == "function" then
+        local ok, n = pcall(fn, w.id, true)
+        if ok and Readable(n) and type(n) == "number" then return max(n, seen or 0) end
+    end
+    return seen
 end
 
 local function InStock(w)
@@ -382,8 +392,10 @@ function ns.AddWare(link, copper)
     if not id then return false, "that is not an item link." end
     copper = max(0, floor(tonumber(copper) or 0))
     local i, w = ns.FindWare(link)
+    local key = WareKey(link)
+    if key then db.passed[key] = nil end
     if w then
-        w.link, w.id, w.price = link, id, copper
+        w.link, w.id, w.price, w.unpriced = link, id, copper, nil
         Changed()
         return true, ("%s now costs %s."):format(link, ns.PriceText(copper)), i
     end
@@ -396,6 +408,8 @@ function ns.RemoveWare(i)
     local w = db.wares[i]
     if not w then return false end
     table.remove(db.wares, i)
+    local key = WareKey(w.link)
+    if key then db.passed[key] = true end      -- the bag scan leaves a piece you took off the shelf alone
     if db.lastWare >= i then db.lastWare = max(0, db.lastWare - 1) end
     Changed()
     return true, w
@@ -442,6 +456,72 @@ local function FillLinks()
     if filled then Changed() end
 end
 ns.FillLinks = FillLinks
+
+---------------------------------------------------------------------------
+-- Bag scan: every piece from the slutmog list in your bags goes on the shelf by itself. It has
+-- no price yet, so it stays out of the ads until you give it one.
+---------------------------------------------------------------------------
+local function BagLink(bag, slot)
+    local link
+    if C_Container and type(C_Container.GetContainerItemLink) == "function" then
+        local ok, v = pcall(C_Container.GetContainerItemLink, bag, slot)
+        if ok then link = v end
+    elseif type(GetContainerItemLink) == "function" then
+        local ok, v = pcall(GetContainerItemLink, bag, slot)
+        if ok then link = v end
+    end
+    local count = 1
+    if C_Container and type(C_Container.GetContainerItemInfo) == "function" then
+        local ok, info = pcall(C_Container.GetContainerItemInfo, bag, slot)
+        if ok and type(info) == "table" then
+            if not link then link = info.hyperlink end
+            if Readable(info.stackCount) and type(info.stackCount) == "number" then count = info.stackCount end
+        end
+    end
+    if Readable(link) and type(link) == "string" then return link, count end
+end
+
+-- Returns how many pieces it put on the shelf. `all` also takes back pieces you removed before.
+function ns.ScanBags(all)
+    if not db then return 0 end
+    local slots = (C_Container and C_Container.GetContainerNumSlots) or GetContainerNumSlots
+    if type(slots) ~= "function" then return 0 end
+    local counts, added = {}, {}
+    for bag = 0, (tonumber(NUM_BAG_SLOTS) or 4) do
+        local ok, n = pcall(slots, bag)
+        if ok and Readable(n) and type(n) == "number" then
+            for slot = 1, n do
+                local link, count = BagLink(bag, slot)
+                local id = link and ns.ItemID(link)
+                if id then
+                    counts[id] = (counts[id] or 0) + count
+                    local key = WareKey(link)
+                    if (all or db.autoAdd) and key and ns.ItemAds(id) and not ns.FindWare(link)
+                        and (all or not db.passed[key]) then
+                        db.passed[key] = nil
+                        db.wares[#db.wares + 1] = { id = id, link = link, price = 0, unpriced = true }
+                        added[#added + 1] = link
+                    end
+                end
+            end
+        end
+    end
+    bagCount = counts
+    if #added > 0 then
+        local one = #added == 1
+        Print(("found %s in your bags and put %s on the shelf. Click %s in the shop window (/slutshop) to set a "
+            .. "price; until then %s out of the ads."):format(table.concat(added, ", "), one and "it" or "them",
+            one and "it" or "each", one and "it stays" or "they stay"))
+        Changed()
+    end
+    return #added
+end
+
+function ns.Unpriced()
+    local n = 0
+    for _, w in ipairs(db.wares) do if w.unpriced then n = n + 1 end end
+    return n
+end
 
 ---------------------------------------------------------------------------
 -- Turns: openers and ad lines come in a shuffled order, each used once before any repeats
@@ -503,7 +583,7 @@ local function Offer()
     for k = 1, n do
         local i = (start + k - 1) % n + 1
         local w = wares[i]
-        if w.link and (not db.stockOnly or InStock(w)) then list[#list + 1] = i end
+        if w.link and not w.unpriced and (not db.stockOnly or InStock(w)) then list[#list + 1] = i end
     end
     if db.order == "random" and #list > 1 then
         local first = db.feature
@@ -581,6 +661,9 @@ local function NoStockWhy()
     if #db.wares == 0 then
         return "you have no wares yet. Drop an item on the slot in the shop window (/slutshop)."
     end
+    if ns.Unpriced() == #db.wares then
+        return "your wares have no price yet. Click one in the shop window (/slutshop) and give it a price."
+    end
     if db.stockOnly then
         return "none of your wares is in your bags or bank (untick \"Only wares I still have\" in the options to advertise them anyway)."
     end
@@ -588,13 +671,55 @@ local function NoStockWhy()
 end
 
 ---------------------------------------------------------------------------
--- Ready-made ads (Ads.lua): five or so per piece on the slutmog list, taking turns per piece
+-- Ready-made ads (Ads.lua), taking turns per piece. A piece has ads of its own and draws on the
+-- pools for its look, its armor type, its slot and its level range, plus a share of the ads that
+-- fit any piece. {color} is the piece's own colour words, put in here.
 ---------------------------------------------------------------------------
+local GENERAL_SHARE = 6
+local flat = setmetatable({}, { __mode = "k" })     -- a piece's entry -> its ads, built once
+
+local function BuildAds(id, entry)
+    local list, seen = {}, {}
+    local color = type(entry.color) == "string" and entry.color or nil
+    local function Add(ad)
+        if type(ad) ~= "string" then return end
+        if ad:find("{color}", 1, true) then
+            if not color then return end
+            ad = ad:gsub("{color}", function() return color end)
+        end
+        if not seen[ad] then
+            seen[ad] = true
+            list[#list + 1] = ad
+        end
+    end
+    for _, ad in ipairs(entry) do Add(ad) end
+    local pools = type(ns.AD_POOLS) == "table" and ns.AD_POOLS or {}
+    if type(entry.pools) == "table" then
+        for _, name in ipairs(entry.pools) do
+            local pool = pools[name]
+            if type(pool) == "table" then
+                if name == "general" then
+                    for k = 0, min(GENERAL_SHARE, #pool) - 1 do Add(pool[(id + k) % #pool + 1]) end
+                else
+                    for _, ad in ipairs(pool) do Add(ad) end
+                end
+            end
+        end
+    end
+    return list
+end
+
 function ns.ItemAds(id)
     local all = ns.ITEM_ADS
     if type(all) ~= "table" or type(id) ~= "number" then return nil end
-    local list = all[id]
-    if type(list) == "table" and #list > 0 then return list end
+    local entry = all[id]
+    if type(entry) ~= "table" then return nil end
+    local list = flat[entry]
+    if not list then
+        list = BuildAds(id, entry)
+        flat[entry] = list
+    end
+    if #list > 0 then return list end
     return nil
 end
 
@@ -1003,6 +1128,7 @@ local function PrintHelp()
         "/slutshop add [item link] 10g - add a ware or change its price (shift-click the item to link it)",
         "/slutshop remove [item link] - stop selling it",
         "/slutshop list - your wares",
+        "/slutshop scan - look through your bags for pieces from the slutmog list and put them on the shelf",
         "/slutshop ads [item link] - the ready-made ads for a piece (without a link: which wares have them)",
         "/slutshop channel Trade - where ads go (Say, Yell, Guild or any channel you are in)",
         "/slutshop options - the options",
@@ -1065,7 +1191,8 @@ local function ShowAds(rest)
         Print(("no ready-made ads for %s; your own ad lines speak for it."):format(shown))
         return
     end
-    local fields = { shop = ns.ShopName(), item = shown, price = w and ns.PriceText(w.price) or "(your price)" }
+    local fields = { shop = ns.ShopName(), item = shown, price = w and not w.unpriced and ns.PriceText(w.price) or "(your price)",
+                     level = LevelOf({ link = (w and w.link) or link, id = id }) or "?" }
     Print(("%d ready-made ads for %s:"):format(#ads, shown))
     for k, ad in ipairs(ads) do Say(("  %d. %s"):format(k, (Fill(ad, fields)))) end
 end
@@ -1114,7 +1241,8 @@ local function Slash(msg)
             local n = ns.Count(w)
             local stock = n == nil and "" or (n > 0 and (" (" .. n .. " in stock)") or " (none left)")
             if DEFAULT_CHAT_FRAME and DEFAULT_CHAT_FRAME.AddMessage then
-                DEFAULT_CHAT_FRAME:AddMessage(("  %d. %s %s%s"):format(i, w.link or ns.WareName(w), ns.PriceText(w.price), stock))
+                DEFAULT_CHAT_FRAME:AddMessage(("  %d. %s %s%s"):format(i, w.link or ns.WareName(w),
+                    w.unpriced and "no price yet" or ns.PriceText(w.price), stock))
             end
         end
     elseif cmd == "channel" then
@@ -1127,6 +1255,11 @@ local function Slash(msg)
         ns.Set("channel", key)
         local ok, why = ns.ResolveChannel(key)
         Print("ads go to " .. ns.ChannelLabel(key) .. "." .. (ok and "" or (" Right now " .. tostring(why))))
+    elseif cmd == "scan" or cmd == "bags" then
+        if ns.ScanBags(true) == 0 then
+            Print(ns.ItemAdCount() == 0 and "the slutmog list did not load, so there is nothing to look for."
+                or "nothing new in your bags: every piece from the slutmog list in them is on the shelf already.")
+        end
     elseif cmd == "ads" then
         ShowAds(rest)
     elseif cmd == "options" or cmd == "config" then
@@ -1176,6 +1309,7 @@ events:SetScript("OnEvent", function(_, event, ...)
         if not db then InitDB() end
         FillLinks()
         HookLinks()
+        ns.ScanBags()
         stockSeen = StockKey()
         if ns.Options and ns.Kit then
             local ok, err = pcall(ns.Options.Init)
@@ -1188,6 +1322,7 @@ events:SetScript("OnEvent", function(_, event, ...)
         local id = ...
         if pending[id] then pending[id] = nil; FillLinks() end
     elseif event == "BAG_UPDATE_DELAYED" then
+        ns.ScanBags()
         local now = StockKey()
         if now ~= stockSeen then
             stockSeen = now

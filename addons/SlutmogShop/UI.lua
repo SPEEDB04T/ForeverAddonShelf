@@ -273,7 +273,12 @@ local function Row(i)
         else
             GameTooltip:SetText(ns.WareName(w), Color(HIGHLIGHT_FONT_COLOR, 1, 1, 1))
         end
-        GameTooltip:AddLine("Price in the ad: " .. ns.PriceText(w.price), Color(HIGHLIGHT_FONT_COLOR, 1, 1, 1))
+        if w.unpriced then
+            GameTooltip:AddLine("Found in your bags. It has no price yet, so it stays out of the ads.",
+                Color(RED_FONT_COLOR, 1, 0.1, 0.1))
+        else
+            GameTooltip:AddLine("Price in the ad: " .. ns.PriceText(w.price), Color(HIGHLIGHT_FONT_COLOR, 1, 1, 1))
+        end
         local ads = ns.ItemAds and ns.ItemAds(w.id)
         if ads and ns.db.wording ~= "mine" then
             GameTooltip:AddLine(("%d ready-made ads for it (/slutshop ads shows them)"):format(#ads), Color(NORMAL_FONT_COLOR, 1, 0.82, 0))
@@ -282,7 +287,8 @@ local function Row(i)
         else
             GameTooltip:AddLine("Its ads come from your ad lines", Color(NORMAL_FONT_COLOR, 1, 0.82, 0))
         end
-        GameTooltip:AddLine("Click: change the price", Color(GRAY_FONT_COLOR, 0.5, 0.5, 0.5))
+        GameTooltip:AddLine(w.unpriced and "Click: give it a price" or "Click: change the price",
+            Color(GRAY_FONT_COLOR, 0.5, 0.5, 0.5))
         GameTooltip:AddLine("Right-click: advertise it next, move or remove", Color(GRAY_FONT_COLOR, 0.5, 0.5, 0.5))
         GameTooltip:Show()
     end)
@@ -310,7 +316,13 @@ local function SyncRows()
         end
         if out then r.name:SetTextColor(gr, gg, gb) else r.name:SetTextColor(wr, wg, wb) end
         if r.icon.SetDesaturated then r.icon:SetDesaturated(out) end
-        r.price:SetText(ns.MoneyText(w.price))
+        if w.unpriced then
+            r.price:SetText("No price yet")
+            r.price:SetTextColor(Color(RED_FONT_COLOR, 1, 0.1, 0.1))
+        else
+            r.price:SetText(ns.MoneyText(w.price))
+            r.price:SetTextColor(wr, wg, wb)
+        end
         if n == nil then
             r.stock:SetText("")
         elseif out then

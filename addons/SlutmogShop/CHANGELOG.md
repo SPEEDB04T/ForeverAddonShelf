@@ -1,5 +1,12 @@
 # Changelog
 
+## 1.2.0
+
+- All ready-made ads are new. They no longer pun on the item's name. They describe how the piece looks (written from its textures: the strap harnesses, the plate bikinis, the chastity-belt legguards, the spider-web sleeves) or speak to the buyer as a player: plate at 40, repair bills, the healer watching your health bar, getting inspected at the mailbox, "Keep getting ganked, never getting camped?". Transmog as a way to show off gold is in there too. Suggestive, never explicit.
+- Each piece now has 17 to 28 ads instead of five: its own, the ones for its look, its armor type, its slot and its level range, and a share of the ads that fit any piece. Each is used once before any repeats. Your request's ad stays first in the Tyrant's Legplates' list.
+- Bag scan: every piece from the slutmog list in your bags goes on the shelf by itself, at login and whenever your bags change. It has no price yet ("No price yet" in red) and stays out of the ads until you click it and give it one. A piece you take off the shelf stays off; `/slutshop scan` looks again and takes those back too. Options > "Put pieces from my bags on the shelf" turns it off.
+- "N in stock" now also counts the copies seen in your bags, so two of the same piece read "2 in stock" even if the game's own count says one.
+
 ## 1.1.1
 
 - Updating from 1.0.0 adds a new file (Ads.lua), so restart the game once: quit and start it again, because /reload is not enough. Until then the ready-made ads stay away and your own ad lines are used.

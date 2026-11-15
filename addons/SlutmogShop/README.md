@@ -6,11 +6,13 @@ Advertise your slutmog wares with one click. Each ad names your shop and the nex
 
 ## Ready-made ads
 
-Every piece on the slutmog list (the 166 items Slutmog Scout knows) comes with five ads of its own, written for that piece: its name, its cut, where it comes from, with in-world jokes for an RP server. Cheeky, never explicit. For example:
+Every piece on the slutmog list (the 166 items Slutmog Scout knows) comes with 17 to 28 ready-made ads. Some describe how the piece looks, some speak to the buyer as a player (plate at 40, repair bills, the healer, the mailbox, showing off gold). Suggestive, never explicit. For example:
 
-> Tyrants demand much of their subjects and very little of their trousers. [Tyrant's Legplates], 10 gold pieces ~ Smuttanie's Necessities
+> Keep getting ganked, never getting camped? Give them a reason to stay. [Tyrant's Legplates], 10 gold pieces at Smuttanie's Necessities.
 
-> Spiders lure their prey with silk. Results in Stormwind are similar. [Arachnidian Robes], 4 gold pieces at Smuttanie's Necessities.
+> Wear it, point at the floor and see who kneels. [Tyrant's Legplates], 10 gold pieces at Smuttanie's Necessities.
+
+> It's a metal thong. We can call it legplates if the guards ask. Smuttanie's Necessities has [Lord's Legguards] for 15 gold pieces.
 
 A piece's ads take turns, each used once before any repeats. Wares that are not on the list use your own openers and ad lines (below). `/slutshop ads [item]` shows a piece's ads filled in; **Options > Which ads** picks ready-made ads only (the default), ready-made and your own by turns, or only your own.
 
@@ -29,7 +31,7 @@ The game only lets an addon send a line to Trade or General from a click or a ke
 
 `/slutshop`, or right-click the minimap button.
 
-- **Wares**: drop an item on the slot, or shift-click one in your bags (or the auction house) while the window is open. Type a price and press Enter or click Add. Click a ware to change its price; right-click it to advertise it next, move it or remove it. A ware you no longer have in your bags or bank is greyed out and left out of the ads.
+- **Wares**: drop an item on the slot, or shift-click one in your bags (or the auction house) while the window is open. Type a price and press Enter or click Add. Click a ware to change its price; right-click it to advertise it next, move it or remove it. A ware you no longer have in your bags or bank is greyed out and left out of the ads. A piece from the slutmog list that turns up in your bags is put on the list by itself, marked "No price yet", and stays out of the ads until you give it a price.
 - **Lines**: your shop's name, the openers (one per line) and the ad lines (one per line), for wares without ready-made ads (or for all of them, see Which ads). Ad lines use fill-ins:
   - `{opener}`: one of the openers
   - `{shop}`: the shop's name
@@ -53,6 +55,7 @@ Openers and ad lines take turns, each used once before any repeats. If an ad is 
 | `/slutshop add [item] 10g` | add a ware or change its price (shift-click the item into the line) |
 | `/slutshop remove [item]` | stop selling it |
 | `/slutshop list` | your wares |
+| `/slutshop scan` | look through your bags for pieces from the slutmog list and put them on the shelf |
 | `/slutshop ads [item]` | a piece's ready-made ads (without an item: which wares have them) |
 | `/slutshop channel Trade` | where ads go |
 | `/slutshop options` | the options |
@@ -62,4 +65,4 @@ Openers and ad lines take turns, each used once before any repeats. If an ad is 
 
 ## Options
 
-Shortest gap between ads (60 seconds), the reminder and its sound, which ads (ready-made, by turns with yours, or only yours), whether only wares you still have go in, the order of wares, how prices read, and the minimap button.
+Shortest gap between ads (60 seconds), the reminder and its sound, which ads (ready-made, by turns with yours, or only yours), whether pieces from your bags go on the shelf by themselves, whether only wares you still have go in, the order of wares, how prices read, and the minimap button.
