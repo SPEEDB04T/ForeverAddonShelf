@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.16.1
+
+- **Slutmog Shop can see when you're undercut.** Other addons can now read the lowest price other
+  sellers ask for a piece (`SlutmogScoutAPI.MarketLow`). Your own auctions are left out, and the
+  reading is kept across a /reload.
+
 ## 1.16.0
 
 - **New Sell tab.** It lists your list pieces in the bags and your auctions, with the lowest other

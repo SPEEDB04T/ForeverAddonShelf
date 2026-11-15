@@ -2708,10 +2708,57 @@ local function OnSellResults(itemKey)
     end
   end
   sell.market[id] = m
+  if type(db.sellSeen) == "table" then
+    db.sellSeen[id] = { low = m.low or false, t = m.t }
+  end
   ns.Fire("SELL")
   Later(SellStep)
   return true
 end
+
+-------------------------------------------------------------------------------
+-- For other addons (Slutmog Shop: no ads for wares you were undercut on).
+-- SlutmogScoutAPI.MarketLow(itemID) -> the lowest unit buyout of other sellers
+-- (copper) and the time() it was read, from the newest of the Sell tab's
+-- reading and the last scan. Your own auctions are left out. nil, t: the
+-- newest reading found no other listing; nil, nil: never read.
+-------------------------------------------------------------------------------
+local function MarketLow(id)
+  id = Num(id)
+  if not (id and db) then
+    return nil, nil
+  end
+  local low, at
+  local m = sell.market[id]
+  if type(m) == "table" and not m.unknown and Num(m.t) then
+    low, at = Num(m.low), m.t
+  else
+    local seen = type(db.sellSeen) == "table" and db.sellSeen[id]
+    if type(seen) == "table" and Num(seen.t) then
+      low, at = Num(seen.low), seen.t
+    end
+  end
+  local p = db.prices[id]
+  if type(p) == "table" and Num(p.t) and (not at or p.t > at) then
+    low, at = (Num(p.qty) or 0) > 0 and Num(p.min) or nil, p.t
+  end
+  if low and low <= 0 then
+    low = nil
+  end
+  return low, at
+end
+ns.MarketLow = MarketLow
+
+SlutmogScoutAPI = {
+  version = 1,
+  MarketLow = function(itemID)
+    local ok, low, at = pcall(MarketLow, itemID)
+    if ok then
+      return low, at
+    end
+    return nil, nil
+  end,
+}
 
 -- The rows of the Sell tab: bag pieces (not listed first) and your auctions
 -- (undercut first). Status: "listed", "undercut", "lowest", "sold" or nil (not read yet).
@@ -3516,6 +3563,9 @@ frame:SetScript("OnEvent", function(_, event, arg1)
     db.dropLvl = db.dropLvl or {}
     db.opts = db.opts or {}
     db.posted = db.posted or {}
+    if type(db.sellSeen) ~= "table" then
+      db.sellSeen = {}
+    end
     if db.opts.tooltip == nil then
       db.opts.tooltip = true
     end
