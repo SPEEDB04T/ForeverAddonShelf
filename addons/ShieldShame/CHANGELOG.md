@@ -1,5 +1,21 @@
 # Changelog
 
+## 1.2.0 (2026-11-15)
+
+- Per fight, not all time (SuccuDev: "theres no point to all time it should be per fight,
+  when a fight got me under 50% mana or something"). The session and all-time counts are
+  gone, and the old all-time count is removed from the saved data.
+- One line in chat after a fight that hurt: a fight that took your mana (Water Shield) or
+  health (Lightning Shield) below 50% while a shield was missing. It says how low you went,
+  what the shield would have given you, and, for mana, where you would have bottomed out
+  with it up ("That fight took you down to 20% mana, and you fought it without Water Shield:
+  120 mana (6% of your bar) you never got. With it up you'd have bottomed out at 26%.").
+  Every other fight says nothing. Options: "Tell me after a fight that hurt" (on) and
+  "A fight hurt below" (10-90%, default 50%). This replaces 1.1.0's roast and its settings.
+- The icon shows this fight's loss (or the last fight's), the tooltip this fight's uptime and
+  how low it took you, `/shame` the last fight and how many of the logged fights hurt.
+- `/shame reset` now clears the fight log; the session and all-time resets are gone.
+
 ## 1.1.0 (2026-11-15)
 
 - No chat by default (SuccuDev: "still annoying in chat, overall needs improvement"). The

@@ -4,17 +4,20 @@ For shamans on WoW Forever. Counts the damage and mana you throw away by fightin
 Lightning Shield or Water Shield up, and mocks you for it. Asked for as: "addon to shame me
 about how much damage and mana ive lost not maintaining shaman shields".
 
+Everything is per fight.
+
+- **After a fight that hurt, one line in chat.** A fight hurt when it took your mana (Water
+  Shield) or health (Lightning Shield) below 50% (a setting) while a shield was missing. The
+  line says how low you went, what the shield would have given you, and for mana where you
+  would have bottomed out with it up. Every other fight says nothing.
 - A greyed-out shield icon while no shield is up (out of fights, and in fights the moment
-  your orbs run out). Under it, where a buff shows its time left, what going without has
-  cost you this session ("-1,240", "-34k"). Its tooltip has a jab, what you lost this fight,
-  this session and all time, and your shield uptime.
-- **Shield uptime**: the share of your fight time with a shield up. The verdict goes by it.
-- `/shame` prints the last fight, this session and all time on this character.
-- The minimap button's tooltip shows the session and all-time totals.
-- **No chat unless you ask.** Nothing is written to chat on its own. Opt-in: "Roast me in
-  chat too" (one mocking line for the fights since the last one, once they add up to a whole
-  shield's 3 orbs or 5% of your max mana, at most once every 5 minutes, fights in between
-  rolled into it) and "Confess to my group" (the roast in party or raid chat as well).
+  your orbs run out). Under it, where a buff shows its time left, what going without cost you
+  in this fight (or the last one). Its tooltip has a jab, what that fight cost, how long your
+  shield was up in it, how low it took you, and how many recent fights hurt.
+- `/shame` prints the last fight and how many of your recent fights hurt, and what those cost.
+- The minimap button's tooltip shows the same.
+- "Confess to my group" (off by default): after a fight that hurt, says it in party or raid
+  chat as well, at most once a minute.
 - `/shame log`: the last 25 fights, hit by hit, to check the counts against the game.
 
 The addon does nothing on other classes: no icon, no minimap button, no events.
@@ -23,9 +26,9 @@ The addon does nothing on other classes: no icon, no minimap button, no events.
 
 `/shame` (or `/shieldshame`): what you lost. `/shame options`, `/shame on` / `off`,
 `/shame lightning` / `water` / `auto` (what to count against), `/shame lock` / `unlock`,
-`/shame test` (show the icon to place it), `/shame reset session`, `/shame reset all`,
-`/shame log` (the last fights, hit by hit), `/shame status` (what the addon read: ranks,
-values, where each came from).
+`/shame test` (show the icon to place it), `/shame log` (the last fights, hit by hit),
+`/shame reset` (clears the fight log), `/shame status` (what the addon read: ranks, values,
+where each came from).
 
 ## The shields on this client
 
@@ -76,21 +79,27 @@ Default "the shield I used last": the one you last cast or had on you. Before yo
 used either: Water Shield if you have the talent, else Lightning Shield. Options or
 `/shame lightning` / `water` pin one. A shield you don't know is never counted against.
 
-**Totals.** This fight, this session (since login or `/shame reset session`) and all time on
-this character (saved per character, `ShieldShameCharDB`). Each keeps damage, mana, orbs
-missed, seconds fought with no shield, fights that cost you something, and (from 1.1.0)
-seconds fought, for the uptime. Settings are account-wide (`ShieldShameDB`).
+**Per fight.** Each fight keeps damage, mana, orbs missed, seconds fought and seconds of
+those with no shield. Uptime is seconds with a shield up / seconds fought, counted the same
+way as the gaps (in a fight, alive, not on a flight path, a shield known). There is no
+session or all-time count. Settings are account-wide (`ShieldShameDB`); the fight log is
+per character (`ShieldShameCharDB`).
 
-**Uptime.** Seconds fought with a shield up / seconds fought, counted the same way as the
-gaps (in a fight, alive, not on a flight path, a shield known). The all-time uptime only
-covers fights from 1.1.0 on.
+**A fight that hurt.** While a fight is on, your mana and health are read twice a second and
+the lowest of each is kept. The fight hurt if it lost mana and your lowest mana was below the
+line (50% by default), or lost damage and your lowest health was below it. "Where you would
+have bottomed out" is your lowest mana plus the mana the missing shield had cost you by that
+moment (globes lost after the low point would not have lifted it). If the game hides your
+mana or health from addons in a fight, a loss of a whole shield's 3 orbs (or 5% of your max
+mana) stands in, and the line says only what was lost.
 
 **The fight log.** For each of the last 25 fights on the character (`ShieldShameCharDB.log`):
 when, how long, the shield at the start (and whether that came from your buffs or, with
 auras hidden, from the addon's own record), whether the game showed your auras during the
 fight, the hits seen and what each became (shielded, lost, inside the orb cooldown), shields
-cast, seconds with no shield, and what was lost. If the totals look too high, this shows
-whether the hits were really taken with no shield up.
+cast, seconds with no shield, what was lost, your lowest mana and health, and whether it
+hurt. If the numbers look too high, this shows whether the hits were really taken with no
+shield up.
 
 ## What is an estimate
 

@@ -13,7 +13,7 @@ local function Rows()
     return {
         { kind = "header", text = "Reminder" },
         { kind = "check", label = "Show the missing-shield icon",
-          tip = "A greyed-out shield icon while no shield is up. Under it, what going without has cost you this session; its tooltip has the rest.",
+          tip = "A greyed-out shield icon while no shield is up. Under it, what going without cost you in this fight (or the last one); its tooltip has the rest.",
           get = Get("remind"), set = Set("remind") },
         { kind = "check", label = "Also in fights",
           tip = "Keeps the icon up during a fight when your shield is gone, so you notice the moment its orbs run out.",
@@ -57,25 +57,24 @@ local function Rows()
           get = Get("spellHits"), set = Set("spellHits") },
 
         { kind = "header", text = "Shaming" },
-        { kind = "check", label = "Roast me in chat too",
-          tip = "Off unless you turn it on: the icon does the shaming. On, one mocking line in your own chat about what "
-              .. "the fights since the last one cost you, once there is something worth saying (a whole shield's worth "
-              .. "of orbs, or 5% of your mana), at most once every few minutes (below). Nobody else sees it.",
-          get = Get("fightLine"), set = Set("fightLine") },
-        { kind = "slider", label = "At most one roast every", min = 1, max = 30, step = 1,
-          format = function(v) return ("%d min"):format(v) end,
-          get = Get("roastMinutes"), set = Set("roastMinutes") },
+        { kind = "check", label = "Tell me after a fight that hurt",
+          tip = "One line in your own chat after a fight that took your mana (Water Shield) or health (Lightning Shield) "
+              .. "below the line below while a shield was missing: how low you went and what the shield would have given you. "
+              .. "Other fights say nothing. Nobody else sees it.",
+          get = Get("hurtLine"), set = Set("hurtLine") },
+        { kind = "slider", label = "A fight hurt below", min = 10, max = 90, step = 5,
+          tip = "Your lowest mana (Water Shield) or health (Lightning Shield) in the fight.",
+          format = function(v) return ("%d%%"):format(v) end,
+          get = Get("hurtPct"), set = Set("hurtPct") },
         { kind = "check", label = "Confess to my group",
-          tip = "Says the roast in party or raid chat as well, at most once a minute. Off unless you turn it on.",
+          tip = "After a fight that hurt, says it in party or raid chat as well, at most once a minute. Off unless you turn it on.",
           get = Get("confess"), set = Set("confess") },
         { kind = "buttons", buttons = {
-            { label = "Print what I lost", click = function() ns.PrintSummary() end },
+            { label = "Print the last fight", click = function() ns.PrintSummary() end },
             { label = "Print the fight log", tip = "The last fights, hit by hit: what the addon saw and counted. Same as /shame log.",
               click = function() ns.Slash("log") end },
-            { label = "New session", tip = "Starts the session count again.",
-              click = function() ns.ResetSession() end },
-            { label = "Clear all-time", confirm = true, tip = "Sets this character's all-time count back to 0.",
-              click = function() ns.ResetAll() end },
+            { label = "Clear the fight log", confirm = true, tip = "Forgets the logged fights on this character.",
+              click = function() ns.ClearLog() end },
         } },
 
         { kind = "header", text = "Minimap" },
@@ -90,13 +89,20 @@ end
 Options.Rows = Rows
 
 local function Status()
-    local s, t = ns.session, ns.char.total
-    local up = ns.Uptime(s)
-    return {
-        "Lost this session: " .. ns.LostText(s) .. (up and (" (shield up %s of fight time)"):format(ns.Pct(up)) or ""),
-        "Lost all time: " .. ns.LostText(t),
-        ns.shield and "Shield up. For now." or "No shield up.",
-    }
+    local f = ns.fight or ns.lastFight
+    local lines = {}
+    if f then
+        local up = ns.Uptime(f)
+        lines[#lines + 1] = ("Lost %s: %s%s"):format(ns.fight and "this fight" or "last fight", ns.LostText(f),
+            up and (" (shield up %s of it)"):format(ns.Pct(up)) or "")
+    end
+    local n, damage, mana, of = ns.RecentHurt()
+    if of > 0 then
+        lines[#lines + 1] = ("Fights that hurt: %d of the last %d%s"):format(n, of,
+            n > 0 and (", " .. ns.LostText({ damage = damage, mana = mana })) or "")
+    end
+    lines[#lines + 1] = ns.shield and "Shield up. For now." or "No shield up."
+    return lines
 end
 
 local ready
@@ -115,7 +121,7 @@ function Options.Init()
         rows = Rows,
         clickHint = "options",
         alt = function() ns.PrintSummary() end,
-        altHint = "what you lost, in chat",
+        altHint = "the last fight, in chat",
         status = Status,
     })
 end
