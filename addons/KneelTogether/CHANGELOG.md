@@ -1,5 +1,9 @@
 # Changelog
 
+## 1.0.7
+
+- If the options window or minimap button is missing after an update, the addon now says a `/reload` brings them, instead of asking you to restart the game.
+
 ## 1.0.6
 
 - Fixed: messages from other players (and your own call coming back) were still not recognised. On this client the game gives a character's first name and surname as two separate pieces, while a message names its sender "First Last". The addon now matches the sender against "First Last" first, then the first name alone.

@@ -62,7 +62,7 @@ local db
 local floor, ceil, max, min = math.floor, math.ceil, math.max, math.min
 local issecret = issecretvalue
 
-local VERSION = "1.0.6"
+local VERSION = "1.0.7"
 if C_AddOns and C_AddOns.GetAddOnMetadata then
     local ok, v = pcall(C_AddOns.GetAddOnMetadata, ADDON_NAME, "Version")
     if ok and type(v) == "string" and v ~= "" and not (issecret and issecret(v)) then VERSION = v end
@@ -876,10 +876,11 @@ local function PrintHelp()
 end
 
 -- Kit.lua and Options.lua sit next to this file. If a /reload ran this file without them
--- (files added by an update only load after a full restart), say so instead of erroring.
+-- (an update copied in while this UI was loaded), say so instead of erroring. On WoW
+-- Forever another /reload loads the new files.
 local function HasKit()
     if ns.Kit and ns.Options then return true end
-    Print("the options window and the minimap button appear after you restart the game once.")
+    Print("the options window and the minimap button appear after a /reload.")
     return false
 end
 
