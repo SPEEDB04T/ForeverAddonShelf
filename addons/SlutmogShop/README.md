@@ -60,7 +60,7 @@ Openers and ad lines take turns, each used once before any repeats. If an ad is 
 | `/slutshop scan` | look through your bags for pieces from the slutmog list and put them on the shelf |
 | `/slutshop reroll` | another ad for the same ware |
 | `/slutshop prompt` | the Post button in the middle of the screen, now |
-| `/slutshop mailbox` | mailbox mode on or off (below) |
+| `/slutshop mailbox` or `/smog mailbox` | mailbox mode on or off (below) |
 | `/slutshop set [top] [bottom]` | sell two of your wares as a set, one ad for both (`/slutshop unset [item]` undoes it) |
 | `/slutshop ads [item]` | a piece's ready-made ads (without an item: which wares have them) |
 | `/slutshop channel Trade` | where ads go |

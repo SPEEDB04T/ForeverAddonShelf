@@ -1,5 +1,10 @@
 # Changelog
 
+## 1.8.1
+
+- Fixed: the "run you through Deadmines" line came up for high-level pieces. Lines about a level or a place people outgrow now only come up for pieces of about that level: Deadmines for pieces up to level 25, "Mog it at 20" up to 20, "Hit 40 and finally allowed to wear plate" for level 40 to 49 plate.
+- Fixed: `/smog mailbox` did nothing, because `/smog` belongs to Slutmog Scout and the mailbox command was only `/slutshop mailbox`. `/smog mailbox` now turns mailbox mode on, and `/smog shop` opens the shop (`/smog shop post`, `/smog shop mailbox` and the rest work the same way). `/smogshop` is a third name for `/slutshop`.
+
 ## 1.8.0
 
 - **Mailbox mode** (`/slutshop mailbox`): for standing around a city mailbox in your wares. The shop starts you dancing and emotes back by itself at whoever emotes at you (a kiss gets a blush, a whistle a curtsey, rude ones get nothing), and winks once at whoever targets you. A small window lists who emoted, whispered and looked, each with the emote as a button and **Pitch**: one whisper with the next ware and its price, only for people who emoted at you or whispered you first. Nothing is whispered or said without your click. Closing the window turns the mode off.

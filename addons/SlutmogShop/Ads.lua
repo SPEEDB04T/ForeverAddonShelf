@@ -133,597 +133,753 @@ ns.AD_POOLS = {
     },
 }
 
+-- A line only for pieces whose required level is in this range (lowest, highest).
+ns.AD_LEVELS = {
+    ["Hit 40 and finally allowed to wear plate? Here's hardly any."] = { 40, 49 },
+    ["Mog it at 20, mog it at 60. It never gets bigger."] = { 0, 20 },
+    ["Nobody wants to run you through Deadmines? Smuttanie changes their mind!"] = { 0, 25 },
+    ["Smuttanie's been cheap since launch. Don't count on it at 60."] = { 0, 55 },
+}
+
 ns.ITEM_ADS = {
     -- Simple Blouse (cloth chest, level 10)
     [9749] = {
         pools = { "chest", "general" },
+        req = 10,
     },
     -- Barbaric Cloth Vest (cloth chest, level 13)
     [3310] = {
         pools = { "chest", "general" },
+        req = 13,
     },
     -- Barbaric Cloth Robe (cloth chest, level 13)
     [6531] = {
         pools = { "chest", "general" },
+        req = 13,
     },
     -- Willow Vest (cloth chest, level 14)
     [6536] = {
         pools = { "chest", "general" },
+        req = 14,
     },
     -- Aboriginal Robe (cloth chest, level 15)
     [14120] = {
         pools = { "chest", "general" },
+        req = 15,
     },
     -- Buccaneer's Vest (cloth chest, level 18)
     [14175] = {
         pools = { "chest", "general" },
+        req = 18,
     },
     -- Ritual Shroud (cloth chest, level 19)
     [14127] = {
         pools = { "chest", "general" },
+        req = 19,
     },
     -- Robes of Insight (cloth chest, level 42)
     [940] = {
         pools = { "chest", "general" },
+        req = 42,
     },
     -- Hibernal Robe (cloth chest, level 46)
     [8113] = {
         pools = { "chest", "general" },
+        req = 46,
     },
     -- Chan's Imperial Robes (cloth chest, level 47)
     [17050] = {
         pools = { "chest", "general" },
+        req = 47,
     },
     -- Venomshroud Silk Robes (cloth chest, level 49)
     [14445] = {
         pools = { "chest", "general" },
+        req = 49,
     },
     -- Arachnidian Robes (cloth chest, level 52)
     [14297] = {
         pools = { "chest", "general" },
+        req = 52,
     },
     -- Elegant Leggings (cloth legs, level 56)
     [10217] = {
         pools = { "legs", "general" },
+        req = 56,
     },
     -- Elegant Robes (cloth chest, level 57)
     [10215] = {
         pools = { "chest", "general" },
+        req = 57,
     },
     -- Abyssal Cloth Pants (cloth legs, level 57)
     [20674] = {
         pools = { "legs", "general" },
+        req = 57,
     },
     -- Burnt Leather Breeches (leather legs, level 5)
     [2962] = {
         pools = { "legs", "general" },
+        req = 5,
     },
     -- Grizzly Jerkin (leather chest, level 11)
     [15304] = {
         pools = { "chest", "general" },
+        req = 11,
     },
     -- Ceremonial Leather Loincloth (leather legs, level 12)
     [3315] = {
         pools = { "legs", "general" },
+        req = 12,
     },
     -- Bard's Trousers (leather legs, level 13)
     [6553] = {
         pools = { "legs", "general" },
+        req = 13,
     },
     -- Bandit Pants (leather legs, level 17)
     [9781] = {
         pools = { "legs", "general" },
+        req = 17,
     },
     -- Insignia Leggings (leather legs, level 30)
     [4054] = {
         pools = { "legs", "general" },
+        req = 30,
     },
     -- Insignia Chestguard (leather chest, level 31)
     [4057] = {
         pools = { "chest", "general" },
+        req = 31,
     },
     -- Sentinel Trousers (leather legs, level 34)
     [7440] = {
         pools = { "legs", "general" },
+        req = 34,
     },
     -- Sentinel Breastplate (leather chest, level 35)
     [7439] = {
         pools = { "chest", "general" },
+        req = 35,
     },
     -- Huntsman's Armor (leather chest, level 38)
     [9887] = {
         pools = { "chest", "general" },
+        req = 38,
     },
     -- Warden's Woolies (leather legs, level 38)
     [14605] = {
         pools = { "legs", "general" },
+        req = 38,
     },
     -- Warden's Wraps (leather chest, level 39)
     [14601] = {
         pools = { "chest", "general" },
+        req = 39,
     },
     -- Scorpashi Leggings (leather legs, level 42)
     [14659] = {
         pools = { "legs", "general" },
+        req = 42,
     },
     -- Cabalist Leggings (leather legs, level 43)
     [7528] = {
         pools = { "legs", "general" },
+        req = 43,
     },
     -- Scorpashi Breastplate (leather chest, level 44)
     [14655] = {
         pools = { "chest", "general" },
+        req = 44,
     },
     -- Rageclaw Leggings (leather legs, level 44)
     [15385] = {
         pools = { "legs", "general" },
+        req = 44,
     },
     -- Cabalist Chestpiece (leather chest, level 45)
     [7527] = {
         pools = { "chest", "general" },
+        req = 45,
     },
     -- Chieftain's Leggings (leather legs, level 46)
     [9954] = {
         pools = { "legs", "general" },
+        req = 46,
     },
     -- Rageclaw Chestguard (leather chest, level 46)
     [15381] = {
         pools = { "chest", "general" },
+        req = 46,
     },
     -- Keeper's Woolies (leather legs, level 47)
     [14668] = {
         pools = { "legs", "general" },
+        req = 47,
     },
     -- Chieftain's Breastplate (leather chest, level 48)
     [9950] = {
         pools = { "chest", "general" },
+        req = 48,
     },
     -- Keeper's Armor (leather chest, level 49)
     [14664] = {
         pools = { "chest", "general" },
+        req = 49,
     },
     -- Jadefire Pants (leather legs, level 49)
     [15394] = {
         pools = { "legs", "general" },
+        req = 49,
     },
     -- Praetorian Leggings (leather legs, level 50)
     [15186] = {
         pools = { "legs", "general" },
+        req = 50,
     },
     -- Jadefire Chestguard (leather chest, level 51)
     [15390] = {
         pools = { "chest", "general" },
+        req = 51,
     },
     -- Praetorian Padded Armor (leather chest, level 52)
     [15179] = {
         pools = { "chest", "general" },
+        req = 52,
     },
     -- Pridelord Pants (leather legs, level 53)
     [14677] = {
         pools = { "legs", "general" },
+        req = 53,
     },
     -- Pridelord Armor (leather chest, level 54)
     [14670] = {
         pools = { "chest", "general" },
+        req = 54,
     },
     -- Peerless Leggings (leather legs, level 54)
     [15431] = {
         pools = { "legs", "general" },
+        req = 54,
     },
     -- Peerless Armor (leather chest, level 56)
     [15433] = {
         pools = { "chest", "general" },
+        req = 56,
     },
     -- Abyssal Leather Leggings (leather legs, level 57)
     [20665] = {
         pools = { "legs", "general" },
+        req = 57,
     },
     -- Nightshade Tunic (leather chest, level 58)
     [10220] = {
         pools = { "chest", "general" },
+        req = 58,
     },
     -- Warrior's Tunic (mail chest, level 6)
     [2965] = {
         pools = { "chest", "general" },
+        req = 6,
     },
     -- Dargol's Hauberk (mail chest, level 8)
     [3330] = {
         pools = { "chest", "general" },
+        req = 8,
     },
     -- Infantry Tunic (mail chest, level 8)
     [6336] = {
         pools = { "chest", "general" },
+        req = 8,
     },
     -- Slarkskin (mail chest, level 10)
     [6180] = {
         pools = { "chest", "general" },
+        req = 10,
     },
     -- Wax-polished Armor (mail chest, level 10)
     [6195] = {
         pools = { "chest", "general" },
+        req = 10,
     },
     -- Cadet Vest (mail chest, level 10)
     [9765] = {
         pools = { "chest", "general" },
+        req = 10,
     },
     -- Veteran Armor (mail chest, level 11)
     [2977] = {
         pools = { "chest", "general" },
+        req = 11,
     },
     -- Soldier's Armor (mail chest, level 13)
     [6545] = {
         pools = { "chest", "general" },
+        req = 13,
     },
     -- Bloodspattered Loincloth (mail legs, level 13)
     [15493] = {
         pools = { "legs", "general" },
+        req = 13,
     },
     -- War Paint Legguards (mail legs, level 14)
     [14727] = {
         pools = { "legs", "general" },
+        req = 14,
     },
     -- Raider's Chestpiece (mail chest, level 15)
     [9783] = {
         pools = { "chest", "general" },
+        req = 15,
     },
     -- Burnished Tunic (mail chest, level 16)
     [2989] = {
         pools = { "chest", "general" },
+        req = 16,
     },
     -- Bloodspattered Surcoat (mail chest, level 16)
     [15488] = {
         pools = { "chest", "general" },
+        req = 16,
     },
     -- Outrunner's Legguards (mail legs, level 17)
     [15503] = {
         pools = { "legs", "general" },
+        req = 17,
     },
     -- Defender Tunic (mail chest, level 18)
     [6580] = {
         pools = { "chest", "general" },
+        req = 18,
     },
     -- War Paint Chestpiece (mail chest, level 18)
     [14730] = {
         pools = { "chest", "general" },
+        req = 18,
     },
     -- Outrunner's Chestguard (mail chest, level 19)
     [15500] = {
         pools = { "chest", "general" },
+        req = 19,
     },
     -- Grunt's Legguards (mail legs, level 19)
     [15511] = {
         pools = { "legs", "general" },
+        req = 19,
     },
     -- Fortified Chain (mail chest, level 20)
     [9818] = {
         pools = { "chest", "general" },
+        req = 20,
     },
     -- Dusty Chain Armor (mail chest, level 21)
     [2016] = {
         pools = { "chest", "general" },
+        req = 21,
     },
     -- Martyr's Chain (mail chest, level 21)
     [3416] = {
         pools = { "chest", "general" },
+        req = 21,
     },
     -- Grunt's Chestpiece (mail chest, level 21)
     [15514] = {
         pools = { "chest", "general" },
+        req = 21,
     },
     -- Lambent Scale Breastplate (mail chest, level 22)
     [3049] = {
         pools = { "chest", "general" },
+        req = 22,
     },
     -- Spiked Chain Leggings (mail legs, level 22)
     [15521] = {
         pools = { "legs", "general" },
+        req = 22,
     },
     -- Humbert's Chestpiece (mail chest, level 23)
     [3053] = {
         pools = { "chest", "general" },
+        req = 23,
     },
     -- Battleforge Legguards (mail legs, level 23)
     [6596] = {
         pools = { "legs", "general" },
+        req = 23,
     },
     -- Battleforge Armor (mail chest, level 24)
     [6592] = {
         pools = { "chest", "general" },
+        req = 24,
     },
     -- Sentry's Leggings (mail legs, level 24)
     [15529] = {
         pools = { "legs", "general" },
+        req = 24,
     },
     -- Double Link Tunic (mail chest, level 25)
     [1717] = {
         pools = { "chest", "general" },
+        req = 25,
     },
     -- Glimmering Mail Legguards (mail legs, level 25)
     [6386] = {
         pools = { "legs", "general" },
+        req = 25,
     },
     -- Spiked Chain Breastplate (mail chest, level 25)
     [15518] = {
         pools = { "chest", "general" },
+        req = 25,
     },
     -- Avenger's Armor (mail chest, level 26)
     [1488] = {
         pools = { "chest", "general" },
+        req = 26,
     },
     -- Glimmering Mail Breastplate (mail chest, level 26)
     [4071] = {
         pools = { "chest", "general" },
+        req = 26,
     },
     -- Sentry's Surcoat (mail chest, level 26)
     [15524] = {
         pools = { "chest", "general" },
+        req = 26,
     },
     -- Mail Combat Armor (mail chest, level 31)
     [4074] = {
         pools = { "chest", "general" },
+        req = 31,
     },
     -- Mail Combat Leggings (mail legs, level 31)
     [6402] = {
         pools = { "legs", "general" },
+        req = 31,
     },
     -- Knight's Breastplate (mail chest, level 34)
     [7454] = {
         pools = { "chest", "general" },
+        req = 34,
     },
     -- Firemane Leggings (mail legs, level 34)
     [13129] = {
         pools = { "legs", "general" },
+        req = 34,
     },
     -- Enduring Breastplate (mail chest, level 34)
     [14760] = {
         pools = { "chest", "general" },
+        req = 34,
     },
     -- Chief Brigadier Leggings (mail legs, level 35)
     [4079] = {
         pools = { "legs", "general" },
+        req = 35,
     },
     -- Marauder's Tunic (mail chest, level 35)
     [15567] = {
         pools = { "chest", "general" },
+        req = 35,
     },
     -- Chief Brigadier Armor (mail chest, level 36)
     [6411] = {
         pools = { "chest", "general" },
+        req = 36,
     },
     -- Sparkleshell Breastplate (mail chest, level 36)
     [15578] = {
         pools = { "chest", "general" },
+        req = 36,
     },
     -- Steadfast Legplates (mail legs, level 36)
     [15596] = {
         pools = { "legs", "general" },
+        req = 36,
     },
     -- Jazeraint Chestguard (mail chest, level 37)
     [9897] = {
         pools = { "chest", "general" },
+        req = 37,
     },
     -- Captain's Leggings (mail legs, level 38)
     [7487] = {
         pools = { "legs", "general" },
+        req = 38,
     },
     -- Steadfast Breastplate (mail chest, level 38)
     [15591] = {
         pools = { "chest", "general" },
+        req = 38,
     },
     -- Captain's Breastplate (mail chest, level 39)
     [7486] = {
         pools = { "chest", "general" },
+        req = 39,
     },
     -- Ravager's Armor (mail chest, level 39)
     [14768] = {
         pools = { "chest", "general" },
+        req = 39,
     },
     -- Brigade Breastplate (mail chest, level 40)
     [9928] = {
         pools = { "chest", "general" },
+        req = 40,
     },
     -- Ancient Chestpiece (mail chest, level 41)
     [15601] = {
         pools = { "chest", "general" },
+        req = 41,
     },
     -- Bonelink Armor (mail chest, level 42)
     [15609] = {
         pools = { "chest", "general" },
+        req = 42,
     },
     -- Warmonger's Chestpiece (mail chest, level 45)
     [9957] = {
         pools = { "chest", "general" },
+        req = 45,
     },
     -- Myrmidon's Breastplate (mail chest, level 46)
     [8126] = {
         pools = { "chest", "general" },
+        req = 46,
     },
     -- Lord's Legguards (mail legs, level 47)
     [10084] = {
         pools = { "legs", "general" },
+        req = 47,
     },
     -- Lord's Breastplate (mail chest, level 48)
     [10077] = {
         pools = { "chest", "general" },
+        req = 48,
     },
     -- Protector Legguards (mail legs, level 48)
     [14796] = {
         pools = { "legs", "general" },
+        req = 48,
     },
     -- Protector Breastplate (mail chest, level 49)
     [14789] = {
         pools = { "chest", "general" },
+        req = 49,
     },
     -- Crusader's Armor (mail chest, level 50)
     [10193] = {
         pools = { "chest", "general" },
+        req = 50,
     },
     -- Ebonhold Armor (mail chest, level 51)
     [8265] = {
         pools = { "chest", "general" },
+        req = 51,
     },
     -- Merciless Legguards (mail legs, level 51)
     [15655] = {
         pools = { "legs", "general" },
+        req = 51,
     },
     -- Ornate Breastplate (mail chest, level 53)
     [10118] = {
         pools = { "chest", "general" },
+        req = 53,
     },
     -- Engraved Breastplate (mail chest, level 55)
     [10230] = {
         pools = { "chest", "general" },
+        req = 55,
     },
     -- Hero's Leggings (mail legs, level 56)
     [8309] = {
         pools = { "legs", "general" },
+        req = 56,
     },
     -- Bonebrace Hauberk (mail chest, level 56)
     [14536] = {
         pools = { "chest", "general" },
+        req = 56,
     },
     -- Hero's Breastplate (mail chest, level 57)
     [8303] = {
         pools = { "chest", "general" },
+        req = 57,
     },
     -- Magnificent Breastplate (mail chest, level 57)
     [15669] = {
         pools = { "chest", "general" },
+        req = 57,
     },
     -- Mercurial Breastplate (mail chest, level 59)
     [10157] = {
         pools = { "chest", "general" },
+        req = 59,
     },
     -- Masterwork Breastplate (mail chest, level 60)
     [10266] = {
         pools = { "chest", "general" },
+        req = 60,
     },
     -- Triumphant Chestpiece (mail chest, level 60)
     [15680] = {
         pools = { "chest", "general" },
+        req = 60,
     },
     -- Jouster's Chestplate (plate chest, level 40)
     [8157] = {
         pools = { "plate", "chest", "general" },
+        req = 40,
     },
     -- Field Plate Armor (plate chest, level 40)
     [9286] = {
         pools = { "plate", "chest", "general" },
+        req = 40,
     },
     -- Embossed Plate Armor (plate chest, level 40)
     [9966] = {
         pools = { "plate", "chest", "general" },
+        req = 40,
     },
     -- Saltstone Surcoat (plate chest, level 40)
     [14895] = {
         pools = { "plate", "chest", "general" },
+        req = 40,
     },
     -- Saltstone Legplates (plate legs, level 40)
     [14900] = {
         pools = { "plate", "legs", "general" },
+        req = 40,
     },
     -- Chromite Chestplate (plate chest, level 42)
     [8138] = {
         pools = { "plate", "chest", "general" },
+        req = 42,
     },
     -- Tyrant's Legplates (plate legs, level 42)
     [14840] = {
         pools = { "plate", "legs", "general" },
+        req = 42,
     },
     -- Tyrant's Chestpiece (plate chest, level 43)
     [14835] = {
         pools = { "plate", "chest", "general" },
+        req = 43,
     },
     -- Gothic Plate Armor (plate chest, level 44)
     [10086] = {
         pools = { "plate", "chest", "general" },
+        req = 44,
     },
     -- Brutish Breastplate (plate chest, level 45)
     [14904] = {
         pools = { "plate", "chest", "general" },
+        req = 45,
     },
     -- Valorous Chestguard (plate chest, level 46)
     [8274] = {
         pools = { "plate", "chest", "general" },
+        req = 46,
     },
     -- Jade Legplates (plate legs, level 46)
     [14920] = {
         pools = { "plate", "legs", "general" },
+        req = 46,
     },
     -- Jade Breastplate (plate chest, level 48)
     [14915] = {
         pools = { "plate", "chest", "general" },
+        req = 48,
     },
     -- Revenant Chestplate (plate chest, level 49)
     [10128] = {
         pools = { "plate", "chest", "general" },
+        req = 49,
     },
     -- Hydralick Armor (plate chest, level 49)
     [13067] = {
         pools = { "plate", "chest", "general" },
+        req = 49,
     },
     -- Heavy Lamellar Chestpiece (plate chest, level 50)
     [10240] = {
         pools = { "plate", "chest", "general" },
+        req = 50,
     },
     -- Lofty Legguards (plate legs, level 50)
     [14928] = {
         pools = { "plate", "legs", "general" },
+        req = 50,
     },
     -- Alabaster Breastplate (plate chest, level 52)
     [8312] = {
         pools = { "plate", "chest", "general" },
+        req = 52,
     },
     -- Vanguard Legplates (plate legs, level 52)
     [14859] = {
         pools = { "plate", "legs", "general" },
+        req = 52,
     },
     -- Lofty Breastplate (plate chest, level 52)
     [14924] = {
         pools = { "plate", "chest", "general" },
+        req = 52,
     },
     -- Templar Chestplate (plate chest, level 53)
     [10164] = {
         pools = { "plate", "chest", "general" },
+        req = 53,
     },
     -- Glorious Legplates (plate legs, level 53)
     [14970] = {
         pools = { "plate", "legs", "general" },
+        req = 53,
     },
     -- Vanguard Breastplate (plate chest, level 54)
     [14854] = {
         pools = { "plate", "chest", "general" },
+        req = 54,
     },
     -- Emerald Breastplate (plate chest, level 55)
     [10275] = {
         pools = { "plate", "chest", "general" },
+        req = 55,
     },
     -- Glorious Breastplate (plate chest, level 56)
     [14966] = {
         pools = { "plate", "chest", "general" },
+        req = 56,
     },
     -- Imbued Plate Armor (plate chest, level 57)
     [10368] = {
         pools = { "plate", "chest", "general" },
+        req = 57,
     },
     -- Cloudkeeper Legplates (plate legs, level 57)
     [14554] = {
         pools = { "plate", "legs", "general" },
+        req = 57,
     },
     -- Commander's Armor (plate chest, level 58)
     [10378] = {
         pools = { "plate", "chest", "general" },
+        req = 58,
     },
     -- Warleader's Breastplate (plate chest, level 58)
     [14862] = {
         pools = { "plate", "chest", "general" },
+        req = 58,
     },
     -- Hyperion Armor (plate chest, level 60)
     [10384] = {
         pools = { "plate", "chest", "general" },
+        req = 60,
     },
     -- Exalted Harness (plate chest, level 60)
     [14975] = {
         pools = { "plate", "chest", "general" },
+        req = 60,
     },
 }

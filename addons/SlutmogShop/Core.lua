@@ -15,7 +15,7 @@
 -- works too). A reminder in your own chat says when it is time for the next one.
 local ADDON, ns = ...
 
-ns.VERSION = "1.8.0"
+ns.VERSION = "1.8.1"
 ns.TITLE = "Slutmog Shop"
 ns.ICON = "Interface\\Icons\\INV_Misc_Coin_02"
 ns.ACCENT = { 0.96, 0.55, 0.78 }
@@ -905,8 +905,13 @@ local flat = setmetatable({}, { __mode = "k" })     -- a piece's entry -> its ad
 local function BuildAds(id, entry, shop)
     local list, seen = { src = {}, shop = shop }, {}
     local color = type(entry.color) == "string" and entry.color or nil
+    -- A line about a level or a place people outgrow is only for pieces of about that level.
+    local levels = type(ns.AD_LEVELS) == "table" and ns.AD_LEVELS or {}
+    local req = type(entry.req) == "number" and entry.req or nil
     local function Add(ad)
         if type(ad) ~= "string" then return end
+        local range = levels[ad]
+        if type(range) == "table" and (not req or req < (range[1] or 0) or req > (range[2] or 999)) then return end
         local raw = ad
         if ad:find("{color}", 1, true) then
             if not color then return end
@@ -1526,7 +1531,7 @@ local function PrintHelp()
         "/slutshop set [top] [bottom] - sell two of your wares as a set, one ad for both (/slutshop unset [item] undoes it)",
         "/slutshop reroll - another ad for the same ware",
         "/slutshop prompt - the Post button in the middle of the screen, now",
-        "/slutshop mailbox - mailbox mode: emote back at admirers, see who looked and whispered, one-click replies",
+        "/slutshop mailbox - mailbox mode: emote back at admirers, see who looked and whispered, one-click replies (/smog mailbox works too)",
         "/slutshop channel Trade - where ads go (Say, Yell, Guild or any channel you are in)",
         "/slutshop options - the options",
         "/slutshop status - what the shop is set to",
@@ -1724,8 +1729,27 @@ ns.Slash = Slash
 
 SLASH_SLUTMOGSHOP1 = "/slutshop"
 SLASH_SLUTMOGSHOP2 = "/mogshop"
+SLASH_SLUTMOGSHOP3 = "/smogshop"
 SlashCmdList = SlashCmdList or {}
 SlashCmdList.SLUTMOGSHOP = function(msg) Slash(msg or "") end
+
+-- /smog is Slutmog Scout's command, and it is what people type for anything slutmog (SuccuDev,
+-- 2026-11-15: "smog mailbox isnt doing anything"). Scout has no "mailbox" or "shop" word and stays
+-- silent on them, so those two come here; everything else goes to Scout as before.
+local scoutHooked
+function ns.HookScout()
+    local theirs = SlashCmdList.SLUTMOGSCOUT
+    if scoutHooked or type(theirs) ~= "function" then return false end
+    scoutHooked = true
+    SlashCmdList.SLUTMOGSCOUT = function(input, ...)
+        local cmd, rest = tostring(input or ""):match("^%s*(%S*)%s*(.-)%s*$")
+        cmd = (cmd or ""):lower()
+        if cmd == "mailbox" then return Slash("mailbox") end
+        if cmd == "shop" then return Slash(rest or "") end
+        return theirs(input, ...)
+    end
+    return true
+end
 
 BINDING_HEADER_SLUTMOGSHOP = "Slutmog Shop"
 BINDING_NAME_SLUTMOGSHOP_POST = "Post the next ad"
@@ -1778,6 +1802,7 @@ events:SetScript("OnEvent", function(_, event, ...)
             if not ok then Print("the options did not start: " .. tostring(err)) end
         end
         if ns.UI and ns.UI.ListLooks then pcall(ns.UI.ListLooks) end
+        pcall(ns.HookScout)
     elseif not db then
         return
     elseif event == "GET_ITEM_INFO_RECEIVED" then
