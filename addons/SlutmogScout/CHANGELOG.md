@@ -1,5 +1,20 @@
 # Changelog
 
+## 1.3.1
+
+The window is now built like the auction house itself, piece by piece, not only with its art.
+
+- The window is the game's portrait window (the auction house's frame), with the list areas in the game's inset.
+- The armor type and "Listed now only" filters moved into the game's Filter dropdown, next to the Scan button,
+  where the auction house has its Filter and Search buttons. A reset cross shows while a filter is set.
+- The Market list copies the auction house browse list: price column first, the same cell font, padding,
+  20 px rows, icon size and border, 19 px column headers and the thin scroll bar in the same place.
+- One piece's farm spots open like the auction house's item page: a Back button and the piece's name above the list.
+- Farm guide and Measured rows are laid out like the group finder's result rows. The rank numbers and the
+  explanation paragraphs above the lists are gone; the farm estimate note is now in each spot's tooltip.
+- Empty lists say so where the auction house says "No results".
+- The bottom tabs sit where the auction house's tabs sit.
+
 ## 1.3.0
 
 The window now looks like the game's own auction house list.

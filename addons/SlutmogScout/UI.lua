@@ -72,27 +72,47 @@ local ARMOR_ORDER = { "all", "cloth", "leather", "mail", "plate" }
 local ARMOR_LABEL = { all = "All", cloth = "Cloth", leather = "Leather", mail = "Mail", plate = "Plate", other = "Other" }
 local SLOT_LABEL = { chest = "chest", legs = "legs", shoulder = "shoulders", waist = "belt", hands = "gloves", feet = "boots", head = "head", wrist = "bracers", back = "cloak", other = "" }
 
+-- Sizes copied from the auction house (Blizzard_AuctionHouseUI, branch
+-- forever): 20 px list lines (AuctionHouseItemListLineTemplate), 19 px column
+-- headers, cells padded 10 px (STANDARD_PADDING in the table builder), the
+-- price column first with 14 px on its right, as in the browse list.
 local ROW_H = 20
 local FARM_ROW_H = 38
-local LIST_TOP = -34          -- farm and measured lists start below a two-line header
+local WIN_W, WIN_H = 940, 560
+-- the list area runs from x 4 to -5 in the window; its headers from 4 to -26
+local HEADER_W = WIN_W - 4 - 5 - 4 - 26
 local COLS = {
-  { key = "name", label = "Item", width = 206, align = "LEFT" },
-  { key = "type", label = "Type", width = 92, align = "LEFT" },
-  { key = "look", label = "Look", width = 198, align = "LEFT",
-    tip = "Measured from the item's texture: how much of the torso or legs it leaves bare." },
-  { key = "low", label = "Lowest", width = 84, align = "RIGHT", numeric = true,
+  { key = "low", label = "Lowest", width = 96, padL = 0, padR = 14, align = "RIGHT", numeric = true,
     tip = "Lowest price on the auction house in your last scan." },
-  { key = "qty", label = "Qty", width = 36, align = "RIGHT", numeric = true,
-    tip = "How many are on the auction house in your last scan." },
-  { key = "value", label = "Typical low", width = 84, align = "RIGHT", numeric = true,
+  { key = "name", label = "Item", fill = true, padL = 10, align = "LEFT" },
+  { key = "type", label = "Type", width = 102, padL = 10, align = "LEFT" },
+  { key = "look", label = "Look", width = 190, padL = 10, align = "LEFT",
+    tip = "Measured from the item's texture: how much of the torso or legs it leaves bare." },
+  { key = "value", label = "Typical low", width = 94, padL = 10, align = "RIGHT", numeric = true,
     tip = "Typical lowest price: the middle value of the lowest prices in your last 10 scans that had the piece. Grey when it is not listed right now. Before your first scan it comes from Auctionator or TradeSkillMaster if you have one." },
-  { key = "seen", label = "Seen %", width = 52, align = "RIGHT", numeric = true,
+  { key = "seen", label = "Seen %", width = 62, padL = 10, align = "RIGHT", numeric = true,
     tip = "Share of your scans in which the piece was listed at all." },
-  { key = "mob", label = "Mob lvl", width = 58, align = "RIGHT", numeric = true,
+  { key = "mob", label = "Mob lvl", width = 66, padL = 10, align = "RIGHT", numeric = true,
     tip = "Level of the mobs it is expected to drop from. A rule of thumb (required level to required level + 5), widened by drops you measured yourself." },
+  { key = "qty", label = "Available", width = 80, padL = 10, padR = 10, align = "RIGHT", numeric = true,
+    tip = "How many are on the auction house in your last scan." },
 }
-local COL_GAP = 8
-local ICON_W = 20
+do
+  local fixed = 0
+  for _, col in ipairs(COLS) do
+    fixed = fixed + (col.width or 0)
+  end
+  local x = 0
+  for _, col in ipairs(COLS) do
+    if col.fill then
+      col.width = HEADER_W - fixed
+    end
+    col.x = x
+    x = x + col.width
+  end
+end
+local HEADER_OVERLAP = 2 -- SetColumnHeaderOverlap(2) in the auction house table builder
+local CELL_FONT = "Number14FontWhite"
 
 local TAB_DEFS = { { "market", "Market", 80 }, { "farm", "Farm guide", 90 }, { "measured", "Measured", 90 } }
 local TAB_INDEX = {}
@@ -102,6 +122,7 @@ end
 
 local state = { tab = "market", armor = "all", listedOnly = false, sortKey = "value", sortAsc = false, farmItem = nil }
 local win, marketView, farmView, measuredView, statusText, scanButton, farmHeader, farmClear, listedCheck, listedText
+local filterButton
 local tabButtons, armorButtons, headerText = {}, {}, {}
 
 local function ItemName(id, it)
@@ -283,6 +304,7 @@ local function OnItemClick(id, button)
       ChatEdit_InsertLink(link)
     end
   else
+    state.backTab = state.tab
     state.farmItem = id
     state.tab = "farm"
     Refresh()
@@ -292,8 +314,18 @@ end
 -------------------------------------------------------------------------------
 -- Scroll list helper
 -------------------------------------------------------------------------------
+-- The scroll bar is the game's thin one (ScrollFrameTemplate: MinimalScrollBar),
+-- placed as the auction house places it: 9 px right of the list.
 local function CreateList(parent, rowHeight, buildRow)
-  local scroll = CreateFrame("ScrollFrame", nil, parent, "UIPanelScrollFrameTemplate")
+  local scroll = TryCreate("ScrollFrame", nil, parent, "ScrollFrameTemplate")
+  if scroll and type(scroll.ScrollBar) == "table" and scroll.ScrollBar.ClearAllPoints then
+    local bar = scroll.ScrollBar
+    bar:ClearAllPoints()
+    bar:SetPoint("TOPLEFT", scroll, "TOPRIGHT", 9, 0)
+    bar:SetPoint("BOTTOMLEFT", scroll, "BOTTOMRIGHT", 9, 4)
+  elseif not scroll then
+    scroll = CreateFrame("ScrollFrame", nil, parent, "UIPanelScrollFrameTemplate")
+  end
   local content = CreateFrame("Frame", nil, scroll)
   content:SetSize(10, 10)
   scroll:SetScrollChild(content)
@@ -321,20 +353,22 @@ local function CreateList(parent, rowHeight, buildRow)
   return list
 end
 
--- Row background and hover highlight, as in the game's auction house list:
--- alternating stripes, and its row highlight on rows that can be clicked.
--- noHover: rows that cannot be clicked get no hover highlight.
-local function AddStripe(row, noHover)
+-- Row background and hover highlight of the auction house's list lines
+-- (AuctionHouseItemListLineTemplate): alternating stripes and its row
+-- highlight, added on hover.
+local function AddStripe(row)
   local bg = row:CreateTexture(nil, "BACKGROUND")
   bg:SetAllPoints()
   row.stripe = bg
-  if not noHover then
-    local hl = row:CreateTexture(nil, "HIGHLIGHT")
-    hl:SetAllPoints()
-    if SetArt(hl, "auctionhouse-ui-row-highlight", "Interface\\QuestFrame\\UI-QuestTitleHighlight") then
-      hl:SetBlendMode("ADD")
-    end
+  local hl = row:CreateTexture(nil, "HIGHLIGHT")
+  hl:SetAllPoints()
+  if SetArt(hl, "auctionhouse-ui-row-highlight", "Interface\\QuestFrame\\UI-QuestTitleHighlight") then
+    hl:SetBlendMode("ADD")
   end
+end
+
+local function CellFont()
+  return _G[CELL_FONT] and CELL_FONT or "GameFontHighlightSmall"
 end
 
 local function SetStripe(row, i)
@@ -355,29 +389,34 @@ local function BuildMarketRow(parent)
   row.smogRow = true
   row:RegisterForClicks("LeftButtonUp", "RightButtonUp")
   AddStripe(row)
-  -- icon framed like the auction house's small item icons
-  row.icon = row:CreateTexture(nil, "ARTWORK")
-  row.icon:SetSize(14, 14)
-  row.icon:SetPoint("LEFT", 3, 0)
-  local border = row:CreateTexture(nil, "OVERLAY")
-  border:SetSize(16, 16)
-  border:SetPoint("CENTER", row.icon, "CENTER")
-  if not HasAtlas("auctionhouse-itemicon-small-border") then
-    border:Hide()
-    row.icon:SetSize(16, 16)
-  else
-    border:SetAtlas("auctionhouse-itemicon-small-border")
-  end
   row.cells = {}
-  local x = ICON_W + 2
+  local font = CellFont()
   for _, col in ipairs(COLS) do
-    local fs = row:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
-    fs:SetPoint("LEFT", x, 0)
-    fs:SetWidth(col.width)
+    local padL, padR = col.padL or 0, col.padR or 0
+    local fs = row:CreateFontString(nil, "OVERLAY", font)
     fs:SetJustifyH(col.align)
     fs:SetWordWrap(false)
+    if col.key == "name" then
+      -- the auction house's item cell (AuctionHouseTableCellItemDisplayTemplate):
+      -- 14 px icon in its 16 px border, name 4 px right of the icon, 1 px down
+      row.icon = row:CreateTexture(nil, "BACKGROUND", nil, 1)
+      row.icon:SetSize(14, 14)
+      row.icon:SetPoint("LEFT", col.x + padL, 0)
+      local border = row:CreateTexture(nil, "BACKGROUND", nil, 2)
+      border:SetSize(16, 16)
+      border:SetPoint("CENTER", row.icon, "CENTER")
+      if HasAtlas("auctionhouse-itemicon-small-border") then
+        border:SetAtlas("auctionhouse-itemicon-small-border")
+      else
+        border:Hide()
+      end
+      fs:SetPoint("LEFT", row.icon, "RIGHT", 4, -1)
+      fs:SetWidth(col.width - padL - 14 - 4 - padR)
+    else
+      fs:SetPoint("LEFT", col.x + padL, 0)
+      fs:SetWidth(col.width - padL - padR)
+    end
     row.cells[col.key] = fs
-    x = x + col.width + COL_GAP
   end
   row:SetScript("OnEnter", function(self)
     if self.id then
@@ -446,7 +485,6 @@ local function RefreshMarket()
     h.arrowState = sorted and (state.sortAsc and "asc" or "desc") or nil
     if arrow then
       h:SetText(col.label)
-      h.UpdateArrowPos()
       arrow:SetShown(sorted)
       if sorted then
         if state.sortAsc then
@@ -498,20 +536,23 @@ end
 local function BuildWideRow(parent, onEnter)
   local row = CreateFrame("Button", nil, parent)
   row.smogRow = true
-  AddStripe(row, true)
-  row.rank = row:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
-  row.rank:SetPoint("LEFT", 4, 0)
-  row.rank:SetWidth(30)
+  AddStripe(row)
+  -- two lines laid out like the group finder's result rows
+  -- (LFGListSearchEntryTemplate): name 10 px in and 6 px down, the second
+  -- line right under it; the value sits on the name line at the right.
   row.pool = row:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
-  row.pool:SetPoint("TOPRIGHT", -8, -4)
+  row.pool:SetPoint("TOPRIGHT", -10, -6)
+  row.pool:SetHeight(14)
   row.title = row:CreateFontString(nil, "OVERLAY", "GameFontNormal")
-  row.title:SetPoint("TOPLEFT", 40, -4)
-  row.title:SetPoint("RIGHT", row.pool, "LEFT", -8, 0)
+  row.title:SetPoint("TOPLEFT", 10, -6)
+  row.title:SetPoint("RIGHT", row.pool, "LEFT", -10, 0)
+  row.title:SetHeight(14)
   row.title:SetJustifyH("LEFT")
   row.title:SetWordWrap(false)
   row.detail = row:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
-  row.detail:SetPoint("BOTTOMLEFT", 40, 5)
-  row.detail:SetPoint("RIGHT", -8, 0)
+  row.detail:SetPoint("TOPLEFT", row.title, "BOTTOMLEFT", 0, 0)
+  row.detail:SetPoint("RIGHT", -10, 0)
+  row.detail:SetHeight(15)
   row.detail:SetJustifyH("LEFT")
   row.detail:SetWordWrap(false)
   row:SetScript("OnEnter", onEnter)
@@ -552,6 +593,9 @@ local function FarmRowTooltip(self)
     GameTooltip:AddDoubleLine("  " .. ItemName(p.id, it), right)
   end
   GameTooltip:AddLine("Prices shown after the 5% auction house cut. Grey: not listed right now.", GREY[1], GREY[2], GREY[3], true)
+  if not state.farmItem then
+    GameTooltip:AddLine("The value is an estimate: the summed price of every piece whose level band overlaps the spot. Not gold per hour: drop chances are unknown.", GREY[1], GREY[2], GREY[3], true)
+  end
   local measured = ns.MeasuredForZone(spot.zone)
   if #measured > 0 then
     GameTooltip:AddLine(" ")
@@ -576,13 +620,13 @@ local function RefreshFarm()
       return other == it
     end)
     if it.src == "fishing" then
-      farmHeader:SetText(ItemName(itemFilter, it) .. " is not a mob drop. " .. (it.srcNote or ""))
-      farmView.empty:SetText("No farm spot: this piece is fished up, not dropped by mobs.")
+      farmHeader:SetText(ItemName(itemFilter, it) .. "  " .. Grey("fished up, not a mob drop"))
+      farmView.empty:SetText("No farm spot: this piece is fished up, not dropped by mobs. " .. (it.srcNote or ""))
     elseif it.inst then
-      farmHeader:SetText("Where to farm " .. ItemName(itemFilter, it) .. ": it drops in " .. it.inst .. ".")
+      farmHeader:SetText(ItemName(itemFilter, it) .. "  " .. Grey("drops in " .. it.inst))
     else
       local lo, hi = ns.MobRange(it)
-      farmHeader:SetText(("Where to farm %s: camps of level %d-%d mobs, best level match first. The level band is a rule of thumb, not a drop table."):format(ItemName(itemFilter, it), lo, hi))
+      farmHeader:SetText(ItemName(itemFilter, it) .. "  " .. Grey(("level %d-%d mobs (rule of thumb)"):format(lo, hi)))
     end
     table.sort(ranked, function(a, b)
       if a.pieces[1].match ~= b.pieces[1].match then
@@ -592,9 +636,11 @@ local function RefreshFarm()
     end)
   else
     ranked = ns.RankSpots(ArmorFilter)
-    farmHeader:SetText("Estimate only: summed auction value (after the 5% auction house cut) of every piece whose level band overlaps the spot. Not gold per hour: drop chances are unknown. Scan the auction house to get prices. Hover a spot for its pieces.")
   end
+  -- one piece's spots: the auction house's item page, a Back button above the list
   farmClear:SetShown(itemFilter ~= nil)
+  farmHeader:SetShown(itemFilter ~= nil)
+  farmView.PlaceList(itemFilter and -37 or 0)
   farmView.list:SetCount(#ranked)
   for i, e in ipairs(ranked) do
     local row = farmView.list.rows[i]
@@ -603,11 +649,9 @@ local function RefreshFarm()
     local spot = e.spot
     row.title:SetText(("%s  %s"):format(ns.SpotLabel(spot), Grey(("%s %d-%d%s"):format(spot.mobs or "mobs", spot.lo, spot.hi, spot.dungeon and ", dungeon" or ""))))
     if itemFilter then
-      row.rank:SetText(i)
       row.pool:SetText(it.inst and "drops in this dungeon" or ("covers %d%% of its level band"):format(Pct(e.pieces[1].match)))
       row.detail:SetText(spot.note or "")
     else
-      row.rank:SetText(e.priced > 0 and i or "-")
       row.pool:SetText(e.priced > 0 and (ns.Money(e.total) .. " " .. Grey("pool")) or Grey("scan to price"))
       local parts = {}
       for j = 1, math.min(3, #e.pieces) do
@@ -660,7 +704,6 @@ local function RefreshMeasured()
     local a = m.area
     row.entry = m
     SetStripe(row, i)
-    row.rank:SetText(m.perHour and i or "-")
     row.title:SetText(m.key .. (a.lmin and ("  " .. Grey(("mobs level %d-%d"):format(a.lmin, a.lmax))) or ""))
     if m.perHour then
       row.pool:SetText(ns.Money(m.perHour) .. " " .. Grey("per hour"))
@@ -717,14 +760,22 @@ Refresh = function()
       b:SetEnabled(key ~= state.tab)
     end
   end
-  for key, b in pairs(armorButtons) do
-    b:SetEnabled(key ~= state.armor)
-    -- The armor filter does nothing on the Measured tab or while the Farm
-    -- guide shows the spots of one piece, so it is not offered there.
-    b:SetShown(state.tab == "market" or (state.tab == "farm" and not (state.farmItem and ns.Items()[state.farmItem])))
+  -- The armor filter does nothing on the Measured tab or while the Farm
+  -- guide shows the spots of one piece, so it is not offered there.
+  local filterUseful = state.tab == "market" or (state.tab == "farm" and not (state.farmItem and ns.Items()[state.farmItem]))
+  if filterButton then
+    filterButton:SetShown(filterUseful)
+    if filterButton.smogValidate then
+      pcall(filterButton.ValidateResetState, filterButton)
+    end
+  else
+    for key, b in pairs(armorButtons) do
+      b:SetEnabled(key ~= state.armor)
+      b:SetShown(filterUseful)
+    end
+    listedCheck:SetShown(state.tab == "market")
+    listedText:SetShown(state.tab == "market")
   end
-  listedCheck:SetShown(state.tab == "market")
-  listedText:SetShown(state.tab == "market")
   marketView:SetShown(state.tab == "market")
   farmView:SetShown(state.tab == "farm")
   measuredView:SetShown(state.tab == "measured")
@@ -761,20 +812,266 @@ local function MakeButton(parent, text, width, onClick)
   return b
 end
 
-local function MakeHeaderText(view)
-  local fs = view:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
-  fs:SetPoint("TOPLEFT", 4, -2)
-  fs:SetPoint("RIGHT", view, "RIGHT", -146, 0)
-  fs:SetHeight(28)
-  fs:SetJustifyH("LEFT")
-  fs:SetJustifyV("TOP")
+-- The list area of a view: the game's inset (InsetFrameTemplate, as under the
+-- auction house's browse list) with the scroll list inside it.
+local function MakeInset(view)
+  local inset = TryCreate("Frame", nil, view, "InsetFrameTemplate")
+  if not inset then
+    inset = CreateFrame("Frame", nil, view)
+  end
+  return inset
+end
+
+-- Text shown when a list is empty, where and how the auction house shows
+-- "No results" (ResultsText in AuctionHouseItemListTemplate).
+local function MakeEmptyText(view, scroll)
+  local fs = view:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+  fs:SetPoint("TOP", scroll, "TOP", 0, -45)
+  fs:SetPoint("LEFT", view, "LEFT", 45, 0)
+  fs:SetPoint("RIGHT", view, "RIGHT", -67, 0)
+  fs:SetJustifyH("CENTER")
   fs:SetWordWrap(true)
   return fs
 end
 
+-- the views fill the window below the search-bar row, like the auction
+-- house's browse area: 4 px from the left edge, 5 from the right
+local VIEW_TOP, VIEW_BOTTOM = -73, 26
+
+local function MakeView()
+  local view = CreateFrame("Frame", nil, win)
+  view:SetPoint("TOPLEFT", 4, VIEW_TOP)
+  view:SetPoint("BOTTOMRIGHT", -5, VIEW_BOTTOM)
+  return view
+end
+
+-- A view without column headers (Farm guide, Measured): the inset from its
+-- top (or below a Back button), the list 3 px inside it, the scroll bar in
+-- the auction house's place.
+local function MakePlainList(view, rowHeight, buildRow)
+  view.inset = MakeInset(view)
+  view.list = CreateList(view, rowHeight, buildRow)
+  function view.PlaceList(top)
+    view.inset:ClearAllPoints()
+    view.inset:SetPoint("TOPLEFT", 0, top)
+    view.inset:SetPoint("BOTTOMRIGHT", 0, 0)
+    local scroll = view.list.scroll
+    scroll:ClearAllPoints()
+    scroll:SetPoint("TOPLEFT", 4, top - 3)
+    scroll:SetPoint("BOTTOMRIGHT", -26, 3)
+  end
+  view.PlaceList(0)
+  view.empty = MakeEmptyText(view, view.list.scroll)
+end
+
+local function SelectTab(key)
+  state.tab = key
+  if key == "farm" then
+    state.farmItem = nil
+  end
+  Refresh()
+end
+
+local function FilterIsDefault()
+  return state.armor == "all" and not state.listedOnly
+end
+
+-- The filter: the game's filter dropdown, as the auction house's search bar
+-- has it (WowStyle1FilterDropdownTemplate, 93 wide, 10 px left of the
+-- search button, a menu of titled groups). Its reset button shows while a
+-- filter is set, which is how the game says a filter is on.
+local function CreateFilterDropdown()
+  local dd = TryCreate("DropdownButton", nil, win, "WowStyle1FilterDropdownTemplate")
+  if not dd or type(dd.SetupMenu) ~= "function" then
+    if dd then
+      dd:Hide()
+    end
+    return nil
+  end
+  dd:SetWidth(93)
+  dd:SetPoint("RIGHT", scanButton, "LEFT", -10, 0)
+  local ok = pcall(dd.SetupMenu, dd, function(_, root)
+    pcall(root.SetTag, root, "MENU_SLUTMOGSCOUT_FILTER")
+    root:CreateTitle("Armor type")
+    for _, key in ipairs(ARMOR_ORDER) do
+      root:CreateRadio(ARMOR_LABEL[key], function()
+        return state.armor == key
+      end, function()
+        state.armor = key
+        Refresh()
+      end, key)
+    end
+    if state.tab == "market" then
+      root:QueueSpacer()
+      root:CreateTitle("Auction house")
+      root:CreateCheckbox("Listed now only", function()
+        return state.listedOnly
+      end, function()
+        state.listedOnly = not state.listedOnly
+        Refresh()
+      end)
+    end
+  end)
+  if not ok then
+    dd:Hide()
+    return nil
+  end
+  if pcall(dd.SetIsDefaultCallback, dd, FilterIsDefault) and pcall(dd.SetDefaultCallback, dd, function()
+    state.armor, state.listedOnly = "all", false
+    Refresh()
+  end) then
+    dd.smogValidate = true
+  end
+  return dd
+end
+
+-- Fallback when this client has no filter dropdown: the game's buttons and
+-- check box in the same row.
+local function CreateFilterButtons(startX)
+  local x = startX > 0 and startX + 16 or 12
+  for _, key in ipairs(ARMOR_ORDER) do
+    local b = MakeButton(win, ARMOR_LABEL[key], 60, function()
+      state.armor = key
+      Refresh()
+    end)
+    b:SetPoint("LEFT", win, "TOPLEFT", x, -49)
+    armorButtons[key] = b
+    x = x + 64
+  end
+  listedCheck = CreateFrame("CheckButton", nil, win, "UICheckButtonTemplate")
+  listedCheck:SetSize(24, 24)
+  listedCheck:SetPoint("LEFT", win, "TOPLEFT", x + 6, -49)
+  listedCheck:SetHitRectInsets(0, -100, 0, 0) -- the label is clickable too
+  listedText = win:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+  listedText:SetPoint("LEFT", listedCheck, "RIGHT", 2, 0)
+  listedText:SetText("Listed now only")
+  listedCheck:SetScript("OnClick", function(self)
+    state.listedOnly = self:GetChecked() and true or false
+    Refresh()
+  end)
+end
+
+local function CreateTabs()
+  -- the game's tabs under the bottom edge, placed as the auction house
+  -- places its Buy tab (20 px in, 28 px down; the rest 3 px apart)
+  local useTabs = type(PanelTemplates_SetNumTabs) == "function" and type(PanelTemplates_SetTab) == "function"
+  local made = {}
+  if useTabs then
+    for i in ipairs(TAB_DEFS) do
+      local b = TryCreate("Button", "SlutmogScoutFrameTab" .. i, win, "PanelTabButtonTemplate")
+      if not b then
+        useTabs = false
+        break
+      end
+      made[i] = b
+    end
+  end
+  if useTabs then
+    win.Tabs = made
+    for i, def in ipairs(TAB_DEFS) do
+      local b = made[i]
+      b:SetID(i)
+      b:SetText(def[2])
+      if i == 1 then
+        b:SetPoint("BOTTOMLEFT", win, "BOTTOMLEFT", 20, -28)
+      else
+        b:SetPoint("TOPLEFT", made[i - 1], "TOPRIGHT", 3, 0)
+      end
+      b:SetScript("OnClick", function()
+        if PlaySound and SOUNDKIT and SOUNDKIT.IG_CHARACTER_INFO_TAB then
+          PlaySound(SOUNDKIT.IG_CHARACTER_INFO_TAB)
+        end
+        SelectTab(def[1])
+      end)
+      tabButtons[def[1]] = b
+    end
+    PanelTemplates_SetNumTabs(win, #TAB_DEFS)
+    win.smogPanelTabs = true
+    return 0
+  end
+  for _, b in ipairs(made) do
+    b:Hide()
+  end
+  -- no tab template: plain buttons at the top left of the filter row
+  local x = 12
+  for _, def in ipairs(TAB_DEFS) do
+    local key = def[1]
+    local b = MakeButton(win, def[2], def[3], function()
+      SelectTab(key)
+    end)
+    b:SetPoint("LEFT", win, "TOPLEFT", x, -49)
+    tabButtons[key] = b
+    x = x + def[3] + 4
+  end
+  return x
+end
+
+local function CreateMarketHeaders()
+  local container = CreateFrame("Frame", nil, marketView)
+  container:SetPoint("TOPLEFT", 4, -1)
+  container:SetPoint("TOPRIGHT", -26, -1)
+  container:SetHeight(19)
+  for ci, col in ipairs(COLS) do
+    -- the auction house's column header tab, each one 2 px over the next
+    local h = TryCreate("Button", nil, container, "ColumnDisplayButtonShortTemplate")
+    if not h then
+      h = CreateFrame("Button", nil, container)
+      local hl = h:CreateTexture(nil, "HIGHLIGHT")
+      hl:SetAllPoints()
+      if SetArt(hl, nil, "Interface\\PaperDollInfoFrame\\UI-Character-Tab-Highlight") then
+        hl:SetBlendMode("ADD")
+      end
+    end
+    h:SetSize(col.width + (ci < #COLS and HEADER_OVERLAP or 0), 19)
+    h:SetPoint("TOPLEFT", col.x, 0)
+    -- text 8 px in and the sort arrow 3 px after it, as in
+    -- AuctionHouseTableHeaderStringTemplate
+    local fs = h:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+    fs:SetPoint("LEFT", 8, 0)
+    fs:SetJustifyH("LEFT")
+    fs:SetWordWrap(false)
+    fs:SetText(col.label)
+    if HasAtlas("auctionhouse-ui-sortarrow") then
+      local arrow = h:CreateTexture(nil, "OVERLAY")
+      arrow:SetAtlas("auctionhouse-ui-sortarrow", true)
+      arrow:SetPoint("LEFT", fs, "RIGHT", 3, 0)
+      arrow:Hide()
+      fs.arrow = arrow
+    end
+    headerText[col.key] = fs
+    h:SetScript("OnClick", function()
+      if state.sortKey == col.key then
+        state.sortAsc = not state.sortAsc
+      else
+        state.sortKey = col.key
+        state.sortAsc = not col.numeric
+      end
+      if PlaySound and SOUNDKIT and SOUNDKIT.IG_MAINMENU_OPTION_CHECKBOX_ON then
+        PlaySound(SOUNDKIT.IG_MAINMENU_OPTION_CHECKBOX_ON)
+      end
+      Refresh()
+    end)
+    h:SetScript("OnEnter", function(self)
+      GameTooltip:SetOwner(self, "ANCHOR_TOP")
+      GameTooltip:AddLine(col.label, GOLD[1], GOLD[2], GOLD[3])
+      if col.tip then
+        GameTooltip:AddLine(col.tip, WHITE[1], WHITE[2], WHITE[3], true)
+      end
+      GameTooltip:AddLine("Click to sort.", GREY[1], GREY[2], GREY[3])
+      GameTooltip:Show()
+    end)
+    h:SetScript("OnLeave", GameTooltip_Hide)
+  end
+  return container
+end
+
 local function CreateWindow()
-  win = CreateFrame("Frame", "SlutmogScoutFrame", UIParent, "BasicFrameTemplateWithInset")
-  win:SetSize(940, 560)
+  -- the auction house's window: the game's portrait frame
+  win = TryCreate("Frame", "SlutmogScoutFrame", UIParent, "PortraitFrameTemplate")
+  if not win then
+    win = CreateFrame("Frame", "SlutmogScoutFrame", UIParent, "BasicFrameTemplateWithInset")
+  end
+  win:SetSize(WIN_W, WIN_H)
   win:SetFrameStrata("HIGH")
   win:SetMovable(true)
   win:SetClampedToScreen(true)
@@ -801,207 +1098,82 @@ local function CreateWindow()
   win:Hide()
   tinsert(UISpecialFrames, "SlutmogScoutFrame")
 
-  local title = win.TitleText or (win.TitleContainer and win.TitleContainer.TitleText)
-  if not title then
-    title = win:CreateFontString(nil, "OVERLAY", "GameFontNormal")
-    title:SetPoint("TOP", 0, -5)
+  if not pcall(win.SetTitle, win, "Slutmog Scout") then
+    local title = win.TitleText or (win.TitleContainer and win.TitleContainer.TitleText)
+    if not title then
+      title = win:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+      title:SetPoint("TOP", 0, -5)
+    end
+    title:SetText("Slutmog Scout")
   end
-  title:SetText("Slutmog Scout")
+  pcall(win.SetPortraitToAsset, win, "Interface\\Icons\\INV_Misc_Coin_01")
 
-  -- Tabs: the game's tabs along the bottom edge of the window, as on the
-  -- auction house and the character window. Plain buttons along the top only
-  -- if this client lacks the tab template.
-  local x = 14
-  local function SelectTab(key)
-    state.tab = key
-    if key == "farm" then
-      state.farmItem = nil
-    end
-    Refresh()
-  end
-  local useTabs = type(PanelTemplates_SetNumTabs) == "function" and type(PanelTemplates_SetTab) == "function"
-  local made = {}
-  if useTabs then
-    for i, def in ipairs(TAB_DEFS) do
-      local b = TryCreate("Button", "SlutmogScoutFrameTab" .. i, win, "PanelTabButtonTemplate")
-      if not b then
-        useTabs = false
-        break
-      end
-      made[i] = b
-    end
-  end
-  if useTabs then
-    win.Tabs = made
-    for i, def in ipairs(TAB_DEFS) do
-      local b = made[i]
-      b:SetID(i)
-      b:SetText(def[2])
-      if i == 1 then
-        b:SetPoint("TOPLEFT", win, "BOTTOMLEFT", 11, 2)
-      end
-      b:SetScript("OnClick", function()
-        if PlaySound and SOUNDKIT and SOUNDKIT.IG_CHARACTER_INFO_TAB then
-          PlaySound(SOUNDKIT.IG_CHARACTER_INFO_TAB)
-        end
-        SelectTab(def[1])
-      end)
-      tabButtons[def[1]] = b
-    end
-    PanelTemplates_SetNumTabs(win, #TAB_DEFS)
-    win.smogPanelTabs = true
-  else
-    for i, b in ipairs(made) do
-      b:Hide()
-    end
-    for _, def in ipairs(TAB_DEFS) do
-      local key = def[1]
-      local b = MakeButton(win, def[2], def[3], function()
-        SelectTab(key)
-      end)
-      b:SetPoint("TOPLEFT", x, -30)
-      tabButtons[key] = b
-      x = x + def[3] + 4
-    end
-    x = x + 16
-  end
-  for _, key in ipairs(ARMOR_ORDER) do
-    local b = MakeButton(win, ARMOR_LABEL[key], 60, function()
-      state.armor = key
-      Refresh()
-    end)
-    b:SetPoint("TOPLEFT", x, -30)
-    armorButtons[key] = b
-    x = x + 62
-  end
+  local tabsX = CreateTabs()
 
-  listedCheck = CreateFrame("CheckButton", nil, win, "UICheckButtonTemplate")
-  listedCheck:SetSize(24, 24)
-  listedCheck:SetPoint("TOPLEFT", x + 10, -29)
-  listedCheck:SetHitRectInsets(0, -100, 0, 0) -- the label is clickable too
-  listedText = win:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
-  listedText:SetPoint("LEFT", listedCheck, "RIGHT", 2, 0)
-  listedText:SetText("Listed now only")
-  listedCheck:SetScript("OnClick", function(self)
-    state.listedOnly = self:GetChecked() and true or false
-    Refresh()
-  end)
-
-  scanButton = MakeButton(win, "Scan", 90, function()
+  -- the search-bar row: Scan where the auction house has Search
+  -- (AuctionHouseSearchButtonTemplate: 132 x 22 at the right of a 40 px bar
+  -- 12 px in and 29 px down), the filter dropdown left of it
+  scanButton = MakeButton(win, "Scan", 132, function()
+    if PlaySound and SOUNDKIT and SOUNDKIT.IG_MAINMENU_OPTION_CHECKBOX_ON then
+      PlaySound(SOUNDKIT.IG_MAINMENU_OPTION_CHECKBOX_ON)
+    end
     ns.StartScan()
   end)
-  scanButton:SetPoint("TOPRIGHT", -14, -30)
+  scanButton:SetPoint("RIGHT", win, "TOPRIGHT", -12, -49)
+  filterButton = CreateFilterDropdown()
+  if not filterButton then
+    CreateFilterButtons(tabsX)
+  end
 
+  -- the totals line at the bottom, as under the Who list
   statusText = win:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
-  statusText:SetPoint("BOTTOMLEFT", 14, 9)
-  statusText:SetPoint("RIGHT", -14, 0)
+  statusText:SetPoint("BOTTOMLEFT", 12, 8)
+  statusText:SetPoint("RIGHT", -12, 0)
   statusText:SetJustifyH("LEFT")
   statusText:SetWordWrap(false)
 
-  -- market view
-  marketView = CreateFrame("Frame", nil, win)
-  marketView:SetPoint("TOPLEFT", 12, -58)
-  marketView:SetPoint("BOTTOMRIGHT", -12, 28)
-  -- Column headers: the game's column header tabs (as on the Who list and
-  -- the auction house), side by side; the first one also covers the icons.
-  local hx = ICON_W + 2
-  for ci, col in ipairs(COLS) do
-    local left = ci == 1 and 0 or (hx - COL_GAP / 2)
-    local right = hx + col.width + (ci == #COLS and 4 or COL_GAP / 2)
-    local h = TryCreate("Button", nil, marketView, "ColumnDisplayButtonShortTemplate")
-    if not h then
-      h = CreateFrame("Button", nil, marketView)
-      local hl = h:CreateTexture(nil, "HIGHLIGHT")
-      hl:SetAllPoints()
-      if SetArt(hl, nil, "Interface\\PaperDollInfoFrame\\UI-Character-Tab-Highlight") then
-        hl:SetBlendMode("ADD")
-      end
-    end
-    h:SetSize(right - left, 19)
-    h:SetPoint("TOPLEFT", left, 0)
-    local fs = h:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
-    fs:SetPoint("LEFT", hx - left, 0)
-    fs:SetWidth(col.width)
-    fs:SetJustifyH(col.align)
-    fs:SetWordWrap(false)
-    fs:SetText(col.label)
-    if HasAtlas("auctionhouse-ui-sortarrow") then
-      local arrow = h:CreateTexture(nil, "OVERLAY")
-      arrow:SetAtlas("auctionhouse-ui-sortarrow", true)
-      arrow:Hide()
-      fs.arrow = arrow
-      fs.UpdateArrowPos = function()
-        local w = fs:GetStringWidth() or 0
-        arrow:ClearAllPoints()
-        if col.align == "RIGHT" then
-          arrow:SetPoint("RIGHT", fs, "RIGHT", -(w + 3), 0)
-        else
-          arrow:SetPoint("LEFT", fs, "LEFT", w + 3, 0)
-        end
-      end
-      fs.UpdateArrowPos()
-    end
-    headerText[col.key] = fs
-    h:SetScript("OnClick", function()
-      if state.sortKey == col.key then
-        state.sortAsc = not state.sortAsc
-      else
-        state.sortKey = col.key
-        state.sortAsc = not col.numeric
-      end
-      Refresh()
-    end)
-    h:SetScript("OnEnter", function(self)
-      GameTooltip:SetOwner(self, "ANCHOR_TOP")
-      GameTooltip:AddLine(col.label, GOLD[1], GOLD[2], GOLD[3])
-      if col.tip then
-        GameTooltip:AddLine(col.tip, WHITE[1], WHITE[2], WHITE[3], true)
-      end
-      GameTooltip:AddLine("Click to sort.", GREY[1], GREY[2], GREY[3])
-      GameTooltip:Show()
-    end)
-    h:SetScript("OnLeave", GameTooltip_Hide)
-    hx = hx + col.width + COL_GAP
-  end
+  -- market view: the auction house's browse list. Headers sit above the
+  -- inset (backgroundYOffset -19); the list starts 6 px under them.
+  marketView = MakeView()
+  marketView.inset = MakeInset(marketView)
+  marketView.inset:SetPoint("TOPLEFT", 0, -19)
+  marketView.inset:SetPoint("BOTTOMRIGHT", 0, 0)
+  local headers = CreateMarketHeaders()
   marketView.list = CreateList(marketView, ROW_H, BuildMarketRow)
-  marketView.list.scroll:SetPoint("TOPLEFT", 0, -20)
-  marketView.list.scroll:SetPoint("BOTTOMRIGHT", -26, 0)
-  marketView.empty = marketView:CreateFontString(nil, "OVERLAY", "GameFontDisable")
-  marketView.empty:SetPoint("CENTER")
-  marketView.empty:SetText("Nothing to show. Untick \"Listed now only\" or pick another armor type.")
+  marketView.list.scroll:SetPoint("TOPLEFT", headers, "BOTTOMLEFT", 0, -6)
+  marketView.list.scroll:SetPoint("RIGHT", headers, "RIGHT", 0, 0)
+  marketView.list.scroll:SetPoint("BOTTOM", marketView, "BOTTOM", 0, 3)
+  marketView.empty = MakeEmptyText(marketView, marketView.list.scroll)
+  marketView.empty:SetText("No pieces match this filter.")
 
-  -- farm view
-  farmView = CreateFrame("Frame", nil, win)
-  farmView:SetPoint("TOPLEFT", 12, -58)
-  farmView:SetPoint("BOTTOMRIGHT", -12, 28)
-  farmHeader = MakeHeaderText(farmView)
-  farmClear = MakeButton(farmView, "Show all spots", 110, function()
-    state.farmItem = nil
-    Refresh()
-  end)
-  farmClear:SetPoint("TOPRIGHT", -26, 0)
-  farmView.list = CreateList(farmView, FARM_ROW_H, function(parent)
+  -- farm view; one piece's spots get the auction house item page's Back
+  -- button (UIPanelButtonTemplate 110 x 22) and the piece's name beside it
+  farmView = MakeView()
+  MakePlainList(farmView, FARM_ROW_H, function(parent)
     return BuildWideRow(parent, FarmRowTooltip)
   end)
-  farmView.list.scroll:SetPoint("TOPLEFT", 0, LIST_TOP)
-  farmView.list.scroll:SetPoint("BOTTOMRIGHT", -26, 0)
-  farmView.empty = farmView:CreateFontString(nil, "OVERLAY", "GameFontDisable")
-  farmView.empty:SetPoint("CENTER")
-  farmView.empty:SetText("No farm spots match this filter.")
+  farmClear = MakeButton(farmView, "Back", 110, function()
+    local back = state.backTab
+    state.farmItem = nil
+    state.backTab = nil
+    if back and back ~= "farm" then
+      state.tab = back
+    end
+    Refresh()
+  end)
+  farmClear:SetPoint("TOPLEFT", 0, -5)
+  local nameFont = _G.SystemFont_Shadow_Large2 and "SystemFont_Shadow_Large2" or "GameFontHighlightLarge"
+  farmHeader = farmView:CreateFontString(nil, "OVERLAY", nameFont)
+  farmHeader:SetPoint("LEFT", farmClear, "RIGHT", 12, 0)
+  farmHeader:SetPoint("RIGHT", farmView, "RIGHT", -12, 0)
+  farmHeader:SetJustifyH("LEFT")
+  farmHeader:SetWordWrap(false)
 
   -- measured view
-  measuredView = CreateFrame("Frame", nil, win)
-  measuredView:SetPoint("TOPLEFT", 12, -58)
-  measuredView:SetPoint("BOTTOMRIGHT", -12, 28)
-  local measuredHeader = MakeHeaderText(measuredView)
-  measuredHeader:SetText("Measured from your own looting: corpses you opened, list pieces found on them, and the time between loots (pauses over 5 minutes are left out). Gold per hour counts list pieces only and needs 15 minutes of data.")
-  measuredView.list = CreateList(measuredView, FARM_ROW_H, function(parent)
+  measuredView = MakeView()
+  MakePlainList(measuredView, FARM_ROW_H, function(parent)
     return BuildWideRow(parent, MeasuredRowTooltip)
   end)
-  measuredView.list.scroll:SetPoint("TOPLEFT", 0, LIST_TOP)
-  measuredView.list.scroll:SetPoint("BOTTOMRIGHT", -26, 0)
-  measuredView.empty = measuredView:CreateFontString(nil, "OVERLAY", "GameFontDisable")
-  measuredView.empty:SetPoint("CENTER")
   measuredView.empty:SetText("Nothing measured yet. Loot mobs anywhere and this tab fills in by itself.")
 
   win:SetScript("OnShow", Refresh)
