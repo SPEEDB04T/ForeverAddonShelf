@@ -1,5 +1,9 @@
 # Changelog
 
+## 1.0.4
+
+- Lists the first piñata and the first blue health bar on screen for LookShots, so they can be checked in a screenshot. Does nothing without LookShots.
+
 ## 1.0.3
 
 - The options window and minimap button are redrawn by the shared kit: they now copy the game's own Options rows and its round minimap button.

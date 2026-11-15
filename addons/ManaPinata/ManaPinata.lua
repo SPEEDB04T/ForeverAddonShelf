@@ -664,6 +664,48 @@ local function TestNote()
 end
 
 ---------------------------------------------------------------------------
+-- LookShots: a helper on SuccuDev's machine that takes one game screenshot
+-- of each frame listed here the first time it shows. Harmless without it.
+-- One nameplate of each kind is enough: the first piñata (real or test)
+-- and the first blue health bar that are on screen.
+---------------------------------------------------------------------------
+local function OnScreen(region)
+    if type(region) ~= "table" then return false end
+    local ok, shown = pcall(region.IsVisible, region)   -- a locked button refuses: not now
+    if not ok or (issecret and issecret(shown)) then return false end
+    return shown == true
+end
+
+local function FirstPinata()
+    for _, p in pairs(pinatas) do
+        if OnScreen(p.button) then return p.button end
+        if OnScreen(p.test) then return p.holder end
+    end
+end
+
+local function FirstBlueBar()
+    for _, p in pairs(pinatas) do
+        if p.bar and (OnScreen(p.barButton) or OnScreen(p.barTest)) then return p.bar end
+    end
+end
+
+local function AddonVersion()
+    local get = (C_AddOns and C_AddOns.GetAddOnMetadata) or GetAddOnMetadata
+    if not get then return "?" end
+    local ok, version = pcall(get, ADDON_NAME, "Version")
+    return (ok and type(version) == "string") and version or "?"
+end
+
+LookShotsTargets = LookShotsTargets or {}
+LookShotsTargets[ADDON_NAME] = {
+    version = AddonVersion(),
+    frames = {
+        { label = "piñata", frame = FirstPinata },
+        { label = "blue health bar", frame = FirstBlueBar },
+    },
+}
+
+---------------------------------------------------------------------------
 -- Events
 ---------------------------------------------------------------------------
 local f = CreateFrame("Frame")
