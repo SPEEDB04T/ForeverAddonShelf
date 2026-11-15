@@ -1,5 +1,10 @@
 # Changelog
 
+## 1.3.3
+
+- Fixed: no message from anyone was taken, not even your own coming back, so positions were never shared. On WoW Forever the game gives an addon a member's first name and their surname apart ("Bunglfart", "Dunglode"), while a message arrives from "Bunglfart Dunglode", and the addon compared the first name alone. A member is now known by both together, the sender is matched against that first and the first name only when no one else shares it.
+- Names show as "First Last" in the tooltip, under the marker, in the chat line and in `/graves list`.
+
 ## 1.3.2
 
 - The map markers and their tooltip are listed for LookShots, the developer's screenshot helper, so they can be checked against the game's own look. Without LookShots installed nothing changes.

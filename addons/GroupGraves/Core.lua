@@ -60,7 +60,7 @@ local db
 local graves = {}                  -- key (name, or name-realm) -> grave
 ns.graves = graves
 local me = { state = "A" }         -- "A" alive, "D" dead (body), "G" released (ghost)
-local myKey, myRealm, myClass = nil, "", nil
+local myKey, myClass = nil, nil              -- myKey: my full name, as UnitNames gives it
 
 local floor, max, min, abs = math.floor, math.max, math.min, math.abs
 
@@ -86,40 +86,38 @@ local function Try(fn, ...)
 end
 
 ---------------------------------------------------------------------------
--- Names. A marker is filed under the member's name as the game's group list
--- gives it ("First Last", with the space), with the realm added only when the
--- game gives one (someone from another realm).
+-- Names. On this client UnitName gives the first name and puts the surname
+-- where other clients put the realm ("Bunglfart", "Dunglode"), while a message
+-- arrives from "Bunglfart Dunglode". So a member is filed and shown under both
+-- returns joined by a space, which every side can rebuild from UnitName alone,
+-- and a sender is matched against that long spelling first, then the first name.
 ---------------------------------------------------------------------------
-local function Squash(realm) return (realm:gsub("[%s%-']", "")) end
 local function Squeeze(text) return (text:lower():gsub("[^%w]", "")) end   -- lower-case letters and digits
 
 local mySpellings = {}             -- my realm, squeezed, each way the game spells it
 
-local function MakeKey(name, realm)
-    if type(name) ~= "string" or name == "" then return nil end
-    if type(realm) == "string" and realm ~= "" then
-        realm = Squash(realm)
-        if realm ~= "" and realm ~= myRealm then return name .. "-" .. realm, name end
-    end
-    return name, name
+-- A unit's names: the full one ("First Second", the key and what is shown), the first
+-- name, and the second return of UnitName (a surname or a realm; which is not guessed).
+local function UnitNames(unit)
+    local first, second = Try(UnitName, unit)
+    if type(first) ~= "string" or first == "" or first == UNKNOWNOBJECT then return nil end
+    if type(second) ~= "string" or second == "" then return first, first, nil end
+    return first .. " " .. second, first, second
 end
 
 local function UnitKey(unit)
-    local name, realm = Try(UnitName, unit)
-    if type(name) ~= "string" or name == "" or name == UNKNOWNOBJECT then return nil end
-    return MakeKey(name, realm)
+    local full = UnitNames(unit)
+    return full, full
 end
 
 local function Identity()
-    local realm = Try(GetNormalizedRealmName) or Try(GetRealmName)
-    myRealm = type(realm) == "string" and Squash(realm) or ""
     mySpellings = {}
     for _, read in ipairs({ GetNormalizedRealmName, GetRealmName }) do
         local spelled = Try(read)
         if type(spelled) == "string" and Squeeze(spelled) ~= "" then mySpellings[#mySpellings + 1] = Squeeze(spelled) end
     end
-    local name = Try(UnitName, "player")
-    if type(name) == "string" and name ~= "" then myKey = name end
+    local full = UnitNames("player")
+    if full then myKey = full end
     local _, class = Try(UnitClass, "player")
     if type(class) == "string" then myClass = class end
 end
@@ -133,37 +131,40 @@ local function Agree(a, b)
 end
 
 local function MyRealmAgrees(spelled)
+    if spelled == "" then return true end
     for _, mine in ipairs(mySpellings) do
         if Agree(spelled, mine) then return true end
     end
     return false
 end
 
--- Who in the group a name from a message is: a message sender ("First Last-Realm") or a
--- name inside a relay. Found by the name alone, the space kept; the realm only decides
--- between members who share a name, because its spelling can't be trusted.
+-- What follows a spelling in a sender: "" for the spelling itself, the realm after
+-- "spelling-", nil when the sender is not this spelling.
+local function After(text, spelling)
+    if text == spelling then return "" end
+    if text:sub(1, #spelling + 1) == spelling .. "-" then return text:sub(#spelling + 2) end
+end
+
+-- Who in the group a name from a message is: a message sender ("First Last", maybe with
+-- "-Realm") or a name inside a relay. The long spelling is tried on every member first,
+-- the first name only when no member matched it; a realm after the dash only decides
+-- between members who still share it.
 -- Returns unit, key, name, or nil and why: "nobody", "hidden" (the game hides names in
 -- the group right now) or "ambiguous".
 local function Find(text)
     if type(text) ~= "string" or text == "" then return nil, "nobody" end
-    local who, realm = text:match("^([^%-]+)%-(.*)$")
-    who = who or text
-    local spelled = realm and Squeeze(realm) or ""
-    local found, hidden = {}, false
+    local members, hidden = {}, false
     local function Look(unit)
         if not Try(UnitExists, unit) then return end
-        local name, unitRealm = Try(UnitName, unit)
-        if type(name) ~= "string" or name == "" or name == UNKNOWNOBJECT then
+        local full, first, second = UnitNames(unit)
+        if not full then
             hidden = true
             return
         end
-        if name ~= who then return end
-        local key = MakeKey(name, unitRealm)
-        for _, c in ipairs(found) do
-            if c.key == key then return end       -- my own raid unit: already found as "player"
+        for _, m in ipairs(members) do
+            if m.full == full then return end     -- my own raid unit: already there as "player"
         end
-        found[#found + 1] = { unit = unit, key = key, name = name,
-            realm = (type(unitRealm) == "string" and Squeeze(unitRealm) ~= "") and Squeeze(unitRealm) or nil }
+        members[#members + 1] = { unit = unit, full = full, first = first, second = second }
     end
     Look("player")
     if IsInRaid and IsInRaid() then
@@ -171,21 +172,40 @@ local function Find(text)
     elseif IsInGroup and IsInGroup() then
         for i = 1, 4 do Look("party" .. i) end
     end
-    if #found == 1 then return found[1].unit, found[1].key, found[1].name end
-    if #found == 0 then return nil, hidden and "hidden" or "nobody" end
-    local pick
-    for _, c in ipairs(found) do
-        local agrees
-        if spelled == "" then agrees = c.realm == nil
-        elseif c.realm then agrees = Agree(spelled, c.realm)
-        else agrees = MyRealmAgrees(spelled) end
-        if agrees then
-            if pick then return nil, "ambiguous" end
-            pick = c
+
+    for pass = 1, 2 do
+        local found = {}
+        for _, m in ipairs(members) do
+            local realm
+            if pass == 1 then
+                if m.second then realm = After(text, m.full) end
+            else
+                realm = After(text, m.first)
+            end
+            if realm then found[#found + 1] = { m = m, realm = Squeeze(realm), short = pass == 2 } end
+        end
+        if #found == 1 then return found[1].m.unit, found[1].m.full, found[1].m.full end
+        if #found > 1 then
+            local pick
+            for _, c in ipairs(found) do
+                -- matched on the first name alone, the second return may be the realm;
+                -- otherwise the member is taken to be on my realm
+                local agrees
+                if c.short and c.m.second then
+                    agrees = Agree(c.realm, Squeeze(c.m.second))
+                else
+                    agrees = MyRealmAgrees(c.realm)
+                end
+                if agrees then
+                    if pick then return nil, "ambiguous" end
+                    pick = c
+                end
+            end
+            if pick then return pick.m.unit, pick.m.full, pick.m.full end
+            return nil, "ambiguous"
         end
     end
-    if pick then return pick.unit, pick.key, pick.name end
-    return nil, "ambiguous"
+    return nil, hidden and "hidden" or "nobody"
 end
 ns.Find = Find
 
