@@ -13,6 +13,19 @@ do
     end
 end
 
+-- The frames this addon draws itself, for the LookShots helper (screenshots of
+-- them on SuccuDev's machine; harmless when it is absent). The options window
+-- and the minimap button are the kit's, and the kit lists those.
+LookShotsTargets = type(LookShotsTargets) == "table" and LookShotsTargets or {}
+LookShotsTargets[ADDON] = {
+    version = ns.VERSION,
+    frames = {
+        { label = "line window", frame = function() return _G.FollowLineFrame end },
+        -- the name and place are written up to 157 px to the right of the button
+        { label = "follow button", frame = function() return _G.FollowLineJoinButton end, pad = 170 },
+    },
+}
+
 ns.ICON = "Interface\\Icons\\Ability_Hunter_Pathfinding"
 ns.ACCENT = { 0.35, 0.78, 0.95 }
 

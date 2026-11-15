@@ -1,5 +1,9 @@
 # Changelog
 
+## 1.1.4
+
+- The line window and the Follow button are listed for the LookShots screenshot helper, so they can be checked in the game. Nothing changes for players without it.
+
 ## 1.1.3
 
 - The options window and the minimap button were redrawn by the shared kit: they now copy the game's own Options rows and its round minimap button.
