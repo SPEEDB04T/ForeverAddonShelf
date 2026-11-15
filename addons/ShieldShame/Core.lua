@@ -15,7 +15,7 @@ local ADDON, ns = ...
 
 local floor, max, min = math.floor, math.max, math.min
 
-ns.VERSION = "1.0.0"
+ns.VERSION = "1.0.1"
 
 ----------------------------------------------------------------------
 -- The shields on WoW Forever (talentsforever.com data.json, beta client 1.60.1.70755,
@@ -62,7 +62,8 @@ ns.DEFAULTS = {
     remindCombat = true,    -- ... also in a fight
     hideResting = true,     -- no icon in an inn or city
     hideMounted = true,     -- no icon while mounted
-    fightLine = true,       -- a line in your chat after a fight that cost you something
+    fightLine = true,       -- now and then, a roast in your chat for the fights that cost you
+    roastMinutes = 5,       -- at most one roast line this often
     confess = false,        -- also tell your party or raid (off unless you turn it on)
     locked = false,
     scale = 1,
@@ -205,6 +206,7 @@ end
 
 function ns.ResetSession()
     ns.session = NewTally()
+    ns.roast = NewTally()
     ns.lastFight = nil
     ns.Refresh()
 end
@@ -684,6 +686,37 @@ local function FightStart()
     if ns.UI then ns.UI.Update() end
 end
 
+-- The roast: costly fights pile up in ns.roast and come out as one line, only once the pile is
+-- worth reading (a full shield's orbs, or 5% of your max mana) and at most once every
+-- roastMinutes. Every fight still goes into the session and all-time counts straight away.
+ns.roast = NewTally()
+ns.lastRoast = nil       -- when the last roast line was printed (nil: none yet this session)
+
+function ns.WorthRoasting(t)
+    if not t or t.fights == 0 then return false end
+    if t.hits >= ns.ROAST_ORBS then return true end
+    local most = MaxMana()
+    return most > 0 and t.mana >= most * ns.ROAST_MANA_PCT / 100
+end
+ns.ROAST_ORBS = 3            -- a whole shield's worth of orbs
+ns.ROAST_MANA_PCT = 5        -- or this share of your max mana
+
+-- Returns the line it printed, or nil.
+function ns.MaybeRoast(now)
+    now = now or Now()
+    local t = ns.roast
+    if not ns.WorthRoasting(t) then return nil end
+    if ns.lastRoast and now - ns.lastRoast < ns.db.roastMinutes * 60 then return nil end
+    local line = ns.ShameLine(t)
+    if not line then return nil end
+    if t.fights > 1 then line = ("Last %d fights: %s"):format(t.fights, line) end
+    ns.roast = NewTally()
+    ns.lastRoast = now
+    if ns.db.fightLine then ns.Print(line) end
+    ns.Confess(t)
+    return line
+end
+
 local function FightEnd()
     local t = ns.fight
     if t then ns.Tick() end
@@ -692,13 +725,13 @@ local function FightEnd()
     ns.lastTick = nil
     if t then
         ns.lastFight = t
-        local line = ns.ShameLine(t)
-        if line then
+        if t.damage >= 1 or t.mana >= 1 then
+            t.fights = 1
             ns.session.fights = ns.session.fights + 1
             ns.char.total.fights = ns.char.total.fights + 1
-            if ns.db.fightLine then ns.Print(line) end
-            ns.Confess(t)
+            for k in pairs(ns.roast) do ns.roast[k] = ns.roast[k] + t[k] end
         end
+        ns.MaybeRoast()
     end
     ns.QueueRefresh()
 end

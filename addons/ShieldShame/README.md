@@ -6,12 +6,14 @@ about how much damage and mana ive lost not maintaining shaman shields".
 
 - A greyed-out shield icon while no shield is up (out of fights, and in fights the moment
   your orbs run out). Its tooltip has a jab and what you have lost.
-- After a fight in which you lost orbs: one mocking line in your own chat.
+- Now and then, a roast in your own chat: one mocking line for the fights since the last one,
+  once they add up to something worth saying (a whole shield's 3 orbs, or 5% of your max
+  mana), and at most once every 5 minutes (a setting). Fights it skips are rolled into the
+  next line ("Last 4 fights: ..."); small losses are still counted in full.
 - `/shame` prints the last fight, this session and all time on this character.
 - The minimap button's tooltip shows the session and all-time totals.
-- Quiet by default: one icon, at most one chat line per costly fight, nothing sent to other
-  players. "Confess to my group" (off by default) also says it in party or raid chat, at most
-  once a minute.
+- Quiet by default: one icon, at most one chat line every 5 minutes, nothing sent to other
+  players. "Confess to my group" (off by default) also says the roast in party or raid chat.
 
 The addon does nothing on other classes: no icon, no minimap button, no events.
 

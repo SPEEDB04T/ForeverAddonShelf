@@ -1,5 +1,15 @@
 # Changelog
 
+## 1.0.1 (2026-11-14)
+
+- Much less chat (SuccuDev: "water shield addon is annoying in chat"). The line after every
+  costly fight is now an occasional roast: it waits until the fights since the last one add
+  up to a whole shield's 3 orbs or 5% of your max mana, comes at most once every 5 minutes
+  (new setting, 1 to 30), and rolls the fights in between into one line ("Last 4 fights:
+  ..."). Every fight is still counted in full; `/shame` prints the whole summary any time.
+- The option is now called "A roast in chat now and then". "Confess to my group" now goes
+  with the roast.
+
 ## 1.0.0 (2026-11-14)
 
 - First version. Counts the damage (Lightning Shield) and mana (Water Shield) lost to hits

@@ -57,11 +57,16 @@ local function Rows()
           get = Get("spellHits"), set = Set("spellHits") },
 
         { kind = "header", text = "Shaming" },
-        { kind = "check", label = "A line in chat after a costly fight",
-          tip = "One mocking line in your own chat after a fight in which you lost orbs. Nobody else sees it.",
+        { kind = "check", label = "A roast in chat now and then",
+          tip = "Now and then, one mocking line in your own chat about what the fights since the last one cost you. "
+              .. "It waits until there is something worth saying (a whole shield's worth of orbs, or 5% of your mana) "
+              .. "and comes at most once every few minutes (below). Nobody else sees it. /shame always prints everything.",
           get = Get("fightLine"), set = Set("fightLine") },
+        { kind = "slider", label = "At most one roast every", min = 1, max = 30, step = 1,
+          format = function(v) return ("%d min"):format(v) end,
+          get = Get("roastMinutes"), set = Set("roastMinutes") },
         { kind = "check", label = "Confess to my group",
-          tip = "Also says what you lost in party or raid chat after such a fight, at most once a minute. Off unless you turn it on.",
+          tip = "Also says the roast in party or raid chat. Off unless you turn it on.",
           get = Get("confess"), set = Set("confess") },
         { kind = "buttons", buttons = {
             { label = "Print what I lost", click = function() ns.PrintSummary() end },
