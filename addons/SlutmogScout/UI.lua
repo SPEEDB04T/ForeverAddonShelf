@@ -128,21 +128,29 @@ local state = { tab = "market", armor = "all", listedOnly = true, freshOnly = fa
   reviewShow = "todo", reviewSel = nil, reviewIndex = 1, reviewPage = 1, female = true, wholeBody = false, marketPage = 1 }
 local win, marketView, farmView, measuredView, reviewView, statusText, scanButton, farmHeader, farmClear, listedCheck, listedText
 local sellView, sellMoney
-local viewButton -- Market tab: switches between the models and the list
 local levelBox
 local ReviewSelected, ReviewMoveView -- the review grid's view helpers, defined further down
 local RefreshMarketGrid -- the Market tab's model grid, defined after the model helpers
 local Refresh
+local preview -- the panel a click on a Market piece opens (see CreatePreview)
+local TogglePreview
 
--- The Market tab shows its pieces as models, as the Appearances window does,
--- or as the auction house's list. Saved; models by default (SuccuDev,
--- 2026-11-15: "feels like scout woudl be better served with a grid visual preview ui").
+-- the piece the preview shows now, or nil
+local function PreviewId()
+  return preview and preview:IsShown() and preview.id or nil
+end
+
+-- The Market tab shows its pieces as the auction house's list, or as models
+-- (Filter > View). Saved; the list by default (SuccuDev, 2026-11-15, after
+-- trying the models: "I preferred the old list view honestly, just make
+-- clicking on it open a preview").
 function ns.MarketGrid()
-  return not (ns.db and ns.db.opts and ns.db.opts.marketList)
+  return ns.db and ns.db.opts and ns.db.opts.marketModels == true or false
 end
 
 function ns.SetMarketGrid(on)
-  ns.db.opts.marketList = (not on) or nil
+  ns.db.opts.marketModels = on and true or nil
+  ns.db.opts.marketList = nil -- 1.17's setting, from when the models were the default
   state.marketPage = 1
   Refresh()
 end
@@ -346,7 +354,7 @@ function ns.FillItemTooltip(tip, id)
     end
     tip:AddLine("Dropped for you: " .. table.concat(parts, ", ") .. ".", w1, w2, w3, true)
   end
-  note("Click: farm guide. Right-click: search the auction house.")
+  note("Click: preview. Right-click: search the auction house.")
 end
 
 local function ShowItemTooltip(owner, id)
@@ -382,6 +390,13 @@ local function SearchAuctionHouse(name)
   end
 end
 
+local function OpenFarmGuide(id)
+  state.backTab = state.tab
+  state.farmItem = id
+  state.tab = "farm"
+  Refresh()
+end
+
 local function OnItemClick(id, button)
   local it = ns.Items()[id]
   if not it then
@@ -397,10 +412,7 @@ local function OnItemClick(id, button)
       ChatEdit_InsertLink(link)
     end
   else
-    state.backTab = state.tab
-    state.farmItem = id
-    state.tab = "farm"
-    Refresh()
+    TogglePreview(id)
   end
 end
 
@@ -482,6 +494,13 @@ local function BuildMarketRow(parent)
   row.smogRow = true
   row:RegisterForClicks("LeftButtonUp", "RightButtonUp")
   AddStripe(row)
+  local sel = row:CreateTexture(nil, "BACKGROUND", nil, 1)
+  sel:SetAllPoints()
+  if SetArt(sel, "auctionhouse-ui-row-select", "Interface\\QuestFrame\\UI-QuestTitleHighlight") then
+    sel:SetBlendMode("ADD")
+  end
+  sel:Hide()
+  row.selected = sel
   row.cells = {}
   local font = CellFont()
   for _, col in ipairs(COLS) do
@@ -685,6 +704,7 @@ local function RefreshMarket()
     SetStripe(row, i)
     local c = row.cells
     row.isSection = d.section ~= nil
+    row.selected:SetShown(d.id ~= nil and d.id == PreviewId())
     if d.section then
       row.id = nil
       row.sectionText:SetText(d.section)
@@ -1057,6 +1077,8 @@ local REVIEW_CAM = {
   -- close-ups above are tuned for the Review tile's size and do not carry
   -- over: 1.17.0 used them in a smaller tile and got a patch of neck.
   market = { zoom = 0, lift = 0 },
+  -- the preview panel: the whole body, as the dressing room shows it
+  preview = { zoom = 0, lift = 0 },
 }
 local CAM_ZOOM_MIN, CAM_ZOOM_MAX = -0.5, 3
 local CAM_LIFT_MIN, CAM_LIFT_MAX = -1.3, 1.3
@@ -1728,9 +1750,9 @@ Refresh = function()
     levelBox:SetShown(filterUseful)
     levelBox.Sync()
   end
-  if viewButton then
-    viewButton:SetShown(state.tab == "market")
-    viewButton:SetText(ns.MarketGrid() and "List" or "Models")
+  if preview and state.tab ~= "market" and preview:IsShown() then
+    preview.id = false
+    preview:Hide()
   end
   if filterButton then
     filterButton:SetShown(filterUseful)
@@ -2435,6 +2457,181 @@ local function CreateReviewView()
   end)
 end
 
+-------------------------------------------------------------------------------
+-- Preview: a click on a Market piece shows it on your body in a small window
+-- on the Scout window's right side (the game's BasicFrameTemplateWithInset,
+-- the model in its inset, as the dressing room has it). The whole body, bare
+-- but for the piece. Drag turns the model, the wheel zooms, a right-drag
+-- moves it up and down (saved, like the Review tab's framings); Reset undoes
+-- that. Clicking the same piece again, or the close button, closes it.
+-------------------------------------------------------------------------------
+local PREVIEW_W, PREVIEW_H = 250, 430
+
+local function PreviewMoveView(dz, dy)
+  local cam = ReviewCam("preview")
+  SetReviewCam("preview", cam.zoom + dz, cam.lift + dy)
+  FrameModel(preview.tile)
+end
+
+local function CreatePreview()
+  local p = CreateFrame("Frame", nil, win, "BasicFrameTemplateWithInset")
+  p.smogPreview = true
+  p.id = false
+  p:SetSize(PREVIEW_W, PREVIEW_H)
+  p:SetPoint("TOPLEFT", win, "TOPRIGHT", 2, 0)
+  pcall(p.EnableMouse, p, true)
+  local title = p.TitleText or (p.TitleContainer and p.TitleContainer.TitleText)
+  if title then
+    title:SetText("Preview")
+  else
+    pcall(p.SetTitle, p, "Preview")
+  end
+  -- the inset ends above the name and the buttons
+  if type(p.Inset) == "table" and p.Inset.ClearAllPoints then
+    p.Inset:ClearAllPoints()
+    p.Inset:SetPoint("TOPLEFT", 4, -24)
+    p.Inset:SetPoint("BOTTOMRIGHT", -6, 64)
+  end
+  -- the model's area takes the mouse, as a Review tile does
+  local tile = CreateFrame("Frame", nil, p)
+  tile:SetPoint("TOPLEFT", 7, -27)
+  tile:SetPoint("BOTTOMRIGHT", -9, 67)
+  pcall(tile.EnableMouse, tile, true)
+  tile.entry, tile.customBody, tile.uiCam, tile.dragX, tile.panY = false, false, false, false, false
+  p.tile = tile
+  local model = TryCreate("DressUpModel", nil, tile)
+  if model then
+    model:SetAllPoints()
+    pcall(model.EnableMouse, model, false) -- drags go to the tile
+    tile.model = model
+    -- a hidden model forgets what it wore, and a body loads after it is
+    -- set: dress it again on both (see the Review grid)
+    pcall(model.SetScript, model, "OnShow", function()
+      local e = tile.entry
+      if e then
+        tile.shownId, tile.shownFemale = e.id, state.female
+        DressModel(tile, e.id)
+      end
+    end)
+    pcall(model.SetScript, model, "OnModelLoaded", function()
+      local e = tile.entry
+      if e and tile.wantId == e.id then
+        pcall(model.Undress, model)
+        pcall(model.TryOn, model, "item:" .. e.id)
+        FrameModel(tile)
+      end
+    end)
+  end
+  tile:SetScript("OnMouseDown", function(self, mouse)
+    local x, y = GetCursorPosition()
+    if mouse == "RightButton" then
+      self.panY = y
+    else
+      self.dragX = x
+    end
+  end)
+  tile:SetScript("OnMouseUp", function(self)
+    self.dragX, self.panY = false, false
+  end)
+  tile:SetScript("OnUpdate", function(self)
+    if self.dragX and self.model then
+      local x = GetCursorPosition()
+      local ok, facing = pcall(self.model.GetFacing, self.model)
+      if ok and type(facing) == "number" then
+        pcall(self.model.SetFacing, self.model, facing + (x - self.dragX) * 0.02)
+      end
+      self.dragX = x
+    end
+    if self.panY and self.entry then
+      local _, y = GetCursorPosition()
+      if y ~= self.panY then
+        PreviewMoveView(0, (y - self.panY) / math.max(1, self:GetHeight() * self:GetEffectiveScale()))
+        self.panY = y
+      end
+    end
+  end)
+  pcall(tile.EnableMouseWheel, tile, true)
+  tile:SetScript("OnMouseWheel", function(_, delta)
+    if tile.entry then
+      PreviewMoveView(delta * 0.25, 0)
+    end
+  end)
+  p.name = p:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
+  p.name:SetPoint("BOTTOMLEFT", 10, 36)
+  p.name:SetPoint("BOTTOMRIGHT", -12, 36)
+  p.name:SetHeight(24)
+  p.name:SetJustifyH("CENTER")
+  p.name:SetJustifyV("MIDDLE")
+  p.name:SetWordWrap(true)
+  -- the farm guide is what a click on a piece opened before the preview
+  p.farm = MakeButton(p, "Farm guide", 110, function()
+    if p.id then
+      OpenFarmGuide(p.id)
+    end
+  end)
+  p.farm:SetPoint("BOTTOMLEFT", 10, 8)
+  p.farm:SetScript("OnEnter", function(self)
+    GameTooltip:SetOwner(self, "ANCHOR_TOP")
+    GameTooltip:AddLine("Farm guide")
+    GameTooltip:AddLine("Where this piece drops.", 1, 1, 1, true)
+    GameTooltip:Show()
+  end)
+  p.farm:SetScript("OnLeave", GameTooltip_Hide)
+  p.reset = MakeButton(p, type(RESET) == "string" and RESET or "Reset", 80, function()
+    if type(ns.db.opts.reviewCam) == "table" then
+      ns.db.opts.reviewCam.preview = nil
+    end
+    if tile.model then
+      pcall(tile.model.SetFacing, tile.model, 0)
+    end
+    FrameModel(tile)
+  end)
+  p.reset:SetPoint("BOTTOMRIGHT", -12, 8)
+  p:SetScript("OnHide", function(self)
+    local had = self.id
+    self.id = false
+    self:Hide() -- hidden with the window: it stays closed when the window opens again
+    if had and win:IsShown() then
+      Refresh() -- the list no longer marks the piece
+    end
+  end)
+  return p
+end
+
+TogglePreview = function(id)
+  if not win then
+    return
+  end
+  preview = preview or CreatePreview()
+  local p = preview
+  if p:IsShown() and p.id == id then
+    p.id = false
+    p:Hide()
+  else
+    local it = ns.Items()[id]
+    p.id = id
+    p.tile.entry = { id = id, src = it, cam = "preview" }
+    p.name:SetText(ItemName(id, it))
+    -- on the window's right; on its left when the screen has no room there
+    p:ClearAllPoints()
+    local right, scale = win:GetRight(), win:GetEffectiveScale()
+    local screen, uiScale = UIParent:GetRight(), UIParent:GetEffectiveScale()
+    if type(right) == "number" and type(scale) == "number" and type(screen) == "number" and type(uiScale) == "number"
+        and (right + PREVIEW_W + 2) * scale > screen * uiScale then
+      p:SetPoint("TOPRIGHT", win, "TOPLEFT", -2, 0)
+    else
+      p:SetPoint("TOPLEFT", win, "TOPRIGHT", 2, 0)
+    end
+    p:Show()
+    -- shown just now, the model has dressed itself; otherwise dress it here
+    if p.tile.shownId ~= id or p.tile.shownFemale ~= state.female then
+      p.tile.shownId, p.tile.shownFemale = id, state.female
+      DressModel(p.tile, id)
+    end
+  end
+  Refresh()
+end
+
 local function CreateMarketGrid()
   local grid = CreateFrame("Frame", nil, marketView)
   grid:SetAllPoints()
@@ -2533,7 +2730,7 @@ local function CreateMarketGrid()
       end
     end)
     tile:SetScript("OnLeave", GameTooltip_Hide)
-    -- what a list line's click does: the farm guide; right-click searches
+    -- what a list line's click does: the preview; right-click searches
     -- the auction house, ctrl-click the dressing room, shift-click links
     tile:SetScript("OnClick", function(self, button)
       if self.id then
@@ -2993,29 +3190,6 @@ local function CreateWindow()
     CreateFilterButtons(tabsX)
   end
   levelBox = CreateLevelRange(filterButton or scanButton)
-  if filterButton then
-    viewButton = MakeButton(win, "List", 70, function()
-      if PlaySound and SOUNDKIT and SOUNDKIT.IG_MAINMENU_OPTION_CHECKBOX_ON then
-        PlaySound(SOUNDKIT.IG_MAINMENU_OPTION_CHECKBOX_ON)
-      end
-      ns.SetMarketGrid(not ns.MarketGrid())
-    end)
-    viewButton.smogViewButton = true
-    viewButton:SetPoint("RIGHT", levelBox, "LEFT", -14, 0)
-    viewButton:SetScript("OnEnter", function(self)
-      GameTooltip:SetOwner(self, "ANCHOR_TOP")
-      if ns.MarketGrid() then
-        GameTooltip:AddLine("List")
-        GameTooltip:AddLine("Shows the pieces as a list with every column.", 1, 1, 1, true)
-      else
-        GameTooltip:AddLine("Models")
-        GameTooltip:AddLine("Shows each piece on a model. Ctrl-wheel zooms the models, Alt-wheel moves them up and down.", 1, 1, 1, true)
-      end
-      GameTooltip:Show()
-    end)
-    viewButton:SetScript("OnLeave", GameTooltip_Hide)
-  end
-
   -- the totals line at the bottom, as under the Who list
   statusText = win:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
   statusText:SetPoint("BOTTOMLEFT", 12, 8)
@@ -3245,6 +3419,7 @@ LookShotsTargets["SlutmogScout"] = {
     { label = "window: Measured", frame = WindowOn("measured") },
     { label = "window: Review", frame = WindowOn("review") },
     { label = "window: Sell", frame = WindowOn("sell") },
+    { label = "preview", frame = function() return preview and preview:IsShown() and preview.id and preview or nil end, pad = 30 },
     { label = "auction house button", frame = function() return ahButton end, pad = 60 },
   },
 }

@@ -1,5 +1,14 @@
 # Changelog
 
+## 1.18.0
+
+- **The Market tab is the list again.** The models are still there under Filter > View > Models.
+- **Click a piece to preview it.** A small window opens beside Scout with the piece on your body.
+  Drag to turn, wheel to zoom, right-drag to move up and down; Reset undoes that. Click the piece
+  again to close it.
+- The farm guide, which a click used to open, is the preview's **Farm guide** button.
+- The List button beside the level range is gone.
+
 ## 1.17.1
 
 Fixes the Market tab's models, which 1.17.0 shipped unusable.
