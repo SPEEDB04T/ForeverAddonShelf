@@ -1,5 +1,20 @@
 # Changelog
 
+## 1.7.0
+
+Only pieces worth flipping: gear players get by the dozen is hidden.
+
+- **Easy, common pieces are hidden** from the Market list, the buys, the deals and the farm guide values:
+  - a green world drop up to level 30, which everyone levelling there loots, unless its own prices say it
+    sells for 2 gold or more;
+  - any piece your scans list nearly every time (80% of 5 scans or more) for under 2 gold.
+  Blue and epic pieces, dungeon drops and fished pieces never count as common by their level.
+- On your own scans this leaves 18 of the 96 pieces you have seen listed: the greens of level 37 and up
+  that sell for 1 to 13 gold, plus Wolffear Harness, Quillward Harness, Martyr's Chain and Robes of Insight.
+- To see them anyway, use Filter > Show easy, common pieces or `/smog common`. Their tooltip says why they
+  are not worth buying.
+- The farm guide now prices each piece once per refresh instead of once per farm spot.
+
 ## 1.6.0
 
 Only looks people buy for slutmog: each piece is graded, and its price is compared with ordinary gear.

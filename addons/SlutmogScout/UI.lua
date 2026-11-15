@@ -122,7 +122,7 @@ end
 
 local state = { tab = "market", armor = "all", listedOnly = false, buyOnly = false, sortKey = "value", sortAsc = false, farmItem = nil }
 local win, marketView, farmView, measuredView, statusText, scanButton, farmHeader, farmClear, listedCheck, listedText
-local filterButton, dealsCheck, dealsText, croppedCheck, croppedText
+local filterButton, dealsCheck, dealsText, croppedCheck, croppedText, commonCheck, commonText
 local tabButtons, armorButtons, headerText = {}, {}, {}
 
 local function ItemName(id, it)
@@ -488,8 +488,8 @@ end
 local function MarketData()
   local rows = {}
   for id, it in pairs(ns.Items()) do
-    if ArmorFilter(it) and ns.Shown(it) then
-      local info = ns.Price(id)
+    local info = ArmorFilter(it) and ns.Price(id)
+    if info and ns.Shown(it, info) then
       local buy = info.low and ns.Buy(id, info) or nil
       if (not state.listedOnly or info.low) and (not state.buyOnly or (buy and buy.buy)) then
         local lo, hi = ns.MobRange(it)
@@ -835,6 +835,9 @@ Refresh = function()
     croppedCheck:SetShown(filterUseful)
     croppedText:SetShown(filterUseful)
     croppedCheck:SetChecked(ns.ShowCropped())
+    commonCheck:SetShown(filterUseful)
+    commonText:SetShown(filterUseful)
+    commonCheck:SetChecked(ns.ShowCommon())
   end
   marketView:SetShown(state.tab == "market")
   farmView:SetShown(state.tab == "farm")
@@ -933,7 +936,7 @@ local function SelectTab(key)
 end
 
 local function FilterIsDefault()
-  return state.armor == "all" and not state.listedOnly and not state.buyOnly and not ns.ShowCropped()
+  return state.armor == "all" and not state.listedOnly and not state.buyOnly and not ns.ShowCropped() and not ns.ShowCommon()
 end
 
 -- The filter: the game's filter dropdown, as the auction house's search bar
@@ -983,6 +986,10 @@ local function CreateFilterDropdown()
     root:CreateCheckbox("Show cropped pieces", ns.ShowCropped, function()
       ns.SetShowCropped(not ns.ShowCropped())
     end)
+    -- easy, common gear: low-level greens and cheap pieces listed in every scan
+    root:CreateCheckbox("Show easy, common pieces", ns.ShowCommon, function()
+      ns.SetShowCommon(not ns.ShowCommon())
+    end)
   end)
   if not ok then
     dd:Hide()
@@ -992,6 +999,9 @@ local function CreateFilterDropdown()
     state.armor, state.listedOnly, state.buyOnly = "all", false, false
     if ns.ShowCropped() then
       ns.SetShowCropped(false)
+    end
+    if ns.ShowCommon() then
+      ns.SetShowCommon(false)
     end
     Refresh()
   end) then
@@ -1044,6 +1054,16 @@ local function CreateFilterButtons(startX)
   croppedText:SetText("Show cropped")
   croppedCheck:SetScript("OnClick", function(self)
     ns.SetShowCropped(self:GetChecked() and true or false)
+  end)
+  commonCheck = CreateFrame("CheckButton", nil, win, "UICheckButtonTemplate")
+  commonCheck:SetSize(24, 24)
+  commonCheck:SetPoint("LEFT", croppedCheck, "RIGHT", 100, 0)
+  commonCheck:SetHitRectInsets(0, -100, 0, 0)
+  commonText = win:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+  commonText:SetPoint("LEFT", commonCheck, "RIGHT", 2, 0)
+  commonText:SetText("Show common")
+  commonCheck:SetScript("OnClick", function(self)
+    ns.SetShowCommon(self:GetChecked() and true or false)
   end)
 end
 

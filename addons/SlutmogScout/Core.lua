@@ -272,8 +272,14 @@ function ns.AddCustom(text)
     db.hidden[id] = nil
     db.custom[id] = nil
     ns.RebuildItems()
-    if not ns.Shown(builtin) then
+    if builtin.grade == "cropped" and not ns.ShowCropped() then
       ns.Print(("%s is a built-in piece with a cropped look, hidden for now: |cffffff00/smog cropped|r or Filter > Show cropped pieces shows it."):format(builtin.name))
+      ns.Fire("ITEMS")
+      return
+    end
+    local common = not ns.ShowCommon() and ns.Common(builtin)
+    if common then
+      ns.Print(("%s is a built-in piece hidden as easy, common gear (%s): |cffffff00/smog common|r or Filter > Show easy, common pieces shows it."):format(builtin.name, common))
       ns.Fire("ITEMS")
       return
     end
@@ -584,7 +590,7 @@ end
 function ns.Deal(id, info)
   info = info or ns.Price(id)
   local low, fair = info.low, info.fair
-  if not ns.Shown(items[id]) or ns.NoDemand(id, info) then
+  if not ns.Shown(items[id], info) or ns.NoDemand(id, info) then
     return nil
   end
   if not (low and fair) or low > fair * DEAL_RATIO or fair * (1 - AH_CUT) - low < DEAL_MIN_GAIN then
@@ -645,9 +651,52 @@ function ns.ShowCropped()
   return db and db.opts and db.opts.showCropped == true or false
 end
 
--- false for a cropped piece while cropped pieces are hidden
-function ns.Shown(it)
-  return it ~= nil and (it.grade ~= "cropped" or ns.ShowCropped())
+-- Easy, common pieces: gear players get by the dozen, never worth flipping.
+--   a green world drop up to level 30 (every leveler loots them), unless its
+--   own prices say it sells for 2 gold or more;
+--   any piece your scans list nearly every time for under 2 gold.
+-- Blue and epic pieces, dungeon drops and fished pieces are never common by level.
+local COMMON_MAX_REQ = 30
+local COMMON_FLOOR = 20000
+local COMMON_STEADY = 0.8
+local COMMON_STEADY_SCANS = 5
+ns.COMMON_MAX_REQ, ns.COMMON_FLOOR = COMMON_MAX_REQ, COMMON_FLOOR
+local OWN_BASIS = { ["your earlier scans"] = true, ["the other listings now"] = true }
+
+function ns.ShowCommon()
+  return db and db.opts and db.opts.showCommon == true or false
+end
+
+-- Why the piece counts as easy, common gear, or nil when it does not.
+-- info is ns.Price(id); it is looked up when left out.
+function ns.Common(it, info)
+  if not it or it.custom then
+    return nil
+  end
+  info = info or (it.id and ns.Price(it.id)) or {}
+  local own = OWN_BASIS[info.fairBasis] and info.fair or nil
+  if own and own >= COMMON_FLOOR then
+    return nil
+  end
+  if (it.q or 2) <= 2 and not it.inst and it.src ~= "fishing" and (it.req or 0) <= COMMON_MAX_REQ then
+    return ("a green world drop of level %d: players levelling there loot them by the dozen"):format(it.req or 0)
+  end
+  if own and info.seenPct and (info.scans or 0) >= COMMON_STEADY_SCANS and info.seenPct >= COMMON_STEADY then
+    return ("listed in %d%% of your scans for under %s"):format(math.floor(info.seenPct * 100 + 0.5), ns.Money(COMMON_FLOOR))
+  end
+  return nil
+end
+
+-- false for a cropped piece while cropped pieces are hidden, and for an easy,
+-- common piece while those are hidden. info as in ns.Common.
+function ns.Shown(it, info)
+  if it == nil then
+    return false
+  end
+  if it.grade == "cropped" and not ns.ShowCropped() then
+    return false
+  end
+  return ns.ShowCommon() or not ns.Common(it, info)
 end
 
 local function BandKey(q, req)
@@ -917,8 +966,12 @@ function ns.Buy(id, info)
   local function con(text) b.cons[#b.cons + 1] = text end
   local function stop(text) b.stop = b.stop or text end
   local alt = type(it.alt) == "table" and it.alt or {}
-  if not ns.Shown(it) then
+  local common = not ns.ShowCommon() and ns.Common(it, info)
+  if it.grade == "cropped" and not ns.ShowCropped() then
     stop("a cropped look (it covers the bust or most of the thigh), which few buy for slutmog")
+  elseif common then
+    b.common = common
+    stop("easy, common gear (" .. common .. "), not worth flipping")
   elseif (Num(alt.made) or 0) > 0 then
     stop(("a crafted item has the same look (%s), so anyone can have it made"):format(it.altName or "made by a profession"))
   elseif (Num(alt.plain) or 0) > 0 then
@@ -1448,7 +1501,7 @@ local function LadderCandidates()
     local info = ns.Price(id)
     local alt = type(it.alt) == "table" and it.alt or {}
     if info.low and (info.qty or 0) >= 2 and not (info.fairBasis == "your earlier scans" and info.sure ~= "low")
-        and (Num(alt.made) or 0) == 0 and (Num(alt.plain) or 0) == 0 and ns.Shown(it) and not ns.NoDemand(id, info) then
+        and (Num(alt.made) or 0) == 0 and (Num(alt.plain) or 0) == 0 and ns.Shown(it, info) and not ns.NoDemand(id, info) then
       list[#list + 1] = { id = id, r = info.fair and info.low / info.fair or 1 }
     end
   end
@@ -1614,14 +1667,25 @@ end
 -- filter(it) optionally limits which items count.
 function ns.RankSpots(filter)
   local out = {}
+  -- cropped and easy, common pieces (while hidden) and pieces nobody pays
+  -- extra for do not count; each piece is priced once, not once per spot
+  local counted = {}
+  for id, it in pairs(items) do
+    if not filter or filter(it) then
+      local info = ns.Price(id)
+      if ns.Shown(it, info) and not ns.NoDemand(id, info) then
+        counted[#counted + 1] = { id = id, it = it, value = info.value and info.value * (1 - AH_CUT) or nil }
+      end
+    end
+  end
   for _, spot in ipairs(ns.SPOTS) do
     local entry = { spot = spot, total = 0, priced = 0, pieces = {} }
-    for id, it in pairs(items) do
-      -- cropped pieces (while hidden) and pieces nobody pays extra for do not count
-      if (not filter or filter(it)) and ns.Shown(it) and not ns.NoDemand(id) then
+    for _, c in ipairs(counted) do
+      local id, it = c.id, c.it
+      do
         local m = SpotMatch(spot, it)
         if m > 0 then
-          local v = ns.NetValue(id)
+          local v = c.value
           entry.pieces[#entry.pieces + 1] = { id = id, value = v, match = m }
           if v then
             entry.total = entry.total + v * m
@@ -2167,6 +2231,12 @@ function ns.SetShowCropped(on)
   ns.Fire("ITEMS")
 end
 
+function ns.SetShowCommon(on)
+  db.opts.showCommon = on and true or nil
+  PricesChanged()
+  ns.Fire("ITEMS")
+end
+
 function ns.WipePrices()
   wipe(db.prices)
   db.lastScan = nil
@@ -2217,6 +2287,10 @@ SlashCmdList.SLUTMOGSCOUT = function(input)
     ns.SetShowCropped(not ns.ShowCropped())
     ns.Print("Cropped pieces (tops that cover the bust, shorts that cover most of the thigh): "
       .. (ns.ShowCropped() and "shown" or "hidden"))
+  elseif cmd == "common" then
+    ns.SetShowCommon(not ns.ShowCommon())
+    ns.Print(("Easy, common pieces (green world drops up to level %d, pieces always listed for under %s): %s"):format(
+      COMMON_MAX_REQ, ns.Money(COMMON_FLOOR), ns.ShowCommon() and "shown" or "hidden"))
   elseif cmd == "config" or cmd == "options" or cmd == "opt" then
     if HasKit() then
       ns.Kit.Open()
@@ -2256,6 +2330,7 @@ SlashCmdList.SLUTMOGSCOUT = function(input)
     print("  |cffffff00/smog remove <item link or id>|r  take a piece off the list")
     print("  |cffffff00/smog restore|r  bring back removed built-in pieces")
     print("  |cffffff00/smog cropped|r  show or hide cropped pieces")
+    print("  |cffffff00/smog common|r  show or hide easy, common pieces (low-level greens, cheap pieces always listed)")
     print("  |cffffff00/smog hints|r  pieces off the list that are priced like transmog pieces")
     print("  |cffffff00/smog verify|r  check the built-in list against this game build")
     print("  |cffffff00/smog selftest|r  check that this game has what the addon needs")
