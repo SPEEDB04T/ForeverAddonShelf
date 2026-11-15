@@ -15,7 +15,7 @@
 -- works too). A reminder in your own chat says when it is time for the next one.
 local ADDON, ns = ...
 
-ns.VERSION = "1.5.1"
+ns.VERSION = "1.6.0"
 ns.TITLE = "Slutmog Shop"
 ns.ICON = "Interface\\Icons\\INV_Misc_Coin_02"
 ns.ACCENT = { 0.96, 0.55, 0.78 }
@@ -108,7 +108,7 @@ local DEFAULTS = {
 }
 ns.DEFAULTS = DEFAULTS
 
-local KNOWN = { opener = true, shop = true, item = true, price = true, items = true, level = true }
+local KNOWN = { opener = true, shop = true, item = true, price = true, items = true, level = true, pair = true }
 local WARE_TOKENS = { "item", "price", "level" }
 
 ---------------------------------------------------------------------------
@@ -275,6 +275,7 @@ local function InitDB()
         if db[k] == nil then db[k] = v end
     end
     if type(db.shop) ~= "string" then db.shop = ns.DEFAULT_SHOP end
+    if type(db.sets) ~= "table" then db.sets = {} end
     db.openers = CleanList(db.openers, ns.DEFAULT_OPENERS)
     db.lines = CleanList(db.lines, ns.DEFAULT_LINES)
     if SameList(db.openers, OLD_OPENERS) then db.openers = Copy(ns.DEFAULT_OPENERS) end
@@ -415,6 +416,78 @@ local function InStock(w)
     return n == nil or n > 0 or (w ~= nil and ns.OnAH(w.id) ~= nil and not ns.Undercut(w.id))
 end
 ns.InStock = InStock
+
+---------------------------------------------------------------------------
+-- Sets: a top and a bottom sold together. db.sets = { { a = the top's key, b = the bottom's } }.
+-- A ware is in one set at most. A set whose other half is gone from the shelf is simply not found.
+---------------------------------------------------------------------------
+local function WareByKey(key)
+    for i, w in ipairs(db.wares) do
+        if w.link and WareKey(w.link) == key then return i, w end
+    end
+end
+
+local function IsBottom(w)
+    local e = type(ns.ITEM_ADS) == "table" and ns.ITEM_ADS[w.id]
+    if type(e) == "table" and type(e.pools) == "table" then
+        for _, p in ipairs(e.pools) do
+            if p == "legs" then return true end
+        end
+    end
+    local fn = (C_Item and C_Item.GetItemInfo) or GetItemInfo
+    if type(fn) == "function" and w.link then
+        local r = { pcall(fn, w.link) }
+        if r[1] and r[10] == "INVTYPE_LEGS" then return true end
+    end
+    return false
+end
+
+-- The ware that ware i is sold with, and which half ware i is: "top" (it leads the ad) or "bottom".
+function ns.SetWith(i)
+    local w = db and db.wares[i]
+    local key = w and w.link and WareKey(w.link)
+    if not key or type(db.sets) ~= "table" then return nil end
+    for _, s in ipairs(db.sets) do
+        if s.a == key then
+            local j = WareByKey(s.b)
+            if j then return j, "top" end
+        elseif s.b == key then
+            local j = WareByKey(s.a)
+            if j then return j, "bottom" end
+        end
+    end
+    return nil
+end
+
+local function DropSets(key)
+    for k = #db.sets, 1, -1 do
+        local s = db.sets[k]
+        if type(s) ~= "table" or s.a == key or s.b == key then table.remove(db.sets, k) end
+    end
+end
+
+-- Wares i and j are sold as a set from now on. Whichever is the legs goes second.
+function ns.PairWares(i, j)
+    local a, b = db.wares[i], db.wares[j]
+    if not (a and b and a.link and b.link) or i == j then return false end
+    if IsBottom(a) and not IsBottom(b) then a, b = b, a end
+    local ka, kb = WareKey(a.link), WareKey(b.link)
+    if not (ka and kb) or ka == kb then return false end
+    DropSets(ka)
+    DropSets(kb)
+    db.sets[#db.sets + 1] = { a = ka, b = kb }
+    Changed()
+    return true
+end
+
+function ns.Unpair(i)
+    local w = db.wares[i]
+    local key = w and w.link and WareKey(w.link)
+    if not key or not ns.SetWith(i) then return false end
+    DropSets(key)
+    Changed()
+    return true
+end
 
 function ns.FindWare(link)
     local key = WareKey(link)
@@ -887,14 +960,20 @@ end
 
 -- An ad that names neither price nor shop gets an ending, by where the ware is. The endings take
 -- turns too; one that makes the ad too long for a chat message gives way to the next.
-local function Ended(ad, fields, where, turn)
+local function Ended(ad, fields, where, turn, endings)
     if ad:find("{price}", 1, true) or ad:find("{shop}", 1, true) then
         local text, miss = Fill(ad, fields)
         if not miss and #text <= CHAT_LIMIT then return text end
         return nil
     end
-    local tails = type(ns.AD_TAILS) == "table" and (ns.AD_TAILS[where] or ns.AD_TAILS.bags)
-    if type(tails) ~= "table" or #tails == 0 then tails = { " {item}, {price} at {shop}." } end
+    local tails
+    if endings then
+        tails = endings[where]
+        if type(tails) ~= "table" or #tails == 0 then return nil end
+    else
+        tails = type(ns.AD_TAILS) == "table" and (ns.AD_TAILS[where] or ns.AD_TAILS.bags)
+        if type(tails) ~= "table" or #tails == 0 then tails = { " {item}, {price} at {shop}." } end
+    end
     for k = 0, #tails - 1 do
         local text, miss = Fill(ad .. tails[(turn + k) % #tails + 1], fields)
         if not miss and #text <= CHAT_LIMIT then return text end
@@ -903,10 +982,68 @@ local function Ended(ad, fields, where, turn)
 end
 ns.Ended = Ended
 
+-- The lines for a set: the "sets" pool, and "sets_<word>" for a shop with that word in its name.
+local setAds
+local function SetAds(shop)
+    if setAds and setAds.shop == shop then return setAds end
+    local list, pools = { shop = shop }, ns.AD_POOLS
+    if type(pools) == "table" then
+        local names = {}
+        for name in pairs(pools) do
+            if name == "sets" or (type(name) == "string" and name:sub(1, 5) == "sets_" and #name > 5 and shop:find(name:sub(6), 1, true)) then
+                names[#names + 1] = name
+            end
+        end
+        table.sort(names)
+        for _, name in ipairs(names) do
+            if type(pools[name]) == "table" then
+                for _, ad in ipairs(pools[name]) do list[#list + 1] = ad end
+            end
+        end
+    end
+    setAds = list
+    return list
+end
+
+local function PriceAt(w, where)
+    local a = where == "ah" and ns.OnAH(w.id)
+    return a and a.price > 0 and a.price or w.price
+end
+
+-- One ad for a top and its bottom, when both can be had in the same place: both linked, one price.
+local function ComposeSetAd(wi, j, shop)
+    local w, w2 = db.wares[wi], db.wares[j]
+    if not (w and w2 and w.link and w2.link) or w.unpriced or w2.unpriced then return nil end
+    if db.stockOnly and not InStock(w2) then return nil end
+    local where = ns.Where(w)
+    if ns.Where(w2) ~= where or type(ns.SET_TAILS) ~= "table" then return nil end
+    local ads = SetAds(shop:lower())
+    if #ads == 0 then return nil end
+    local fields = { shop = shop, item = w.link, pair = w2.link, price = ns.PriceText(PriceAt(w, where) + PriceAt(w2, where)) }
+    for _, ai in ipairs(DeckOrder("set", #ads)) do
+        local src = ads[ai]
+        if db.votes[src] ~= "no" then
+            local text = Ended(src, fields, where, ai, ns.SET_TAILS)
+            if text then
+                return { text = text, kind = "item", where = where, deck = "set", decks = #ads, ad = ai, ware = wi, ware2 = j,
+                         last = wi, wares = 2, set = true, src = src, vote = db.votes[src] }
+            end
+        end
+    end
+    return nil
+end
+
 -- The next ready-made ad for the ware due next, or nil when it has none (or none fits).
 local function ComposeItemAd(offer, shop)
     local wi = offer[1]
     local w = wi and db.wares[wi]
+    if w and shop ~= "" then
+        local j, half = ns.SetWith(wi)
+        if j and half == "top" then
+            local p = ComposeSetAd(wi, j, shop)
+            if p then return p end
+        end
+    end
     local ads = w and ns.ItemAds(w.id)
     if not ads or shop == "" then return nil end
     local fields = { shop = shop }
@@ -1354,6 +1491,8 @@ local function PrintHelp()
         "/slutshop list - your wares",
         "/slutshop scan - look through your bags for pieces from the slutmog list and put them on the shelf",
         "/slutshop ads [item link] - the ready-made ads for a piece (without a link: which wares have them)",
+        "/slutshop set [top] [bottom] - sell two of your wares as a set, one ad for both (/slutshop unset [item] undoes it)",
+        "/slutshop reroll - another ad for the same ware",
         "/slutshop channel Trade - where ads go (Say, Yell, Guild or any channel you are in)",
         "/slutshop options - the options",
         "/slutshop status - what the shop is set to",
@@ -1431,6 +1570,22 @@ local function Slash(msg)
         ToggleWindow()
     elseif cmd == "post" or cmd == "ad" then
         ns.Post()
+    elseif cmd == "set" or cmd == "unset" then
+        local found = {}
+        for link in rest:gmatch("|H(item:[^|]+)|h") do
+            local i = ns.FindWare(link)
+            if i then found[#found + 1] = i end
+        end
+        if cmd == "unset" and found[1] and ns.Unpair(found[1]) then
+            Print((db.wares[found[1]].link or "it") .. " is sold on its own again.")
+        elseif cmd == "set" and found[1] and found[2] and ns.PairWares(found[1], found[2]) then
+            local j = ns.SetWith(found[1])
+            Print(("%s and %s are sold as a set now."):format(db.wares[found[1]].link, db.wares[j].link))
+        elseif cmd == "set" then
+            Print("shift-click two of your wares into the command: /slutshop set [top] [bottom]")
+        else
+            Print("shift-click a ware that is part of a set into the command: /slutshop unset [item]")
+        end
     elseif cmd == "reroll" then
         if ns.Reroll() then ns.Preview() else Print("nothing to post: " .. tostring(select(2, ns.Next()))) end
     elseif cmd == "skip" or cmd == "next" then

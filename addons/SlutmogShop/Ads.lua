@@ -10,6 +10,12 @@ ns.AD_TAILS = {
     ah = { " {item} is on the auction house for {price}. ~ {shop} ~", " {shop} has {item} up on the auction house, {price} buyout.", " {item}, {price} on the AH. {shop}" },
 }
 
+-- A set (a top and a bottom sold together): {item} is the top, {pair} the bottom, {price} both together.
+ns.SET_TAILS = {
+    bags = { " {item} + {pair}, {price} for both. {shop}", " {shop}: {item} + {pair}, {price} the pair.", " {item} + {pair}, {price} for both." },
+    ah = { " {item} + {pair} on the AH, {price} for both. {shop}", " {shop}: {item} + {pair}, both on the AH, {price}.", " {item} + {pair} on the AH, {price} for both." },
+}
+
 ns.AD_POOLS = {
     general = {
         "Warlock's succubus keeps drawing all your group's attention? Take it back.",
@@ -78,6 +84,14 @@ ns.AD_POOLS = {
         "Can't find a healer? Smuttanie makes them come running!",
         "{shop}, for all your proclivities. {item}, {price}.",
         "{shop}, for your Goldshire activities. {item}, {price}.",
+    },
+    sets = {
+        "A top, a bottom and nothing in between.",
+        "The full set. It still isn't much.",
+        "Goldshire formal wear, both halves.",
+    },
+    sets_smuttanie = {
+        "Top and bottom, Smuttanie's got 'em.",
     },
 }
 

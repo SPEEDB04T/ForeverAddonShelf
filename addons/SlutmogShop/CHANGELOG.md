@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.6.0
+
+- Sets: sell a top and a bottom together. Right-click a ware > Sell as a set with > the other piece (or `/slutshop set [top] [bottom]`). On the top's turn the ad links both pieces and gives one price for the pair, the two prices added up. The posting panel shows both icons; a click tries the whole set on.
+- A set is only advertised while both pieces can be had in the same place (both in your bags, or both on the auction house). Otherwise each piece is advertised alone, as before. The bottom still gets its own ads on its own turn.
+- Two item links leave little room, so set ads have their own short lines. A set ad that would not fit in one chat message gives way to an ad for the top alone.
+
 ## 1.5.1
 
 - An ad for a ware you carry no longer ends "in my bags right now" or "in stock": it just names the piece, the price and the shop. Only a ware on the auction house says where it is.

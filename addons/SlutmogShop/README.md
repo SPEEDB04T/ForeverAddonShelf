@@ -31,7 +31,7 @@ The game only lets an addon send a line to Trade or General from a click or a ke
 
 `/slutshop`, or right-click the minimap button.
 
-- **Wares**: drop an item on the slot, or shift-click one in your bags (or the auction house) while the window is open. Type a price and press Enter or click Add. Click a ware to change its price; right-click it to advertise it next, move it or remove it. A ware you no longer have in your bags or bank is greyed out and left out of the ads. A piece from the slutmog list that turns up in your bags is put on the list by itself, marked "No price yet", and stays out of the ads until you give it a price.
+- **Wares**: drop an item on the slot, or shift-click one in your bags (or the auction house) while the window is open. Type a price and press Enter or click Add. Click a ware to change its price; right-click it to advertise it next, sell it as a set with another ware (a top and a bottom: one ad links both, at the two prices added up), move it or remove it. A ware you no longer have in your bags or bank is greyed out and left out of the ads. A piece from the slutmog list that turns up in your bags is put on the list by itself, marked "No price yet", and stays out of the ads until you give it a price.
 - **Lines**: your shop's name, the openers (one per line) and the ad lines (one per line), for wares without ready-made ads (or for all of them, see Which ads). Ad lines use fill-ins:
   - `{opener}`: one of the openers
   - `{shop}`: the shop's name
@@ -59,6 +59,7 @@ Openers and ad lines take turns, each used once before any repeats. If an ad is 
 | `/slutshop list` | your wares |
 | `/slutshop scan` | look through your bags for pieces from the slutmog list and put them on the shelf |
 | `/slutshop reroll` | another ad for the same ware |
+| `/slutshop set [top] [bottom]` | sell two of your wares as a set, one ad for both (`/slutshop unset [item]` undoes it) |
 | `/slutshop ads [item]` | a piece's ready-made ads (without an item: which wares have them) |
 | `/slutshop channel Trade` | where ads go |
 | `/slutshop options` | the options |
