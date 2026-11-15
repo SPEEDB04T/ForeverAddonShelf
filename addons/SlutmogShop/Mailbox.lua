@@ -3,11 +3,9 @@
 -- answer on a big button at the top, and gives everybody a one-click reply. /slutshop mailbox (or
 -- /smog mailbox) turns it on; closing its window turns it off.
 --
--- A reply is a custom emote with their name in it ("Smuttanie winks back at Bob. Slower."), sent
--- on your click. It needs no target, so it always reaches the right person, and it says more than
--- the game's emotes can. By itself the shop only dances and tries the game's own emote back (which
--- reaches the person only where the game allows it), and few of those: one per person every two
--- minutes, one every six seconds at most. It never says, emotes text or whispers without a click.
+-- A reply is one of the game's own emotes (wink, smile, giggle...) done at them, on your click.
+-- By itself the shop only dances and tries the game's emote back, and few of those: one per person
+-- every two minutes, one every six seconds at most. It never says, emotes text or whispers without a click.
 local ADDON, ns = ...
 local M = {}
 ns.Mailbox = M
@@ -44,25 +42,24 @@ local DEFAULT_REPLY = { nil, "WINK", "any" }
 local LOOK_REPLY = { nil, "WINK", "look" }
 local WHISPER_REPLY = { nil, "WINK", "whisper" }
 
--- The replies: custom emotes, shown in chat as "Smuttanie <line>". {name} is the other player.
--- Every group but "look" also draws on "any".
-M.LINES = {
-    -- for somebody who only targeted you: slight, cute teasing, what a girl does on the street when she
-    -- catches someone looking (SuccuDev: "its too ERPY for people just targeting me", "still too eager. it needs
-    -- to be very slight, like winking and smiling etc", "think what a cute girl would do on the street to tease someone")
-    look = { "catches {name} looking and smiles.", "winks at {name}, then looks away.", "glances back at {name} over a shoulder.",
-             "catches {name}'s eye and bites back a smile.", "twirls a lock of hair and smiles at {name}.",
-             "pretends not to see {name}, then winks.", "giggles and looks away from {name}.",
-             "gives {name} a tiny wave.", "glances back at {name}. Twice." },
-    kiss = { "catches {name}'s kiss and keeps it somewhere warm.", "blows {name} a kiss back. That one's on the house." },
-    wink = { "winks back at {name}. Slower." },
-    flirt = { "flirts back at {name}, then quotes a price.", "laughs at {name}'s line and lets them try another." },
-    show = { "curtsies for {name}, lower than strictly necessary." },
-    hug = { "hugs {name} back and holds on a second too long." },
-    wave = { "waves {name} over to the mailbox." },
-    dance = { "dances with {name}. First song's free." },
-    whisper = {  },
-    any = { "looks {name} up and down, and back up again.", "beckons {name} over with one finger.", "smiles at {name} like they already bought something.", "adjusts a strap for {name}'s benefit.", "gives {name} a look that costs extra.", "sizes {name} up. For transmog, obviously.", "bites a lip at {name}." },
+-- The replies: the game's own emotes, done at them (SuccuDev: "just make it simple emotes like wink
+-- instead of custom, too tryhard otherwise"). Every group but "look" also draws on "any".
+M.EMOTES = {
+    look = { "WINK", "SMILE", "GIGGLE", "SHY", "WAVE" },     -- only targeted you: slight
+    kiss = { "BLUSH", "KISS" },
+    wink = { "WINK" },
+    flirt = { "GIGGLE", "FLIRT" },
+    show = { "CURTSEY", "THANK" },
+    hug = { "HUG", "BLUSH" },
+    wave = { "WAVE" },
+    dance = { "DANCE" },
+    whisper = { },
+    any = { "WINK", "SMILE", "GIGGLE" },
+}
+-- What the buttons call them.
+M.LABEL = {
+    WINK = "Wink", SMILE = "Smile", GIGGLE = "Giggle", SHY = "Shy", WAVE = "Wave", BLUSH = "Blush",
+    KISS = "Blow a kiss", FLIRT = "Flirt", CURTSEY = "Curtsey", THANK = "Thank", HUG = "Hug", DANCE = "Dance",
 }
 
 -- The pitch, in the shop owner's voice. {item} and {price} are the ware whose turn it is.
@@ -159,31 +156,32 @@ end
 
 local SEND_GAP = 2               -- seconds between two replies, against a double click
 
--- The line a visitor gets next: their group's lines and the "any" ones, in turn, so a line does
--- not come up twice in a row for the same group.
+-- The emote a visitor gets next: their group's and the "any" ones, in turn, so the same one does
+-- not come up twice in a row.
 local turn = {}
 local function Pick(v, skip)
     local group = v.reply and v.reply[3] or "any"
-    local pool = {}
-    for _, l in ipairs(M.LINES[group] or {}) do pool[#pool + 1] = l end
-    if group ~= "any" and group ~= "look" then
-        for _, l in ipairs(M.LINES.any) do pool[#pool + 1] = l end
+    local pool, seen = {}, {}
+    local function add(list)
+        for _, t in ipairs(list or {}) do
+            if not seen[t] then seen[t] = true; pool[#pool + 1] = t end
+        end
     end
+    add(M.EMOTES[group])
+    if group ~= "any" and group ~= "look" then add(M.EMOTES.any) end
     if #pool == 0 then return nil end
     for _ = 1, #pool do
         turn[group] = (turn[group] or 0) % #pool + 1
-        local l = pool[turn[group]]
-        if l ~= skip or #pool == 1 then return l end
+        local t = pool[turn[group]]
+        if t ~= skip or #pool == 1 then return t end
     end
 end
 
--- The reply as it goes out: the line with their name in it (no realm).
-local function Line(v)
-    if not (v and v.line) then return nil end
-    local who = (tostring(v.name):gsub("%-.*$", ""))
-    return (v.line:gsub("{name}", function() return who end))
+-- The button text for a visitor's emote ("Wink"), or nil.
+local function Label(v)
+    return v and v.token and (M.LABEL[v.token] or v.token) or nil
 end
-M.Line = Line
+M.Label = Label
 
 local function Find(name)
     for i, v in ipairs(visitors) do
@@ -220,7 +218,7 @@ local function Visit(name, kind, what, reply, pitch)
     v.kind, v.what, v.at = kind, what, Now()
     if reply ~= nil then v.reply = reply or nil end
     v.pitch = v.pitch or pitch or false
-    if v.reply and (not v.line or reply) then v.line = Pick(v, v.line) end
+    if v.reply and (not v.token or reply) then v.token = Pick(v, v.token) end
     table.insert(visitors, 1, v)
     while #visitors > KEEP do table.remove(visitors) end
     if v.reply then Alert() end
@@ -303,7 +301,7 @@ Sync = function()
             row.what:SetText(What(v, now))
             row.age:SetText(Ago(now - v.at))
             if v.reply then
-                row.emote:SetText("Emote")
+                row.emote:SetText(Label(v) or "Emote")
                 Fit(row.emote, 62)
                 SetReply(row.emote, v)
                 row.emote:SetEnabled(CanReply(v, now))
@@ -337,9 +335,6 @@ Sync = function()
         local who = Short(v.name)
         cta.text:SetText(v.kind == "emote" and v.what or (who .. " " .. What(v, now)))
         cta.text:SetFontObject(GameFontNormalLarge or GameFontNormal)
-        cta.line:SetText((NORMAL_FONT_COLOR_CODE or "") .. "Your emote:" .. (NORMAL_FONT_COLOR_CODE and "|r" or "") .. " "
-            .. (Me() or "You") .. " " .. (Line(v) or ""))
-        cta.line:Show()
         local pitched = v.pitchedAt and now - v.pitchedAt < PITCH_GAP
         local canPitch = (v.pitch and offer ~= nil and not pitched) and true or false
         cta.again.visitor = v
@@ -347,11 +342,12 @@ Sync = function()
         cta.pitch.visitor = v
         cta.pitch:SetShown(canPitch)
         -- the row of big buttons must fit the window: the send button gets what is left
-        local room = CTA_W - Fit(cta.again, 90) - 6 - (canPitch and (Fit(cta.pitch, 110) + 6) or 0)
-        cta.emote:SetText("Send emote to " .. who)
+        local room = CTA_W - Fit(cta.again, 100) - 6 - (canPitch and (Fit(cta.pitch, 110) + 6) or 0)
+        local label = Label(v) or "Emote"
+        cta.emote:SetText(label .. " at " .. who)
         local _, fits = Fit(cta.emote, 150, room)
         if not fits then
-            cta.emote:SetText("Send emote")
+            cta.emote:SetText(label)
             Fit(cta.emote, 150, room)
         end
         SetReply(cta.emote, v)
@@ -361,14 +357,13 @@ Sync = function()
         cta.text:SetFontObject(GameFontDisableLarge or GameFontDisable)
         SetReply(cta.emote, nil)
         cta.emote:Hide()
-        cta.line:Hide()
         cta.again.visitor = nil
         cta.again:Hide()
         cta.pitch.visitor = nil
         cta.pitch:Hide()
     end
     frame.status:SetText(manual and "No emotes back by itself here: the replies are your click."
-        or "Send emote says the line above as an emote. Whisper price whispers your ware.")
+        or "The big button does that emote at them. Whisper price whispers your ware.")
     Fade()
 end
 M.Sync = function() Sync() end
@@ -381,27 +376,26 @@ local function Done(v)
 end
 
 local lastSend = -1e9
--- The reply, on a click: their line as a custom emote. Then the next line is ready for next time.
+-- The reply, on a click: the game's emote, at them. Then the next one is ready for next time.
 function M.Reply(v)
-    local text = Line(v)
-    if not text then return false end
+    if not (v and v.token) then return false end
     local now = Now()
     if now - lastSend < SEND_GAP or not CanReply(v, now) then return false end
-    local send = (C_ChatInfo and C_ChatInfo.SendChatMessage) or SendChatMessage
-    if type(send) ~= "function" or not pcall(send, text, "EMOTE") then
+    if not Emote(v.token, v.name) then
         ns.Print("the game refused the emote.")
         return false
     end
     lastSend = now
-    v.line = Pick(v, v.line)
+    v.emotedAt = now
+    v.token = Pick(v, v.token)
     Done(v)
     return true
 end
 
--- Another line for them, without sending.
+-- Another emote for them, without doing it.
 function M.Another(v)
     if not (v and v.reply) then return false end
-    v.line = Pick(v, v.line)
+    v.token = Pick(v, v.token)
     Sync()
     return true
 end
@@ -550,9 +544,8 @@ local function ReplyTip(self)
     local v = self.visitor
     if not (GameTooltip and v and v.reply) then return end
     GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
-    GameTooltip:SetText("Send emote to " .. Short(v.name))
-    GameTooltip:AddLine((Me() or "You") .. " " .. (Line(v) or ""), 1, 0.5, 0.25, true)
-    GameTooltip:AddLine("Goes out as an emote, for everybody nearby to see.", 1, 0.82, 0, true)
+    GameTooltip:SetText((Label(v) or "Emote") .. " at " .. Short(v.name))
+    GameTooltip:AddLine("Does the game's /" .. v.token:lower() .. " at them.", 1, 0.82, 0, true)
     GameTooltip:Show()
 end
 
@@ -579,7 +572,7 @@ function M.Pitch(v)
     return true
 end
 
-local TOP = 130                 -- title, who is waiting, the line (two lines at most), the big button
+local TOP = 96                  -- title, who is waiting, the big button
 
 local function Build()
     if frame then return frame end
@@ -617,21 +610,11 @@ local function Build()
     cta.text = Text(f, "GameFontNormalLarge")
     cta.text:SetPoint("TOPLEFT", f, "TOPLEFT", 16, -34)
     cta.text:SetPoint("RIGHT", f, "RIGHT", -16, 0)
-    cta.line = Text(f, "GameFontHighlight")       -- the reply as it will read in chat, in the emote colour
-    cta.line:SetPoint("TOPLEFT", f, "TOPLEFT", 16, -56)
-    cta.line:SetPoint("RIGHT", f, "RIGHT", -16, 0)
-    if cta.line.SetWordWrap then cta.line:SetWordWrap(true) end
-    if cta.line.SetMaxLines then pcall(cta.line.SetMaxLines, cta.line, 2) end
-    do
-        local c = ChatTypeInfo and ChatTypeInfo.EMOTE
-        if c and c.r then cta.line:SetTextColor(c.r, c.g, c.b) else cta.line:SetTextColor(1, 0.5, 0.25) end
-    end
-    cta.line:Hide()
-    cta.emote = ReplyButton(f, "Send emote", 190, 30)
-    cta.emote:SetPoint("TOPLEFT", f, "TOPLEFT", 14, -92)
+    cta.emote = ReplyButton(f, "Wink", 190, 30)
+    cta.emote:SetPoint("TOPLEFT", f, "TOPLEFT", 14, -58)
     cta.emote:SetScript("OnEnter", ReplyTip)
     cta.emote:SetScript("OnLeave", HideTip)
-    cta.again = Button(f, "Other line", 90, 30)
+    cta.again = Button(f, "Other emote", 100, 30)
     cta.again:SetPoint("LEFT", cta.emote, "RIGHT", 6, 0)
     cta.again:SetScript("OnClick", function(self) M.Another(self.visitor) end)
     cta.again:Hide()
@@ -716,7 +699,7 @@ function M.Start()
     frame:Show()
     Emote("DANCE")
     Tick()
-    ns.Print("mailbox mode is on. Send emote on the big button answers whoever is waiting. Close the window to turn it off.")
+    ns.Print("mailbox mode is on. The big button winks or smiles at whoever is waiting. Close the window to turn it off.")
     return true
 end
 

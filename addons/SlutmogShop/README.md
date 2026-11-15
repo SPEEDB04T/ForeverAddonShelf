@@ -75,7 +75,7 @@ Shortest gap between ads (60 seconds), the reminder and its sound, which ads (re
 
 ## Mailbox mode
 
-For standing around a city mailbox in your wares. `/slutshop mailbox` (or `/smog mailbox`) opens a small window and starts you dancing; closing the window turns the mode off. Whoever is waiting for an answer is on the big button at the top, with the reply as it will read in chat: Send emote says it as an /e emote with their name in it, Other line picks a different one, Whisper price whispers them your ware and its price.
+For standing around a city mailbox in your wares. `/slutshop mailbox` (or `/smog mailbox`) opens a small window and starts you dancing; closing the window turns the mode off. Whoever is waiting for an answer is on the big button at the top: it does one of the game's own emotes at them (Wink at Bob, Smile at Bob...), Other emote picks a different one, Whisper price whispers them your ware and its price.
 
 - **Emotes back by itself.** Somebody winks, whistles, kisses, flirts, dances or waves at you and the fitting emote goes back (a kiss gets a blush, a whistle a curtsey). Rude emotes get nothing. Somebody who targets you gets one wink. At most one emote per person in two minutes and one in six seconds overall, then you go back to dancing.
 - **The list** shows who emoted at you, who whispered you (with what they said) and who has you targeted (this needs nameplates shown). Nothing is saved; the list is gone when you log out.

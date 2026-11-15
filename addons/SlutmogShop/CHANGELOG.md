@@ -1,5 +1,10 @@
 # Changelog
 
+## 1.11.0
+
+- Mailbox replies are the game's own emotes again, done at the person: Wink, Smile, Giggle, Shy, Wave, Blush, Curtsey and the like. No more custom emote text.
+- The button says what it does ("Wink at Bob"); Other emote picks a different one. Somebody who only targeted you gets only the slight ones (wink, smile, giggle, shy, wave).
+
 ## 1.10.5
 
 - Mailbox mode no longer lists your own emotes (/hello and the like) as visitors. It now knows them by the game's "You ..." wording and by your character, not only by name.
