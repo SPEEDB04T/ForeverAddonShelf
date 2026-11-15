@@ -2,7 +2,7 @@
 local ADDON, ns = ...
 
 ns.ADDON = ADDON
-ns.VERSION = "1.3.0"
+ns.VERSION = "1.4.0"
 ns.current = {}   -- [16]/[17] = imbue key currently on that weapon (or nil)
 
 local defaults = {

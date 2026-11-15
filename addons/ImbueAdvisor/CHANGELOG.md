@@ -1,3 +1,8 @@
+## 1.4.0
+- The two hand buttons are now drawn like the game's own weapon-enchant icons next to your buffs: the icon with its enchant border and the time left in small text under it. Nothing is written on the icon any more.
+- What is on the weapon shows in that text: gold (white in the last 90 seconds) when the imbue is on, yellow when a different one is, "None" in red with a grey icon when the weapon has nothing. In the last 30 seconds the icon fades in and out, as the game does.
+- The list of other imbues is drawn like the game's spell flyout: the same buttons, the same size, the same gap, each column straight under its hand. No panel, title or coloured edges; the advisor's pick is first in the list and the tooltip says so, and your own pick has the game's checked glow.
+
 ## 1.3.0
 - Looks like part of the game: the frame and the list of other imbues have the game's tooltip look, and the buttons are drawn like the game's own action buttons.
 - The edge round a button is the game's action-button border: green when the imbue is on, yellow when a different one is, red when the weapon has none.

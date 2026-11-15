@@ -1,5 +1,12 @@
 -- Imbue Advisor: the on-screen frame (one click-to-cast button per weapon hand, and under it
 -- a list of every imbue you know for when you want another one)
+--
+-- Each piece copies a widget the game already has (Gethe/wow-ui-source, branch forever):
+--  * a hand button is the buff area's weapon-enchant icon (Blizzard_BuffFrame/BuffFrameTemplates.xml,
+--    AuraButtonArtTemplate as BuffFrame.lua shows a "TempEnchant"): 30 px icon, the temp-enchant
+--    border, the time left in small gold text under it, white under 90 s, fading in and out under 31 s;
+--  * the list is the spell flyout's buttons (Blizzard_ActionBar/Shared/SpellFlyout.lua and .xml:
+--    SmallActionButtonTemplate, 30 px, 4 px apart), without the flyout's background strip.
 local _, ns = ...
 local UI = {}
 ns.UI = UI
@@ -8,7 +15,7 @@ local max = math.max
 local SLOTS = { 16, 17 }
 local SLOT_NAME = { [16] = "Main hand", [17] = "Off hand" }
 local SLOT_LOWER = { [16] = "main hand", [17] = "off hand" }
-local SLOT_SHORT = { [16] = "MH", [17] = "OH" }
+local SLOT_SHORT = { [16] = "MH", [17] = "OH" }      -- chat report only
 local MODE_LABEL = { melee = "Melee", tank = "Tank", caster = "Caster", heal = "Healer", pvp = "PvP" }
 
 -- The game's own colours (the values after the name are the game's, for a client without one)
@@ -29,13 +36,16 @@ local RED = GameColor("RED_FONT_COLOR", 1.0, 0.125, 0.125)
 local ORANGE = GameColor("ORANGE_FONT_COLOR", 1.0, 0.5, 0.25)
 local LIGHTBLUE = GameColor("LIGHTBLUE_FONT_COLOR", 0.53, 0.67, 1.0)
 
-local COLOR_OK = GREEN          -- the imbue the button casts is on (also: the advisor's pick in the list)
-local COLOR_WRONG = YELLOW      -- a different imbue is on
-local COLOR_MISSING = RED       -- nothing on the weapon
-local COLOR_PICK = LIGHTBLUE    -- an imbue you chose yourself (text only; the button glows)
+local COLOR_PICK = LIGHTBLUE    -- an imbue you chose yourself (tooltip and chat text)
 
-local BTN, GAP, PAD = 36, 10, 10
-local ABTN, AGAP = 28, 7                 -- the buttons in the list
+-- AuraButtonArtTemplate: a 30 x 40 button, icon 30 x 30 at the top, duration text under it.
+-- AuraContainerTemplate puts 5 px (iconPadding) between two of them.
+local AURA_W, AURA_H, ICON, HAND_GAP = 30, 40, 30, 5
+-- SpellFlyoutPopupButtonTemplate is a SmallActionButtonTemplate (30 px); SpellFlyout.lua puts
+-- SPELLFLYOUT_DEFAULT_SPACING (4 px) between buttons.
+local FBTN, FGAP = 30, 4
+local WARN_FADE = 31                     -- BUFF_WARNING_TIME: under this the icon fades in and out
+local WARN_WHITE = 90                    -- BUFF_DURATION_WARNING_TIME: under this the text turns white
 local MAX_ALTS = #ns.IMBUE_ORDER
 local CLOSE_AFTER = 0.3                  -- seconds off the frame before the list closes
 
@@ -49,9 +59,14 @@ local function UseKeyDown()
     return ok and v
 end
 
+-- The game's own short time ("17 m", "45 s"), as the buff area writes it
 local function FormatTime(sec)
-    if sec >= 60 then return ("%dm"):format(math.ceil(sec / 60)) end
-    return ("%ds"):format(math.floor(sec))
+    if SecondsToTimeAbbrev then
+        local ok, fmt, v = pcall(SecondsToTimeAbbrev, sec)
+        if ok and fmt then return fmt:format(v) end
+    end
+    if sec >= 60 then return ("%d m"):format(math.ceil(sec / 60)) end
+    return ("%d s"):format(math.floor(sec))
 end
 
 local function ImbueName(key)
@@ -178,32 +193,39 @@ local function StopMove()
     end
 end
 
--- A panel with the game's tooltip look (TooltipBackdropTemplate, as GameTooltip draws it).
--- Clients without that template get the older tooltip border and background files.
-local function NewPanel(name, parent)
-    if TooltipBackdropTemplateMixin then
-        return CreateFrame("Frame", name, parent, "TooltipBackdropTemplate")
-    end
-    local f = CreateFrame("Frame", name, parent, BackdropTemplateMixin and "BackdropTemplate" or nil)
-    if f.SetBackdrop then
-        f:SetBackdrop(BACKDROP_TOOLTIP_16_16_5555 or {
-            bgFile = "Interface\\Tooltips\\UI-Tooltip-Background",
-            edgeFile = "Interface\\Tooltips\\UI-Tooltip-Border",
-            tile = true, tileSize = 16, edgeSize = 16,
-            insets = { left = 5, right = 5, top = 5, bottom = 5 },
-        })
-        local bg = GameColor("TOOLTIP_DEFAULT_BACKGROUND_COLOR", 0.09, 0.09, 0.19)
-        local edge = GameColor("TOOLTIP_DEFAULT_COLOR", 1.0, 1.0, 1.0)
-        f:SetBackdropColor(bg[1], bg[2], bg[3], 1)
-        f:SetBackdropBorderColor(edge[1], edge[2], edge[3], 1)
-    end
-    return f
+local function NewSecureButton(name, parent, w, h)
+    local b = CreateFrame("Button", name, parent, "SecureActionButtonTemplate")
+    b:SetSize(w, h)
+    if UseKeyDown() then b:RegisterForClicks("AnyDown", "AnyUp") else b:RegisterForClicks("AnyUp") end
+    return b
 end
 
--- The button art the game gives a small action button that sits off the action bars
--- (SmallActionButtonTemplate: slot, icon mask, frame, pushed, highlight, border). Its art is
--- drawn for a 30 px button; k scales it. The template itself is not inherited: its scripts
--- expect an action-bar slot, and this is a plain secure macro button.
+-- A hand button: the buff area's weapon-enchant icon (AuraButtonArtTemplate shown as a
+-- TempEnchant), at the game's size. Differences: it casts on click (a secure macro button, where
+-- the game's cancels the enchant on right-click), and its icon is the imbue it casts, where the
+-- game's shows the weapon.
+local function NewHandButton(name, parent)
+    local b = NewSecureButton(name, parent, AURA_W, AURA_H)
+
+    b.icon = b:CreateTexture(nil, "BACKGROUND")
+    b.icon:SetSize(ICON, ICON)
+    b.icon:SetPoint("TOP")
+
+    b.timer = b:CreateFontString(nil, "BACKGROUND", "GameFontNormalSmall")    -- DEFAULT_AURA_DURATION_FONT
+    b.timer:SetPoint("TOP", b.icon, "BOTTOM")
+
+    b.enchBorder = b:CreateTexture(nil, "OVERLAY")
+    b.enchBorder:SetTexture("Interface\\Buttons\\UI-TempEnchant-Border")
+    b.enchBorder:SetSize(32, 32)
+    b.enchBorder:SetPoint("CENTER", b.icon, "CENTER")
+    return b
+end
+
+-- A list button: the spell flyout's button (SpellFlyoutPopupButtonTemplate, which is a
+-- SmallActionButtonTemplate with no bar art). Sizes, anchors and layers are the template's at
+-- its own 30 px (ActionButtonTemplate.xml, and SmallActionButtonMixin_OnLoad / UpdateButtonArt in
+-- ActionButton.lua and Mainline/ActionButtonOverrides.lua). The template itself is not inherited:
+-- its scripts expect an action-bar slot or a flyout spell, and this is a secure macro button.
 local function SetArt(t, atlas, w, h, layer, sub)
     t:SetAtlas(atlas)
     t:ClearAllPoints()
@@ -212,13 +234,10 @@ local function SetArt(t, atlas, w, h, layer, sub)
     if layer then t:SetDrawLayer(layer, sub or 0) end
 end
 
-local function NewCastButton(name, parent, size)
-    local b = CreateFrame("Button", name, parent, "SecureActionButtonTemplate")
-    b:SetSize(size, size)
-    if UseKeyDown() then b:RegisterForClicks("AnyDown", "AnyUp") else b:RegisterForClicks("AnyUp") end
-    local k = size / 30
+local function NewFlyoutButton(name, parent)
+    local b = NewSecureButton(name, parent, FBTN, FBTN)
 
-    b.slotBg = b:CreateTexture(nil, "BACKGROUND", nil, -1)
+    b.slotBg = b:CreateTexture(nil, "BACKGROUND")
     b.slotBg:SetAtlas("UI-HUD-ActionBar-IconFrame-Background")
     b.slotBg:SetAllPoints()
 
@@ -227,7 +246,7 @@ local function NewCastButton(name, parent, size)
     local mask = b.CreateMaskTexture and b:CreateMaskTexture()
     if mask and b.icon.AddMaskTexture then
         mask:SetAtlas("UI-HUD-ActionBar-IconFrame-Mask")
-        mask:SetSize(45 * k, 45 * k)
+        mask:SetSize(45, 45)
         mask:SetPoint("CENTER", b.icon, "CENTER")
         b.icon:AddMaskTexture(mask)
     else
@@ -238,31 +257,17 @@ local function NewCastButton(name, parent, size)
     b:SetPushedAtlas("UI-HUD-ActionBar-IconFrame-AddRow-Down")
     b:SetHighlightAtlas("UI-HUD-ActionBar-IconFrame-Mouseover", "ADD")
     local normal, pushed, hl = b:GetNormalTexture(), b:GetPushedTexture(), b:GetHighlightTexture()
-    if normal then SetArt(normal, "UI-HUD-ActionBar-IconFrame-AddRow", 35 * k, 35 * k, "OVERLAY") end
-    if pushed then SetArt(pushed, "UI-HUD-ActionBar-IconFrame-AddRow-Down", 35 * k, 35 * k, "OVERLAY") end
-    if hl then SetArt(hl, "UI-HUD-ActionBar-IconFrame-Mouseover", 31.6 * k, 30.9 * k) end
+    if normal then SetArt(normal, "UI-HUD-ActionBar-IconFrame-AddRow", 35, 35, "OVERLAY") end
+    if pushed then SetArt(pushed, "UI-HUD-ActionBar-IconFrame-AddRow-Down", 35, 35, "OVERLAY") end
+    if hl then SetArt(hl, "UI-HUD-ActionBar-IconFrame-Mouseover", 31.6, 30.9) end
 
-    -- the edge the game puts on an action button whose item is equipped; here its colour says
-    -- whether the imbue is on (green), a different one is on (yellow) or nothing is (red)
-    b.border = b:CreateTexture(nil, "OVERLAY")
-    SetArt(b.border, "UI-HUD-ActionBar-IconFrame-Border", 31.6 * k, 30.9 * k, "OVERLAY", 1)
-    b.border:Hide()
-
-    -- the game's "checked" look (an active stance or toggle): this is the imbue you picked yourself
-    b.pin = b:CreateTexture(nil, "OVERLAY")
-    SetArt(b.pin, "UI-HUD-ActionBar-IconFrame-Mouseover", 31.6 * k, 30.9 * k, "OVERLAY", 2)
+    -- the template's CheckedTexture (what SpellFlyout shows on the spell in use): your own pick.
+    -- A button's checked texture draws on ARTWORK, under the frame art moved to OVERLAY.
+    b.pin = b:CreateTexture(nil, "ARTWORK")
+    SetArt(b.pin, "UI-HUD-ActionBar-IconFrame-Mouseover", 31.6, 30.9, "ARTWORK")
     b.pin:SetBlendMode("ADD")
     b.pin:Hide()
     return b
-end
-
-local function SetEdge(b, col, alpha)
-    if col then
-        b.border:SetVertexColor(col[1], col[2], col[3], alpha or 1)
-        b.border:Show()
-    else
-        b.border:Hide()
-    end
 end
 
 -- Is the mouse on the frame or on the open list (with a little room around them)?
@@ -273,8 +278,28 @@ end
 
 -- Opens the list while the mouse is on the frame and closes it shortly after it leaves.
 -- Nothing may be shown or hidden in a fight, so it only runs between fights.
+-- Under 31 s left the buff area fades a weapon-enchant icon between 30 % and 100 % every
+-- 1.5 s (AuraContainerTemplate: auraWarningFlashPeriod, auraWarningMinAlpha/MaxAlpha). Only the
+-- textures and text change, never the secure button, so this is safe in a fight.
+local fadeClock = 0
+local function FadeUpdate(f, elapsed)
+    fadeClock = (fadeClock + elapsed) % 1.5
+    local p = fadeClock / 0.75
+    if p > 1 then p = 2 - p end
+    local alpha = 1 - 0.7 * p
+    for _, slot in ipairs(SLOTS) do
+        local b = f.buttons[slot]
+        local a = b.fading and alpha or 1
+        if b.alpha ~= a then
+            b.alpha = a
+            b.icon:SetAlpha(a); b.enchBorder:SetAlpha(a); b.timer:SetAlpha(a)
+        end
+    end
+end
+
 local tick, away = 0, 0
 local function HoverUpdate(self, elapsed)
+    FadeUpdate(self, elapsed)
     tick = tick + elapsed
     if tick < 0.1 then return end
     local dt = tick
@@ -291,9 +316,10 @@ end
 
 function UI.Create()
     if UI.frame then return end
-    local f = NewPanel("ImbueAdvisorFrame", UIParent)
+    -- No panel and no title: like the buff area, the icons stand on their own
+    local f = CreateFrame("Frame", "ImbueAdvisorFrame", UIParent)
     UI.frame = f
-    f:SetSize(PAD * 2 + BTN * 2 + GAP, BTN + 34)
+    f:SetSize(AURA_W * 2 + HAND_GAP, AURA_H)
     f:SetFrameStrata("MEDIUM")
     f:SetClampedToScreen(true)
     f:SetMovable(true)
@@ -301,11 +327,10 @@ function UI.Create()
     f:RegisterForDrag("LeftButton")
     f:SetScript("OnDragStart", StartMove)
     f:SetScript("OnDragStop", StopMove)
-    f.title = f:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
-    f.title:SetPoint("TOP", f, "TOP", 0, -7)
 
-    -- The list of every imbue, best first, one column under each hand's button
-    local list = NewPanel("ImbueAdvisorList", f)
+    -- The list of every imbue, best first, one flyout column under each hand's button.
+    -- It holds the buttons and draws nothing itself.
+    local list = CreateFrame("Frame", "ImbueAdvisorList", f)
     f.list = list
     list:SetFrameStrata("MEDIUM")
     list:EnableMouse(true)
@@ -314,20 +339,11 @@ function UI.Create()
 
     f.buttons, f.alts = {}, {}
     for _, slot in ipairs(SLOTS) do
-        local b = NewCastButton("ImbueAdvisorButton" .. slot, f, BTN)
+        local b = NewHandButton("ImbueAdvisorButton" .. slot, f)
         b.slot = slot
         b:RegisterForDrag("LeftButton")
         b:SetScript("OnDragStart", StartMove)
         b:SetScript("OnDragStop", StopMove)
-
-        -- where an action button has its key binding and its count
-        b.label = b:CreateFontString(nil, "OVERLAY", "NumberFontNormalSmallGray")
-        b.label:SetPoint("TOPRIGHT", -3, -4)
-        b.label:SetText(SLOT_SHORT[slot])
-
-        b.timer = b:CreateFontString(nil, "OVERLAY", "NumberFontNormal")
-        b.timer:SetPoint("BOTTOMRIGHT", -3, 2)
-
         b:SetScript("OnEnter", OnEnter)
         b:SetScript("OnLeave", OnLeave)
         b:SetScript("PostClick", function(_, button, down)
@@ -338,7 +354,7 @@ function UI.Create()
 
         f.alts[slot] = {}
         for i = 1, MAX_ALTS do
-            local a = NewCastButton("ImbueAdvisorAlt" .. slot .. "_" .. i, list, ABTN)
+            local a = NewFlyoutButton("ImbueAdvisorAlt" .. slot .. "_" .. i, list)
             a.slot = slot
             a:SetScript("OnEnter", AltOnEnter)
             a:SetScript("OnLeave", OnLeave)
@@ -359,7 +375,6 @@ function UI.Update(res)
     UI.result = res
     local f = UI.frame
     if not f then return end
-    f.title:SetText(MODE_LABEL[res.mode] or res.mode)
     for _, slot in ipairs(SLOTS) do
         local sr = res.slots[slot]
         f.buttons[slot].rec = sr and sr.best and res.imbues[sr.best] or nil
@@ -383,7 +398,6 @@ function UI.ApplySecure()
         b.use = key and res.imbues[key] or nil
         b.picked = b.use and picked or false
         b.icon:SetTexture(b.use and b.use.icon or nil)
-        if b.picked then b.pin:Show() else b.pin:Hide() end
         if b.use then
             b:SetAttribute("type1", "macro")
             b:SetAttribute("macrotext1", CastMacro(b.use, slot))
@@ -395,14 +409,12 @@ function UI.ApplySecure()
         end
     end
     local n = #shownSlots
-    local width = max(76, PAD * 2 + n * BTN + max(0, n - 1) * GAP)
-    f:SetWidth(width)
-    local x0 = (width - (n * BTN + max(0, n - 1) * GAP)) / 2
+    f:SetWidth(max(AURA_W, n * AURA_W + max(0, n - 1) * HAND_GAP))
     for i, slot in ipairs(shownSlots) do
         local b = f.buttons[slot]
-        b.x = x0 + (i - 1) * (BTN + GAP)
+        b.x = (i - 1) * (AURA_W + HAND_GAP)
         b:ClearAllPoints()
-        b:SetPoint("TOPLEFT", f, "TOPLEFT", b.x, -20)
+        b:SetPoint("TOPLEFT", f, "TOPLEFT", b.x, 0)
         b:Show()
     end
     if ns.db.shown and n > 0 then f:Show() else f:Hide() end
@@ -422,7 +434,6 @@ function UI.ApplySecure()
                 local info = res.imbues[row.key]
                 a.info = info
                 a.icon:SetTexture(info.icon)
-                SetEdge(a, row.key == sr.best and COLOR_OK or nil)
                 if b.picked and row.key == b.use.key then a.pin:Show() else a.pin:Hide() end
                 a:SetAttribute("type1", "macro")
                 a:SetAttribute("macrotext1", CastMacro(info, slot))
@@ -438,7 +449,7 @@ function UI.ApplySecure()
     end
     f.list.rows = rowsMax
     if rowsMax > 0 then
-        f.list:SetHeight(PAD * 2 + rowsMax * ABTN + (rowsMax - 1) * AGAP)
+        f.list:SetHeight(rowsMax * FBTN + (rowsMax - 1) * FGAP)
     end
     UI.PlaceList()
 
@@ -450,29 +461,30 @@ function UI.ApplySecure()
     end
 end
 
--- Under the frame, or above it when there is no room underneath. Best imbue next to the frame.
+-- Under the frame (below the time-left text), or above it when there is no room underneath.
+-- Best imbue next to the frame. One gap everywhere: the flyout's 4 px.
 function UI.PlaceList()
     local f = UI.frame
     if not f or InCombatLockdown() then return end
     local list = f.list
     local up = false
     local bottom = f:GetBottom()
-    if bottom and list.rows > 0 and bottom < list:GetHeight() + 4 then up = true end
+    if bottom and list.rows > 0 and bottom < list:GetHeight() + FGAP then up = true end
     list.up = up
     list:ClearAllPoints()
     if up then
-        list:SetPoint("BOTTOMLEFT", f, "TOPLEFT", 0, -2)
-        list:SetPoint("BOTTOMRIGHT", f, "TOPRIGHT", 0, -2)
+        list:SetPoint("BOTTOMLEFT", f, "TOPLEFT", 0, FGAP)
+        list:SetPoint("BOTTOMRIGHT", f, "TOPRIGHT", 0, FGAP)
     else
-        list:SetPoint("TOPLEFT", f, "BOTTOMLEFT", 0, 2)
-        list:SetPoint("TOPRIGHT", f, "BOTTOMRIGHT", 0, 2)
+        list:SetPoint("TOPLEFT", f, "BOTTOMLEFT", 0, -FGAP)
+        list:SetPoint("TOPRIGHT", f, "BOTTOMRIGHT", 0, -FGAP)
     end
     for _, slot in ipairs(SLOTS) do
         local b = f.buttons[slot]
         for _, a in ipairs(f.alts[slot]) do
             if a.info and b.x then
-                local x = b.x + (BTN - ABTN) / 2
-                local y = PAD + (a.index - 1) * (ABTN + AGAP)
+                local x = b.x                           -- same 30 px column as the hand's icon
+                local y = (a.index - 1) * (FBTN + FGAP)
                 a:ClearAllPoints()
                 if up then
                     a:SetPoint("BOTTOMLEFT", list, "BOTTOMLEFT", x, y)
@@ -504,7 +516,10 @@ function UI.CombatStart()
     if ns.db.others ~= "always" then f.list:Hide() end
 end
 
--- Border colours and timers (runs every second, safe in combat)
+-- The time-left text and the icon (runs every second; only textures and text, so safe in combat).
+--  * the imbue is on: the time in gold, white under 90 s, as the buff area writes it
+--  * a different imbue is on: its time in yellow
+--  * nothing is on: the icon greyed out and "None" in red
 function UI.UpdateStatus()
     local f = UI.frame
     if not f or not f:IsShown() then return end
@@ -513,18 +528,24 @@ function UI.UpdateStatus()
         local b = f.buttons[slot]
         if b:IsShown() and b.use then
             local e = ench[slot]
-            if not e.has then
-                SetEdge(b, COLOR_MISSING)
-            elseif ns.current[slot] == b.use.key then
-                SetEdge(b, COLOR_OK, 0.8)
+            local col
+            b.state = not e.has and "missing" or (ns.current[slot] == b.use.key and "on" or "other")
+            b.icon:SetDesaturated(b.state == "missing")
+            if b.state == "missing" then
+                b.timer:SetText(NONE or "None")
+                col = RED
             else
-                SetEdge(b, COLOR_WRONG)
+                b.timer:SetText(e.exp and FormatTime(e.exp) or "")
+                if b.state == "other" then
+                    col = YELLOW
+                else
+                    col = (e.exp and e.exp < WARN_WHITE) and WHITE or GOLD
+                end
             end
-            if e.has and e.exp then
-                b.timer:SetText(FormatTime(e.exp))
-            else
-                b.timer:SetText(e.has and "" or (Hex(RED) .. "none|r"))
-            end
+            b.timer:SetTextColor(col[1], col[2], col[3])
+            b.fading = e.has and e.exp and e.exp < WARN_FADE or false
+        else
+            b.fading = false
         end
     end
 end
