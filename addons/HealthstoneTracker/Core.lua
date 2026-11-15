@@ -2,7 +2,7 @@
 local ADDON, ns = ...
 local issecret = ns.issecret
 
-ns.VERSION = "1.3.5"
+ns.VERSION = "1.3.6"
 do
     local get = C_AddOns and C_AddOns.GetAddOnMetadata
     if get then
@@ -283,7 +283,7 @@ local function Init()
     -- each part on its own, so one failing does not take the others with it
     ns.Safe(ns.Group.Init)
     ns.Safe(ns.UI.Create)
-    if ns.Kit and ns.Options then ns.Safe(ns.Options.Init) end   -- missing until the first full restart after the update
+    if ns.Kit and ns.Options then ns.Safe(ns.Options.Init) end   -- missing until a /reload after the update
     ns.Safe(ns.ScanBags)
     ns.Safe(ReadCooldown)
 
@@ -349,11 +349,11 @@ local function Help()
     ns.Print("  /hst lock | unlock | scale <0.5-2> | status | demo | reset")
 end
 
--- Kit.lua and Options.lua are new in 1.2.0. The game only finds new files after a full restart,
--- so right after an update a /reload runs this file without them: say so instead of erroring.
+-- Kit.lua and Options.lua are new in 1.2.0. On WoW Forever a /reload loads new files, but an
+-- update copied in while the game runs may still run without them until then: say so instead of erroring.
 local function HasKit()
     if ns.Kit and ns.Options then return true end
-    ns.Print("the options window and the minimap button appear after you restart the game once (this update added new files, and /reload does not load those).")
+    ns.Print("the options window and the minimap button appear after a /reload (this update added new files).")
     return false
 end
 

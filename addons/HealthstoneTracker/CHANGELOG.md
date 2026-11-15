@@ -1,5 +1,9 @@
 # Changelog
 
+## 1.3.6
+
+- If the options window or minimap button is missing right after an update, the chat line now says a `/reload` brings them, instead of asking for a game restart.
+
 ## 1.3.5
 
 - Fixed: the addon still did not see other players' addons. On this client the game hands an addon a character's name in two parts ("Bunglfart", "Dunglode") while messages arrive from "Bunglfart Dunglode", so every message, even the player's own, was matched to nobody and dropped. Names are now matched both ways, and everyone is listed and shown as "First Last".
