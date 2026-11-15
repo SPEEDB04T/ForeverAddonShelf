@@ -1,7 +1,7 @@
 ## Interface: 16001, 16002
 ## Title: Friend Dots
 ## Notes: Turns friendly player nameplates into small class-coloured dots (or class icons) with a hairline health indicator.
-## Version: 1.4.1
+## Version: 1.4.2
 ## SavedVariables: FriendDotsDB
 ## IconTexture: Interface\Icons\INV_Misc_Orb_01
 ## AddonCompartmentFunc: FriendDots_OnAddonCompartmentClick

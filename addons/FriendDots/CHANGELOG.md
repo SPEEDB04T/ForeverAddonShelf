@@ -1,5 +1,9 @@
 # Changelog
 
+## 1.4.2
+
+- Lists one dot of each kind (plain, party, target, class icon, NPC) for the author's screenshot helper, so the look can be checked from game screenshots. Nothing changes in game without that helper.
+
 ## 1.4.1
 
 - The options window and the minimap button are redrawn by the shared kit: they now copy the game's own Options rows and its round minimap button.

@@ -612,6 +612,43 @@ function RefreshAll()
 end
 
 ---------------------------------------------------------------------------
+-- LookShots (a screenshot helper on the author's machine only; harmless
+-- without it): one dot of each kind, the first time one shows.
+---------------------------------------------------------------------------
+local function FirstDot(test)
+    for _, w in pairs(active) do
+        if w:IsShown() and test(w) then return w end
+    end
+end
+
+local function IconShown(w)
+    return w.icon:IsShown() and true or false
+end
+
+local version = C_AddOns and C_AddOns.GetAddOnMetadata and C_AddOns.GetAddOnMetadata(ADDON_NAME, "Version")
+LookShotsTargets = LookShotsTargets or {}
+LookShotsTargets[ADDON_NAME] = {
+    version = version or "?",
+    frames = {
+        { label = "dot", pad = 40, frame = function()
+            return FirstDot(function(w) return w.kind == "player" and not w.inParty and w ~= raised and not IconShown(w) end)
+        end },
+        { label = "party dot", pad = 40, frame = function()
+            return FirstDot(function(w) return w.inParty and w ~= raised and not IconShown(w) end)
+        end },
+        { label = "target dot", pad = 40, frame = function()
+            return FirstDot(function(w) return w == raised end)
+        end },
+        { label = "class icon", pad = 40, frame = function()
+            return FirstDot(IconShown)
+        end },
+        { label = "npc dot", pad = 40, frame = function()
+            return FirstDot(function(w) return w.kind == "npc" end)
+        end },
+    },
+}
+
+---------------------------------------------------------------------------
 -- Click-through: an invisible plate should not eat clicks meant for the
 -- world. The hit area is one client-wide setting for all friendly plates and
 -- can only be changed out of combat. Other nameplate addons
