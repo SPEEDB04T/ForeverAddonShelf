@@ -1,5 +1,10 @@
 # Changelog
 
+## 1.4.4
+
+- Ads reworked from the fourth round of Yes/No votes: the 28 lines voted No are gone (most of the short slogans and the cruder name lines).
+- 8 new lines after the ones voted Yes: rhymes hung on a place or the shop ("Goldshire by night, Stormwind by day, Smuttanie's makes them look your way."), Booty Bay, gnomes, and "Last buyer hasn't ... since."
+
 ## 1.4.3
 
 - Fixed: the shop never saw your auctions. It was reading the old auction house, and this client has the new one. Open the auction house (after posting, or any time) and wares that are up for sale show "On the auction house", stay in the rotation and are advertised at their buyout.
