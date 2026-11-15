@@ -31,6 +31,14 @@ local function Rows()
           get = Get("sound"), set = Set("sound") },
 
         { kind = "header", text = "Wares in the ads" },
+        { kind = "choice", label = "Which ads",
+          options = {
+              { "items", "Ready-made", "Every piece on the slutmog list comes with ads of its own, written for it, "
+                  .. "which take turns. Wares that are not on the list use your ad lines." },
+              { "mixed", "By turns", "A ready-made ad, then one of your own ad lines, and so on." },
+              { "mine", "Only mine", "Only the openers and ad lines on the Lines tab of the shop window." },
+          },
+          get = Get("wording"), set = Set("wording") },
         { kind = "check", label = "Only wares I still have",
           tip = "Skips wares that are in neither your bags nor your bank, so a sold piece drops out of the ads "
               .. "by itself and comes back when you have another.",
@@ -60,7 +68,8 @@ local function Rows()
         } },
         { kind = "buttons", buttons = {
             { label = "Restore the openers", confirm = true,
-              tip = "Puts the shop name, the openers and the ad lines back to how they started. Your wares stay.",
+              tip = "Puts the shop name, the openers and the ad lines back to how they started. Your wares stay. "
+                  .. "The ready-made ads never change.",
               click = function() ns.ResetLines() end },
             { label = "Reset settings", confirm = true,
               tip = "Puts every setting on this page back to how it started. Your wares, openers and ad lines stay.",

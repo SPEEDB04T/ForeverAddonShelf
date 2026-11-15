@@ -1,12 +1,13 @@
 ## Interface: 16001, 16002
 ## Title: Slutmog Shop
-## Notes: Advertise your slutmog wares with one click: a cheeky opener, your shop's name and the next piece as an item link with its price, posted to Trade or any channel. /slutshop to open.
-## Version: 1.0.0
+## Notes: Advertise your slutmog wares with one click: ready-made ads for every piece on the slutmog list, or your own lines, with the next piece as an item link and its price, posted to Trade or any channel. /slutshop to open.
+## Version: 1.1.0
 ## Category-enUS: Chat
 ## SavedVariables: SlutmogShopDB
 ## IconTexture: Interface\Icons\INV_Misc_Coin_02
 ## AddonCompartmentFunc: SlutmogShop_OnAddonCompartmentClick
 
+Ads.lua
 Core.lua
 UI.lua
 Kit.lua

@@ -1,5 +1,14 @@
 # Changelog
 
+## 1.1.0
+
+- Ready-made ads: every piece on the slutmog list (all 166 items Slutmog Scout knows) has five ads written for it, about its name, its cut and where it comes from, with jokes that fit an RP server. Cheeky, never explicit. Your request's ad stays in the Tyrant's Legplates' turns.
+- A piece's ads take turns, each used once before any repeats. Wares that are not on the list use your own openers and ad lines, as before.
+- New option, Options > Which ads: ready-made only (the default), ready-made and your own lines by turns, or only your own.
+- `/slutshop ads [item]` shows a piece's ready-made ads, filled in; without an item it says which of your wares have them. The ware's tooltip in the shop window counts them too.
+- New default openers and ad lines, without "Whisper me". If you never changed yours, they are swapped for the new ones; lines you edited stay as they are.
+- Item links in the colour format the game client writes (`|cnIQ2:`) now work in `/slutshop add`, `price` and `remove`.
+
 ## 1.0.0
 
 - First version. One click posts a shop ad for your slutmog wares: an opener, your shop's name and the next ware as a real item link with its price, for example "Hit your 40s and the gentlemen don't stare like they used to? ~ Smuttanie's Necessities ~ NOW OPEN for all your mogging needs! [Tyrant's Legplates] only 10 gold pieces."

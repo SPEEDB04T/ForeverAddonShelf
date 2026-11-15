@@ -274,6 +274,14 @@ local function Row(i)
             GameTooltip:SetText(ns.WareName(w), Color(HIGHLIGHT_FONT_COLOR, 1, 1, 1))
         end
         GameTooltip:AddLine("Price in the ad: " .. ns.PriceText(w.price), Color(HIGHLIGHT_FONT_COLOR, 1, 1, 1))
+        local ads = ns.ItemAds and ns.ItemAds(w.id)
+        if ads and ns.db.wording ~= "mine" then
+            GameTooltip:AddLine(("%d ready-made ads for it (/slutshop ads shows them)"):format(#ads), Color(NORMAL_FONT_COLOR, 1, 0.82, 0))
+        elseif ads then
+            GameTooltip:AddLine(("%d ready-made ads, switched off in the options"):format(#ads), Color(NORMAL_FONT_COLOR, 1, 0.82, 0))
+        else
+            GameTooltip:AddLine("Its ads come from your ad lines", Color(NORMAL_FONT_COLOR, 1, 0.82, 0))
+        end
         GameTooltip:AddLine("Click: change the price", Color(GRAY_FONT_COLOR, 0.5, 0.5, 0.5))
         GameTooltip:AddLine("Right-click: advertise it next, move or remove", Color(GRAY_FONT_COLOR, 0.5, 0.5, 0.5))
         GameTooltip:Show()
@@ -593,7 +601,8 @@ local function BuildLines(page)
     lineLabel.text = Text(lineLabel, "GameFontNormal")
     lineLabel.text:SetPoint("LEFT")
     lineLabel.text:SetText("Ad lines, one per line")
-    OnHover(lineLabel, "Ad lines", "The ads themselves; they take turns like the openers. Fill-ins:",
+    OnHover(lineLabel, "Ad lines", "Your own ads, for wares that have no ready-made ones (or for all of them: "
+        .. "Options > Which ads). They take turns like the openers. Fill-ins:",
         "{opener}  one of the openers",
         "{shop}  your shop's name",
         "{item}  the next ware, as an item link people can click",
@@ -606,10 +615,19 @@ local function BuildLines(page)
     frame.lines = lineEdit
     ListHook(lineEdit, ns.SetLines, function() return ns.db.lines end)
 
+    -- What the lines are for, which depends on Options > Which ads (set in Refresh).
     local hint = Text(page, "GameFontDisableSmall")
     hint:SetPoint("TOPLEFT", page, "TOPLEFT", 12, -242)
-    hint:SetText("Fill-ins: {opener} {shop} {item} {price} {items} {level}")
+    hint:SetPoint("RIGHT", page, "RIGHT", -12, 0)
+    hint:SetJustifyH("LEFT")
+    frame.linesHint = hint
 end
+
+local LINES_HINT = {
+    items = "Pieces on the slutmog list bring ads of their own; these lines speak for the rest.",
+    mixed = "These lines take turns with the ready-made ads of pieces on the slutmog list.",
+    mine = "Only these lines are used (Options > Which ads).",
+}
 
 local function BuildPreview(host)
     local pv = CreateFrame("Frame", nil, host)
@@ -639,7 +657,7 @@ local function BuildPreview(host)
     if frame.preview.SetWordWrap then frame.preview:SetWordWrap(true) end
     box:EnableMouse(true)
     OnHover(box, "The next ad", "This is what goes out on your next click, exactly as people will read it. "
-        .. "Skip picks another opener, line and ware.")
+        .. "Skip passes over it for the next one.")
 end
 
 local function SelectTab(i)
@@ -730,7 +748,7 @@ local function Build()
     f.skip = Button(f, "Skip")
     f.skip:SetPoint("BOTTOMRIGHT", f, "BOTTOMRIGHT", -82, 4)
     f.skip:SetScript("OnClick", function() ns.Skip() end)
-    OnHover(f.skip, "Skip", "Picks another opener, line and ware without posting.")
+    OnHover(f.skip, "Skip", "Passes over this ad and shows the next one, without posting.")
 
     f.status = Text(f, "GameFontHighlightSmall")
     f.status:SetPoint("LEFT", options, "RIGHT", 8, 0)
@@ -776,6 +794,7 @@ function UI.Refresh()
     if not Focused(frame.shop) then frame.shop:SetText(ns.db.shop or "") end
     if not Focused(frame.openers) then frame.openers:SetText(JoinLines(ns.db.openers)) end
     if not Focused(frame.lines) then frame.lines:SetText(JoinLines(ns.db.lines)) end
+    if frame.linesHint then frame.linesHint:SetText(LINES_HINT[ns.db.wording] or LINES_HINT.items) end
     if frame.channel.fallback then
         frame.channel:SetText(ns.ChannelLabel(ns.db.channel))
     elseif frame.channel.GenerateMenu then

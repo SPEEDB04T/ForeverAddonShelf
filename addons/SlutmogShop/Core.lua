@@ -1,9 +1,10 @@
 -- Slutmog Shop: shop ads for your slutmog wares, one click each.
 --
--- You keep a list of wares (an item and its price), some openers and some ad lines. Each
--- click posts one ad to the channel you picked (Trade to start with): an ad line with a
--- fresh opener, your shop's name and the next ware as a real item link with its price, for
--- example
+-- You keep a list of wares (an item and its price). Each click posts one ad for the next ware
+-- to the channel you picked (Trade to start with), with the ware as a real item link and its
+-- price. A piece from the slutmog list has ready-made ads of its own (Ads.lua), which take
+-- turns; any other ware gets one of your ad lines with a fresh opener and your shop's name,
+-- for example
 --   Hit your 40s and the gentlemen don't stare like they used to? ~ Smuttanie's Necessities ~
 --   NOW OPEN for all your mogging needs! [Tyrant's Legplates] only 10 gold pieces.
 --
@@ -13,7 +14,7 @@
 -- works too). A reminder in your own chat says when it is time for the next one.
 local ADDON, ns = ...
 
-ns.VERSION = "1.0.0"
+ns.VERSION = "1.1.0"
 ns.TITLE = "Slutmog Shop"
 ns.ICON = "Interface\\Icons\\INV_Misc_Coin_02"
 ns.ACCENT = { 0.96, 0.55, 0.78 }
@@ -43,6 +44,32 @@ ns.DEFAULT_SHOP = "Smuttanie's Necessities"
 
 ns.DEFAULT_OPENERS = {
     "Hit your 40s and the gentlemen don't stare like they used to?",
+    "Still dressed like a Scarlet nun and wondering why nobody flirts?",
+    "Did your last suitor fall asleep looking at your tabard?",
+    "Level {level} and still covered from neck to knee?",
+    "Bards still not writing songs about you?",
+    "Nobody buys you a drink at the Lion's Pride anymore?",
+    "Have the Stormwind guards stopped telling you to cover up?",
+    "Was the last one to wink at you a murloc?",
+    "Still wearing the robe they handed you in Northshire?",
+    "Dressed for a siege and wondering why nobody asks you to dance?",
+    "You saved Azeroth twice this week. Your wardrobe is next.",
+    "Want the whole inn to forget their ale when you walk in?",
+    "The Light protects. It has never once flattered.",
+    "Your armor covers too much, and your love life shows it?",
+}
+
+-- The link and the shop's name are the whole call to action: no "whisper me".
+ns.DEFAULT_LINES = {
+    "{opener} ~ {shop} ~ NOW OPEN for all your mogging needs! {item} only {price}.",
+    "{opener} ~ {shop} ~ {item} for {price}, and the blushing is free.",
+    "{opener} {shop} has just the thing: {item}, {price}.",
+    "{opener} ~ {shop} ~ On the shelves today: {items}.",
+}
+
+-- What 1.0.0 started with. A shop still on exactly these gets the new ones; edited lists stay.
+local OLD_OPENERS = {
+    "Hit your 40s and the gentlemen don't stare like they used to?",
     "Tired of armor that hides everything worth looking at?",
     "Your plate covers too much and your love life shows it?",
     "Still dressed like a Scarlet nun and wondering why nobody flirts?",
@@ -57,8 +84,7 @@ ns.DEFAULT_OPENERS = {
     "Level {level} and still covered from neck to knee?",
     "Your enemies fear you. Shouldn't everyone else want you?",
 }
-
-ns.DEFAULT_LINES = {
+local OLD_LINES = {
     "{opener} ~ {shop} ~ NOW OPEN for all your mogging needs! {item} only {price}.",
     "{opener} ~ {shop} ~ {item} for just {price}. Whisper me to shop!",
     "{opener} ~ {shop} ~ Less armor, more allure! Today: {items}. Whisper me!",
@@ -76,6 +102,7 @@ local DEFAULTS = {
     stockOnly = true,       -- skip wares that are in neither your bags nor your bank
     order = "turns",        -- wares take turns ("turns") or come at random ("random")
     prices = "words",       -- "10 gold pieces" ("words") or "10g" ("short")
+    wording = "items",      -- a piece's ready-made ads ("items"), turn about ("mixed") or only your lines ("mine")
 }
 ns.DEFAULTS = DEFAULTS
 
@@ -101,10 +128,19 @@ local function Copy(list)
     return out
 end
 
--- The text as people read it: colours dropped, links reduced to their [Name].
+local function SameList(a, b)
+    if #a ~= #b then return false end
+    for i = 1, #a do
+        if a[i] ~= b[i] then return false end
+    end
+    return true
+end
+
+-- The text as people read it: colours dropped, links reduced to their [Name]. Links colour
+-- their name as |cffRRGGBB or, on this client, by quality as |cnIQ2: (up to the colon).
 local function Plain(text)
     text = tostring(text or "")
-    text = text:gsub("|c%x%x%x%x%x%x%x%x", ""):gsub("|r", "")
+    text = text:gsub("|cn[^:|]*:", ""):gsub("|c%x%x%x%x%x%x%x%x", ""):gsub("|r", "")
     text = text:gsub("|H.-|h(.-)|h", "%1")
     return text
 end
@@ -239,6 +275,9 @@ local function InitDB()
     if type(db.shop) ~= "string" then db.shop = ns.DEFAULT_SHOP end
     db.openers = CleanList(db.openers, ns.DEFAULT_OPENERS)
     db.lines = CleanList(db.lines, ns.DEFAULT_LINES)
+    if SameList(db.openers, OLD_OPENERS) then db.openers = Copy(ns.DEFAULT_OPENERS) end
+    if SameList(db.lines, OLD_LINES) then db.lines = Copy(ns.DEFAULT_LINES) end
+    if db.wording ~= "items" and db.wording ~= "mixed" and db.wording ~= "mine" then db.wording = DEFAULTS.wording end
     if type(db.wares) ~= "table" then
         db.wares = {}
         for _, seed in ipairs(ns.SEED_WARES) do
@@ -300,7 +339,7 @@ function ns.ResetLines()
     db.shop = ns.DEFAULT_SHOP
     db.openers = Copy(ns.DEFAULT_OPENERS)
     db.lines = Copy(ns.DEFAULT_LINES)
-    db.decks = {}
+    db.decks.lines, db.decks.openers = nil, nil      -- the ready-made ads keep their turns
     Changed()
 end
 
@@ -548,12 +587,47 @@ local function NoStockWhy()
     return "the game has not loaded your wares' item links yet. Try again in a moment."
 end
 
-local function Compose()
-    if not db then return nil, "not ready yet." end
+---------------------------------------------------------------------------
+-- Ready-made ads (Ads.lua): five or so per piece on the slutmog list, taking turns per piece
+---------------------------------------------------------------------------
+function ns.ItemAds(id)
+    local all = ns.ITEM_ADS
+    if type(all) ~= "table" or type(id) ~= "number" then return nil end
+    local list = all[id]
+    if type(list) == "table" and #list > 0 then return list end
+    return nil
+end
+
+function ns.ItemAdCount()
+    local n = 0
+    if type(ns.ITEM_ADS) == "table" then
+        for _ in pairs(ns.ITEM_ADS) do n = n + 1 end
+    end
+    return n
+end
+
+-- The next ready-made ad for the ware due next, or nil when it has none (or none fits).
+local function ComposeItemAd(offer, shop)
+    local wi = offer[1]
+    local w = wi and db.wares[wi]
+    local ads = w and ns.ItemAds(w.id)
+    if not ads or shop == "" then return nil end
+    local fields = { shop = shop }
+    WareFields(fields, w)
+    local key = "item:" .. w.id
+    for _, ai in ipairs(DeckOrder(key, #ads)) do
+        local text, miss = Fill(ads[ai], fields)
+        if not miss and #text <= CHAT_LIMIT then
+            return { text = text, kind = "item", deck = key, decks = #ads, ad = ai, ware = wi, last = wi, wares = 1 }
+        end
+    end
+    return nil
+end
+
+-- An ad from your own lines and openers.
+local function ComposeLine(offer, shop)
     local lines, openers = db.lines, db.openers
     if #lines == 0 then return nil, "there is no ad line. Write one on the Lines tab of the shop window." end
-    local offer = Offer()
-    local shop = Trim(db.shop)
     local why
     for _, li in ipairs(DeckOrder("lines", #lines)) do
         local line = lines[li]
@@ -596,7 +670,7 @@ local function Compose()
                         end
                         fields.items = nil
                         if best then
-                            return { text = best, line = li, opener = c.index, ware = usedWare and offer[1] or nil,
+                            return { text = best, kind = "line", line = li, opener = c.index, ware = usedWare and offer[1] or nil,
                                      last = offer[max(count, usedWare and 1 or 0)], wares = count }
                         end
                     else
@@ -607,7 +681,7 @@ local function Compose()
                         end
                         if c.raw == "" then text = NoLead(text) end
                         if #text <= CHAT_LIMIT then
-                            return { text = text, line = li, opener = c.index, ware = usedWare and offer[1] or nil,
+                            return { text = text, kind = "line", line = li, opener = c.index, ware = usedWare and offer[1] or nil,
                                      last = usedWare and offer[1] or nil, wares = usedWare and 1 or 0 }
                         end
                     end
@@ -620,6 +694,28 @@ local function Compose()
     return nil, why
 end
 
+-- "items": a piece with ready-made ads always uses them. "mixed": a ready-made ad, then one of
+-- your lines, by turns. "mine": only your lines. Whatever is tried first, the other kind is the
+-- fallback, so a ware without ready-made ads still gets your lines and the other way round.
+local function Compose()
+    if not db then return nil, "not ready yet." end
+    local offer = Offer()
+    local shop = Trim(db.shop)
+    local wording = db.wording
+    local itemFirst = wording == "items" or (wording == "mixed" and db.lastKind ~= "item")
+    if wording ~= "mine" and itemFirst then
+        local p = ComposeItemAd(offer, shop)
+        if p then return p end
+    end
+    local p, why = ComposeLine(offer, shop)
+    if p then return p end
+    if wording == "mixed" and not itemFirst then
+        local q = ComposeItemAd(offer, shop)
+        if q then return q end
+    end
+    return nil, why
+end
+
 -- The next ad: { text, line, opener, ware, last, wares } or nil and why not.
 function ns.Next()
     if not plan then plan, planWhy = Compose() end
@@ -627,8 +723,13 @@ function ns.Next()
 end
 
 local function Commit(p)
-    DeckTake("lines", #db.lines, p.line)
-    if p.opener then DeckTake("openers", #db.openers, p.opener) end
+    if p.kind == "item" then
+        DeckTake(p.deck, p.decks, p.ad)
+    else
+        DeckTake("lines", #db.lines, p.line)
+        if p.opener then DeckTake("openers", #db.openers, p.opener) end
+    end
+    db.lastKind = p.kind
     if p.last then db.lastWare = p.last end
     db.feature = nil
     plan, planWhy = nil, nil
@@ -842,6 +943,12 @@ function ns.StatusLines()
         ("Wares: %d, %d of them in stock"):format(#db.wares, inStock),
         "Posting to: " .. ns.ChannelLabel(db.channel),
     }
+    local ready = 0
+    for _, w in ipairs(db.wares) do
+        if ns.ItemAds(w.id) then ready = ready + 1 end
+    end
+    lines[#lines + 1] = db.wording == "mine" and "Ads: your own lines only"
+        or ("Ready-made ads: for %d of your %d wares%s"):format(ready, #db.wares, db.wording == "mixed" and ", by turns with your lines" or "")
     local wait = ns.Wait()
     if wait > 0 then
         lines[#lines + 1] = ("Next ad in %d sec"):format(math.ceil(wait))
@@ -896,6 +1003,7 @@ local function PrintHelp()
         "/slutshop add [item link] 10g - add a ware or change its price (shift-click the item to link it)",
         "/slutshop remove [item link] - stop selling it",
         "/slutshop list - your wares",
+        "/slutshop ads [item link] - the ready-made ads for a piece (without a link: which wares have them)",
         "/slutshop channel Trade - where ads go (Say, Yell, Guild or any channel you are in)",
         "/slutshop options - the options",
         "/slutshop status - what the shop is set to",
@@ -905,8 +1013,9 @@ local function PrintHelp()
     end
 end
 
+-- The first item link in a line, with its colour code (|cffRRGGBB or |cnIQ2:) when it has one.
 local function LinkIn(msg)
-    local link = msg:match("(|c%x+|Hitem:.-|h.-|h|r)") or msg:match("(|Hitem:.-|h.-|h)")
+    local link = msg:match("(|c[^|]*|Hitem:.-|h.-|h|r)") or msg:match("(|Hitem:.-|h.-|h)")
     if not link then return nil, msg end
     local s, e = msg:find(link, 1, true)
     return link, Trim(msg:sub(1, s - 1) .. " " .. msg:sub(e + 1))
@@ -922,6 +1031,43 @@ local function WareByWords(rest)
     for i, w in ipairs(db.wares) do
         if ns.WareName(w):lower() == want then return i, w end
     end
+end
+
+local function Say(line)
+    if DEFAULT_CHAT_FRAME and DEFAULT_CHAT_FRAME.AddMessage then DEFAULT_CHAT_FRAME:AddMessage(line) end
+end
+
+-- /slutshop ads: which wares have ready-made ads. /slutshop ads [item] (or a ware's number or
+-- name): that piece's ads, filled in as they would go out.
+local function ShowAds(rest)
+    if Trim(rest) == "" then
+        local with, without = 0, {}
+        for _, w in ipairs(db.wares) do
+            if ns.ItemAds(w.id) then with = with + 1 else without[#without + 1] = w.link or ns.WareName(w) end
+        end
+        Print(("ready-made ads for %d of your %d wares (%d pieces on the slutmog list have them)."):format(with, #db.wares, ns.ItemAdCount()))
+        if #without > 0 then Say("  Your own ad lines speak for: " .. table.concat(without, ", ")) end
+        if db.wording == "mine" then Say("  They are switched off: Options > Which ads.") end
+        Say("  /slutshop ads [item] shows a piece's ads.")
+        return
+    end
+    local link = LinkIn(rest)
+    local _, w
+    if link then _, w = ns.FindWare(link) else _, w = WareByWords(rest) end
+    local id = (w and w.id) or ns.ItemID(link)
+    if not id then
+        Print("shift-click the item into the command: /slutshop ads [item]")
+        return
+    end
+    local shown = (w and w.link) or link or ("[" .. ns.WareName(w) .. "]")
+    local ads = ns.ItemAds(id)
+    if not ads then
+        Print(("no ready-made ads for %s; your own ad lines speak for it."):format(shown))
+        return
+    end
+    local fields = { shop = ns.ShopName(), item = shown, price = w and ns.PriceText(w.price) or "(your price)" }
+    Print(("%d ready-made ads for %s:"):format(#ads, shown))
+    for k, ad in ipairs(ads) do Say(("  %d. %s"):format(k, (Fill(ad, fields)))) end
 end
 
 local function Slash(msg)
@@ -981,6 +1127,8 @@ local function Slash(msg)
         ns.Set("channel", key)
         local ok, why = ns.ResolveChannel(key)
         Print("ads go to " .. ns.ChannelLabel(key) .. "." .. (ok and "" or (" Right now " .. tostring(why))))
+    elseif cmd == "ads" then
+        ShowAds(rest)
     elseif cmd == "options" or cmd == "config" then
         OpenOptions()
     elseif cmd == "status" then
