@@ -1,5 +1,32 @@
 # Changelog
 
+## 1.11.0
+
+Rate every piece 1-10 in a big grid, and worth from the vendor price instead of auction prices.
+
+- **Ratings 1-10.** The Review tab has ten buttons, 1 to 10, instead of Yes and No. 4 to 10 keeps a piece
+  on the list (also a piece the list left out, and a cropped one), 1 to 3 takes it off. With the mouse over
+  the grid, press 1-9 (0 for 10) to rate the selected piece and the arrow keys to move. Your Yes and No
+  answers from 1.10.0 still count.
+- **Review grid.** The tab shows the pieces as a grid of models, 18 to a page, like the game's Appearances
+  window. Click a tile to select it, drag it to turn the model, scroll or use the page arrows to page.
+  Each tile shows the piece's rating and a check when it is on the list.
+- **Slutmog worth.** At a launch, prices climb as players make gold, so what pieces sold for so far says
+  little. The addon no longer values a piece by its auction prices (your earlier scans, the other
+  listings, pieces with the same look, Auctionator or TSM). A piece's worth is its vendor price times its
+  look (its rating, else its grade: 10/10 is 21 times, 8/10 about 14, 6/10 about 8), times 1.3 for blue
+  and 1.6 for epic, 1.25 for a dungeon-only drop and 1.15 for a look no other item has. The Market list's
+  "Worth" column, the tooltips, the deals and the buys all use it. The tooltip shows how it is made up.
+- **The vendor floor counts in the buy score.** A vendor always pays its vendor price, so only what you
+  pay above it is at risk: a piece listed near its vendor price scores higher, one at 10 times it or more
+  scores lower. The tooltip shows the price as a multiple of the vendor price.
+- **Removed:** the rules that rested on auction prices. A cropped piece is no longer shown because its
+  prices show demand (rate it 4 or more to show it), a low-level green is common whatever it sells for,
+  and "sells like ordinary gear" no longer stops a buy. A piece with the same look listed for less is
+  named ("buy that one first") but no longer caps the resale price.
+- The item list carries every piece's vendor price, and the generator writes SuccuDev's ratings into it
+  for every user (tools/SlutmogScout/import_review.py copies them from the saved variables).
+
 ## 1.10.0
 
 Review every piece yourself, a level range, and the Market list starts on what is listed now.

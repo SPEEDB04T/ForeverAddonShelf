@@ -88,8 +88,8 @@ local COLS = {
   { key = "type", label = "Type", width = 102, padL = 10, align = "LEFT" },
   { key = "look", label = "Look", width = 190, padL = 10, align = "LEFT",
     tip = "Measured from the item's texture: how much of the torso or legs it leaves bare." },
-  { key = "value", label = "Fair value", width = 94, padL = 10, align = "RIGHT", numeric = true,
-    tip = "What the piece normally sells for, never taken from the listing it is judged against: the middle of its lowest prices in your earlier scans, else its other listings now, else pieces that look the same, else Auctionator or TradeSkillMaster. Grey when it is not listed right now." },
+  { key = "value", label = "Worth", width = 94, padL = 10, align = "RIGHT", numeric = true,
+    tip = "What the piece should fetch as a slutmog: its vendor price times its look (your rating, else SuccuDev's, else its measured grade), its quality and its rarity. Auction prices are left out on purpose: at a launch they climb as players make gold. Grey when it is not listed right now." },
   { key = "seen", label = "Seen %", width = 62, padL = 10, align = "RIGHT", numeric = true,
     tip = "Share of your scans in which the piece was listed at all." },
   { key = "mob", label = "Mob lvl", width = 66, padL = 10, align = "RIGHT", numeric = true,
@@ -122,7 +122,7 @@ end
 
 -- listedOnly starts on: the Market list shows what can be bought now
 local state = { tab = "market", armor = "all", listedOnly = true, buyOnly = false, sortKey = "value", sortAsc = false, farmItem = nil,
-  reviewShow = "todo", reviewSel = nil, reviewIndex = 1, female = true }
+  reviewShow = "todo", reviewSel = nil, reviewIndex = 1, reviewPage = 1, female = true }
 local win, marketView, farmView, measuredView, reviewView, statusText, scanButton, farmHeader, farmClear, listedCheck, listedText
 local levelBox
 local filterButton, dealsCheck, dealsText, croppedCheck, croppedText, commonCheck, commonText
@@ -214,13 +214,14 @@ function ns.FillItemTooltip(tip, id)
     tip:AddDoubleLine("Lowest in your last scan", ns.Money(info.low) .. " " .. Grey(("(%d listed in all)"):format(info.qty or 0)), g1, g2, g3, w1, w2, w3)
   end
   if info.fair then
-    tip:AddDoubleLine("Fair value", ns.Money(info.fair, not info.low), g1, g2, g3, w1, w2, w3)
-    tip:AddLine(("From %s (%d %s), %s confidence."):format(info.fairBasis or "?", info.fairN or 1,
-      (info.fairN or 1) == 1 and "price" or "prices", info.sure or "low"), e1, e2, e3, true)
-  elseif info.value then
-    tip:AddDoubleLine("Lowest price", ns.Money(info.value, not info.low), g1, g2, g3, w1, w2, w3)
+    tip:AddDoubleLine("Slutmog worth", ns.Money(info.fair, not info.low), g1, g2, g3, w1, w2, w3)
+    tip:AddLine(("%.1f times its vendor price (%s): %s. From %s, %s confidence."):format(info.times or 0, ns.Money(info.vendor or 0),
+      table.concat(info.worthWhy or {}, ", "), info.fairBasis or "?", info.sure or "low"), e1, e2, e3, true)
+    if info.low and info.vendor then
+      tip:AddDoubleLine("Price / vendor price", ("%.1f times"):format(info.low / info.vendor), g1, g2, g3, w1, w2, w3)
+    end
   else
-    tip:AddLine("No price yet. Scan at the auction house.", e1, e2, e3)
+    tip:AddLine("No worth yet: the game has not given its vendor price.", e1, e2, e3)
   end
   local b = info.low and ns.Buy(id, info) or nil
   if b then
@@ -499,9 +500,6 @@ local function BuyNote(b)
   if b.buy then
     return "  " .. Grey("buy up to") .. " " .. ns.Money(b.upTo)
       .. Grey((b.count > 1 and (" x%d"):format(b.count) or "") .. (", %s risk"):format(b.risk))
-  end
-  if b.noDemand then
-    return "  " .. Grey("sells like ordinary gear: no demand for the look")
   end
   if b.easyFarm then
     return "  " .. Grey(("cheaper to farm: level %d-%d mobs"):format(b.easyFarm.lo, b.easyFarm.hi))
@@ -809,28 +807,32 @@ local function RefreshMeasured()
 end
 
 -------------------------------------------------------------------------------
--- Review tab: every piece, on the list or left off, on a model, with a yes or
--- no from the player. A yes puts a piece on the list (and never hides it as
--- cropped), a no takes it off. import_review.py copies the flags into the
--- item list's generator.
+-- Review tab: every piece, on the list or left off, in a grid of models like
+-- the game's Appearances window, each rated 1 to 10 by the player. A rating
+-- of 4 or more puts a piece on the list (and never hides it as cropped), 1 to
+-- 3 takes it off; the rating scales the buy score. import_review.py copies
+-- the ratings into the item list's generator.
 -------------------------------------------------------------------------------
-local REVIEW_SHOW = { { "todo", "Not reviewed yet" }, { "off", "Left off the list" }, { "on", "On the list" }, { "all", "All pieces" } }
+local REVIEW_SHOW = { { "todo", "Not rated yet" }, { "off", "Left off the list" }, { "on", "On the list" }, { "all", "All pieces" } }
+local REVIEW_COLS, REVIEW_ROWS = 9, 2
+local REVIEW_PER_PAGE = REVIEW_COLS * REVIEW_ROWS
 
 -- Where the piece stands now, in a few words.
 local function ListStatus(p)
   local it = ns.Items()[p.id]
+  local verdict = ns.ReviewVerdict(p.flag)
   if not it then
-    if p.flag == false then
-      return "off the list (your no)"
+    if verdict == false then
+      return type(p.flag) == "number" and "off the list (your rating)" or "off the list (your no)"
     elseif p.onList then
       return ns.db.hidden[p.id] and "removed by you" or "hidden by the game-build check"
     end
     return "left off the list"
   end
-  if not p.onList and p.flag == true then
-    return "on the list (your yes)"
+  if not p.onList and verdict == true then
+    return type(p.flag) == "number" and "on the list (your rating)" or "on the list (your yes)"
   end
-  if it.grade == "cropped" and not it.reviewYes and not ns.ShowCropped() and not ns.Demanded(p.id) then
+  if it.grade == "cropped" and not it.reviewYes and not ns.ShowCropped() then
     return "on the list, hidden as cropped"
   end
   if not ns.ShowCommon() and ns.Common(it) then
@@ -839,8 +841,13 @@ local function ListStatus(p)
   return "on the list"
 end
 
+-- "8/10" in green (7+), yellow (4-6) or red (1-3); old answers as Yes or No
 local function FlagLabel(flag)
-  if flag == true then
+  local n = tonumber(flag)
+  if n then
+    local hex = n >= 7 and "40ff40" or n >= ns.RATING_KEEP and "ffd100" or "ff4040"
+    return ("|cff%s%d/10|r"):format(hex, n)
+  elseif flag == true then
     return "|cff40ff40Yes|r"
   elseif flag == false then
     return "|cffff4040No|r"
@@ -888,17 +895,18 @@ local function ReviewItemName(p)
   return ("|c%s%s|r"):format(QualityHex(p.src.q or 2), p.src.name or ("Item " .. p.id))
 end
 
--- Dresses the model in the piece: the player's own body, or a female one of
--- the player's race when the player's character is male (the list measures
--- the female textures).
-local function DressModel(id)
-  local model = reviewView and reviewView.model
+-- Dresses a grid tile's model in its piece: the player's own body, or a
+-- female one of the player's race when the player's character is male (the
+-- list measures the female textures).
+local function DressModel(tile, id)
+  local model = tile and tile.model
   if not model or not id then
     return
   end
+  tile.wantId = id
   local function dress()
-    if not reviewView.model or state.reviewSel ~= id then
-      return
+    if tile.wantId ~= id then
+      return -- the tile shows another piece by now
     end
     local sex = UnitSex and UnitSex("player")
     local custom = false
@@ -925,9 +933,13 @@ local function DressModel(id)
   end
 end
 
+-- the pieces the grid shows now, kept for the page buttons and the keys
+local reviewData = {}
+
 local function RefreshReview()
   local data = ReviewData()
-  -- keep the selected piece; when it left the view (just flagged), take the
+  reviewData = data
+  -- keep the selected piece; when it left the view (just rated), take the
   -- one that moved into its place
   local index
   for i, p in ipairs(data) do
@@ -939,52 +951,61 @@ local function RefreshReview()
     index = math.min(math.max(1, state.reviewIndex or 1), #data)
   end
   local sel = index and data[index] or nil
-  local changed = (sel and sel.id) ~= reviewView.shownId
   state.reviewSel, state.reviewIndex = sel and sel.id or nil, index or 1
-  reviewView.list:SetCount(#data)
-  for i, p in ipairs(data) do
-    local row = reviewView.list.rows[i]
-    row.entry = p
-    SetStripe(row, i)
-    row.title:SetText(ReviewItemName(p) .. "  " .. Grey(("%s, level %d"):format(TypeLabel(p.src), p.src.req or 1)))
-    local skin = p.src.skin and Grey(("%d%% bare"):format(p.src.skin)) or Grey("not measured")
-    row.pool:SetText(skin .. "  " .. FlagLabel(p.flag))
-    row.detail:SetText(Grey(ListStatus(p)) .. "  " .. ReviewDetail(p))
-    if p.id == state.reviewSel then
-      row:LockHighlight()
+  -- the page that holds the selected piece
+  local pages = math.max(1, math.ceil(#data / REVIEW_PER_PAGE))
+  local page = index and math.ceil(index / REVIEW_PER_PAGE) or 1
+  state.reviewPage = page
+  local first = (page - 1) * REVIEW_PER_PAGE
+  for i, tile in ipairs(reviewView.tiles) do
+    local p = data[first + i]
+    tile.entry = p
+    tile:SetShown(p ~= nil)
+    if p then
+      tile.name:SetText(ReviewItemName(p))
+      tile.rating:SetText(FlagLabel(p.flag))
+      tile.info:SetText(Grey(("%s %d%s"):format(TypeLabel(p.src), p.src.req or 1,
+        p.src.skin and (", " .. p.src.skin .. "% bare") or "")))
+      tile.selected:SetShown(p.id == state.reviewSel)
+      tile.onList:SetShown(ns.Items()[p.id] ~= nil)
+      if tile.shownId ~= p.id or tile.shownFemale ~= state.female then
+        tile.shownId, tile.shownFemale = p.id, state.female
+        DressModel(tile, p.id)
+      end
     else
-      row:UnlockHighlight()
+      tile.shownId = nil
     end
   end
+  reviewView.pageText:SetText(("Page %d of %d"):format(page, pages))
+  reviewView.prev:SetEnabled(page > 1)
+  reviewView.next:SetEnabled(page < pages)
   reviewView.empty:SetShown(#data == 0)
   if state.reviewShow == "todo" then
-    reviewView.empty:SetText("Every piece in this filter has your yes or no. Filter > All pieces shows them again.")
+    reviewView.empty:SetText("Every piece in this filter has your rating. Filter > All pieces shows them again.")
   else
     reviewView.empty:SetText("No pieces match this filter.")
   end
-  local panel = reviewView.panel
-  panel.female:SetChecked(state.female)
+  local bar = reviewView.bar
+  bar.female:SetChecked(state.female)
+  local rated = sel and tonumber(sel.flag)
+  for n, b in ipairs(bar.rates) do
+    b:SetEnabled(sel ~= nil)
+    if rated == n then
+      b:LockHighlight()
+    else
+      b:UnlockHighlight()
+    end
+  end
   if not sel then
-    panel.name:SetText("")
-    panel.info:SetText("")
-    panel.detail:SetText("")
-    panel.yes:Disable()
-    panel.no:Disable()
-    panel.clear:Disable()
-    reviewView.shownId = nil
+    bar.name:SetText("")
+    bar.info:SetText("")
+    bar.clear:Disable()
     return
   end
-  panel.name:SetText(ReviewItemName(sel))
-  panel.info:SetText(("%s, level %d. %s.%s"):format(TypeLabel(sel.src), sel.src.req or 1, ListStatus(sel),
-    sel.flag ~= nil and ("  You said " .. FlagLabel(sel.flag) .. ".") or ""))
-  panel.detail:SetText(ReviewDetail(sel))
-  panel.yes:SetEnabled(sel.flag ~= true)
-  panel.no:SetEnabled(sel.flag ~= false)
-  panel.clear:SetEnabled(sel.flag ~= nil)
-  if changed then
-    reviewView.shownId = sel.id
-    DressModel(sel.id)
-  end
+  bar.name:SetText(ReviewItemName(sel))
+  bar.info:SetText(("%s, level %d. %s.%s  %s"):format(TypeLabel(sel.src), sel.src.req or 1, ListStatus(sel),
+    sel.flag ~= nil and (" Yours: " .. FlagLabel(sel.flag) .. ".") or "", Grey(ReviewDetail(sel))))
+  bar.clear:SetEnabled(sel.flag ~= nil)
 end
 
 local function ReviewFlagSelected(flag)
@@ -994,17 +1015,41 @@ local function ReviewFlagSelected(flag)
   end
 end
 
+-- Goes to another page of the grid and selects its first piece.
+local function ReviewPage(delta)
+  local pages = math.max(1, math.ceil(#reviewData / REVIEW_PER_PAGE))
+  local page = math.min(pages, math.max(1, (state.reviewPage or 1) + delta))
+  local p = reviewData[(page - 1) * REVIEW_PER_PAGE + 1]
+  if p then
+    state.reviewSel, state.reviewIndex = p.id, (page - 1) * REVIEW_PER_PAGE + 1
+    Refresh()
+  end
+end
+
+-- Moves the selection by delta pieces (the arrow keys).
+local function ReviewStep(delta)
+  local i = math.min(#reviewData, math.max(1, (state.reviewIndex or 1) + delta))
+  local p = reviewData[i]
+  if p then
+    state.reviewSel, state.reviewIndex = p.id, i
+    Refresh()
+  end
+end
+
+-- all pieces, the rated ones (old yes or no answers included), the ones a
+-- rating or yes keeps on the list and the ones it takes off
 local function ReviewCounts()
-  local all, yes, no = 0, 0, 0
+  local all, kept, off = 0, 0, 0
   for _, p in ipairs(ns.ReviewPieces()) do
     all = all + 1
-    if p.flag == true then
-      yes = yes + 1
-    elseif p.flag == false then
-      no = no + 1
+    local v = ns.ReviewVerdict(p.flag)
+    if v == true then
+      kept = kept + 1
+    elseif v == false then
+      off = off + 1
     end
   end
-  return all, yes, no
+  return all, kept, off
 end
 
 -------------------------------------------------------------------------------
@@ -1024,9 +1069,9 @@ local function UpdateStatus()
     scanButton:SetText("Scan")
     scanButton:SetEnabled(ns.AuctionHouseOpen())
   elseif state.tab == "review" then
-    local all, yes, no = ReviewCounts()
-    statusText:SetText(("%d of %d pieces reviewed: %d yes, %d no. A yes puts a piece on the list, a no takes it off. Drag the model to turn it, scroll to zoom.")
-      :format(yes + no, all, yes, no))
+    local all, kept, off = ReviewCounts()
+    statusText:SetText(("%d of %d pieces rated: %d kept on the list, %d taken off. 4-10 keeps a piece, 1-3 takes it off. Point at the grid and press 1-9 (0 for 10), arrows to move.")
+      :format(kept + off, all, kept, off))
     scanButton:SetText("Scan")
     scanButton:SetEnabled(ns.AuctionHouseOpen())
   else
@@ -1400,20 +1445,105 @@ local function CreateLevelRange(anchor)
   return box
 end
 
--- The Review tab: the list on the left, the piece on a model and the yes and
--- no buttons on the right (the dressing room's model in the game's inset).
-local REVIEW_PANEL_W = 320
+-- The Review tab: a grid of models, one per piece, like the game's
+-- Appearances window, with the selected piece and the 1-10 rating buttons in
+-- a bar under it.
+local REVIEW_BAR_H = 58
+local REVIEW_KEYS = { NUMPAD0 = 10, ["0"] = 10 }
+for n = 1, 9 do
+  REVIEW_KEYS[tostring(n)], REVIEW_KEYS["NUMPAD" .. n] = n, n
+end
+
+-- the game's page arrows (the collections journal and the spellbook use them)
+local function PageArrow(parent, dir, onClick)
+  local b = CreateFrame("Button", nil, parent)
+  b:SetSize(26, 26)
+  local base = "Interface\\Buttons\\UI-SpellbookIcon-" .. dir .. "Page-"
+  pcall(b.SetNormalTexture, b, base .. "Up")
+  pcall(b.SetPushedTexture, b, base .. "Down")
+  pcall(b.SetDisabledTexture, b, base .. "Disabled")
+  pcall(b.SetHighlightTexture, b, "Interface\\Buttons\\UI-Common-MouseHilight", "ADD")
+  b:SetScript("OnClick", onClick)
+  return b
+end
+
 local function CreateReviewView()
   reviewView = MakeView()
-  MakePlainList(reviewView, FARM_ROW_H, function(parent)
-    local row = BuildWideRow(parent, function(self)
-      if self.entry then
-        GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
-        pcall(GameTooltip.SetItemByID, GameTooltip, self.entry.id)
-        GameTooltip:Show()
+  local view = reviewView
+  local grid = MakeInset(view)
+  grid:SetPoint("TOPLEFT", 0, 0)
+  grid:SetPoint("BOTTOMRIGHT", 0, REVIEW_BAR_H)
+  view.grid = grid
+  view.empty = MakeEmptyText(view, grid)
+  view.empty:ClearAllPoints()
+  view.empty:SetPoint("TOP", grid, "TOP", 0, -60)
+  view.empty:SetPoint("LEFT", grid, "LEFT", 45, 0)
+  view.empty:SetPoint("RIGHT", grid, "RIGHT", -45, 0)
+
+  -- tile size from the view's size (931 x 461 in the 940 x 560 window)
+  local GAP, PAD = 4, 6
+  local gridW, gridH = WIN_W - 9, WIN_H + VIEW_TOP - VIEW_BOTTOM - REVIEW_BAR_H
+  local tileW = math.floor((gridW - 2 * PAD - (REVIEW_COLS - 1) * GAP) / REVIEW_COLS)
+  local tileH = math.floor((gridH - 2 * PAD - (REVIEW_ROWS - 1) * GAP) / REVIEW_ROWS)
+  view.tiles = {}
+  for i = 1, REVIEW_PER_PAGE do
+    local col, row = (i - 1) % REVIEW_COLS, math.floor((i - 1) / REVIEW_COLS)
+    local tile = CreateFrame("Button", nil, grid)
+    tile:SetSize(tileW, tileH)
+    tile:SetPoint("TOPLEFT", PAD + col * (tileW + GAP), -(PAD + row * (tileH + GAP)))
+    local bg = MakeInset(tile)
+    bg:SetAllPoints()
+    pcall(tile.RegisterForClicks, tile, "LeftButtonUp", "RightButtonUp")
+    pcall(tile.SetHighlightTexture, tile, "Interface\\Buttons\\UI-Listbox-Highlight2", "ADD")
+    tile.selected = tile:CreateTexture(nil, "OVERLAY")
+    tile.selected:SetAllPoints()
+    pcall(tile.selected.SetTexture, tile.selected, "Interface\\Buttons\\UI-Listbox-Highlight")
+    pcall(tile.selected.SetBlendMode, tile.selected, "ADD")
+    pcall(tile.selected.SetVertexColor, tile.selected, 1, 0.82, 0, 0.6)
+    tile.selected:Hide()
+    local model = TryCreate("DressUpModel", nil, tile)
+    if model then
+      model:SetPoint("TOPLEFT", 3, -3)
+      model:SetPoint("BOTTOMRIGHT", -3, 34)
+      pcall(model.EnableMouse, model, false) -- clicks and drags go to the tile
+      tile.model = model
+    end
+    tile.onList = tile:CreateTexture(nil, "OVERLAY")
+    tile.onList:SetSize(14, 14)
+    tile.onList:SetPoint("TOPLEFT", 4, -4)
+    pcall(tile.onList.SetTexture, tile.onList, "Interface\\RaidFrame\\ReadyCheck-Ready")
+    tile.rating = tile:CreateFontString(nil, "OVERLAY", _G.GameFontNormalLarge and "GameFontNormalLarge" or "GameFontNormal")
+    tile.rating:SetPoint("TOPRIGHT", -5, -5)
+    tile.name = tile:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+    tile.name:SetPoint("BOTTOMLEFT", 4, 16)
+    tile.name:SetPoint("BOTTOMRIGHT", -4, 16)
+    tile.name:SetHeight(20)
+    tile.name:SetJustifyH("CENTER")
+    tile.name:SetJustifyV("BOTTOM")
+    tile.name:SetWordWrap(true)
+    tile.info = tile:CreateFontString(nil, "OVERLAY", "GameFontDisableSmall")
+    tile.info:SetPoint("BOTTOMLEFT", 4, 4)
+    tile.info:SetPoint("BOTTOMRIGHT", -4, 4)
+    tile.info:SetJustifyH("CENTER")
+    tile.info:SetWordWrap(false)
+    -- drag to turn the model, as in the dressing room
+    tile:SetScript("OnMouseDown", function(self)
+      self.dragX = GetCursorPosition()
+    end)
+    tile:SetScript("OnMouseUp", function(self)
+      self.dragX = nil
+    end)
+    tile:SetScript("OnUpdate", function(self)
+      if self.dragX and self.model then
+        local x = GetCursorPosition()
+        local ok, facing = pcall(self.model.GetFacing, self.model)
+        if ok and type(facing) == "number" then
+          pcall(self.model.SetFacing, self.model, facing + (x - self.dragX) * 0.02)
+        end
+        self.dragX = x
       end
     end)
-    row:SetScript("OnClick", function(self)
+    tile:SetScript("OnClick", function(self, mouse)
       local p = self.entry
       if not p then
         return
@@ -1425,78 +1555,32 @@ local function CreateReviewView()
         end
         return
       end
-      state.reviewSel = p.id
+      state.reviewSel, state.reviewIndex = p.id, (state.reviewPage - 1) * REVIEW_PER_PAGE + i
       Refresh()
     end)
-    return row
-  end)
-  -- the list leaves room for the panel at the right
-  reviewView.inset:ClearAllPoints()
-  reviewView.inset:SetPoint("TOPLEFT", 0, 0)
-  reviewView.inset:SetPoint("BOTTOMRIGHT", -(REVIEW_PANEL_W + 6), 0)
-  local scroll = reviewView.list.scroll
-  scroll:ClearAllPoints()
-  scroll:SetPoint("TOPLEFT", 4, -3)
-  scroll:SetPoint("BOTTOMRIGHT", reviewView.inset, "BOTTOMRIGHT", -26, 3)
-  reviewView.empty:ClearAllPoints()
-  reviewView.empty:SetPoint("TOP", scroll, "TOP", 0, -45)
-  reviewView.empty:SetPoint("LEFT", reviewView.inset, "LEFT", 45, 0)
-  reviewView.empty:SetPoint("RIGHT", reviewView.inset, "RIGHT", -45, 0)
-
-  local panel = CreateFrame("Frame", nil, reviewView)
-  panel:SetPoint("TOPRIGHT", 0, 0)
-  panel:SetPoint("BOTTOMRIGHT", 0, 0)
-  panel:SetWidth(REVIEW_PANEL_W)
-  reviewView.panel = panel
-  local modelInset = MakeInset(panel)
-  modelInset:SetPoint("TOPLEFT", 0, 0)
-  modelInset:SetPoint("TOPRIGHT", 0, 0)
-  modelInset:SetHeight(292)
-  local model = TryCreate("DressUpModel", nil, modelInset)
-  if model then
-    model:SetPoint("TOPLEFT", 4, -4)
-    model:SetPoint("BOTTOMRIGHT", -4, 4)
-    pcall(model.EnableMouse, model, true)
-    pcall(model.EnableMouseWheel, model, true)
-    -- drag to turn it, as in the dressing room; the wheel zooms in
-    model:SetScript("OnMouseDown", function(self)
-      self.dragX = GetCursorPosition()
-    end)
-    model:SetScript("OnMouseUp", function(self)
-      self.dragX = nil
-    end)
-    model:SetScript("OnUpdate", function(self)
-      if self.dragX then
-        local x = GetCursorPosition()
-        local ok, facing = pcall(self.GetFacing, self)
-        if ok and type(facing) == "number" then
-          pcall(self.SetFacing, self, facing + (x - self.dragX) * 0.02)
-        end
-        self.dragX = x
+    tile:SetScript("OnEnter", function(self)
+      if self.entry then
+        GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
+        pcall(GameTooltip.SetItemByID, GameTooltip, self.entry.id)
+        GameTooltip:Show()
       end
     end)
-    model:SetScript("OnMouseWheel", function(self, delta)
-      self.zoom = math.max(0, math.min(0.9, (self.zoom or 0) + delta * 0.1))
-      pcall(self.SetPortraitZoom, self, self.zoom)
-    end)
-    reviewView.model = model
+    tile:SetScript("OnLeave", GameTooltip_Hide)
+    tile:Hide()
+    view.tiles[i] = tile
   end
-  local nameFont = _G.GameFontNormalLarge and "GameFontNormalLarge" or "GameFontNormal"
-  panel.name = panel:CreateFontString(nil, "OVERLAY", nameFont)
-  panel.name:SetPoint("TOPLEFT", modelInset, "BOTTOMLEFT", 4, -8)
-  panel.name:SetPoint("RIGHT", panel, "RIGHT", -4, 0)
-  panel.name:SetJustifyH("LEFT")
-  panel.name:SetWordWrap(false)
-  panel.info = panel:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
-  panel.info:SetPoint("TOPLEFT", panel.name, "BOTTOMLEFT", 0, -4)
-  panel.info:SetPoint("RIGHT", panel, "RIGHT", -4, 0)
-  panel.info:SetJustifyH("LEFT")
-  panel.info:SetWordWrap(true)
-  panel.detail = panel:CreateFontString(nil, "OVERLAY", "GameFontDisableSmall")
-  panel.detail:SetPoint("TOPLEFT", panel.info, "BOTTOMLEFT", 0, -4)
-  panel.detail:SetPoint("RIGHT", panel, "RIGHT", -4, 0)
-  panel.detail:SetJustifyH("LEFT")
-  panel.detail:SetWordWrap(true)
+  -- the wheel pages, as in the Appearances window
+  pcall(grid.EnableMouseWheel, grid, true)
+  grid:SetScript("OnMouseWheel", function(_, delta)
+    ReviewPage(delta > 0 and -1 or 1)
+  end)
+
+  -- the bar: the selected piece on the left, the rating on the right
+  local bar = CreateFrame("Frame", nil, view)
+  bar:SetPoint("BOTTOMLEFT", 0, 0)
+  bar:SetPoint("BOTTOMRIGHT", 0, 0)
+  bar:SetHeight(REVIEW_BAR_H - 4)
+  view.bar = bar
   local function Tip(button, title, text)
     button:SetScript("OnEnter", function(self)
       GameTooltip:SetOwner(self, "ANCHOR_TOP")
@@ -1506,44 +1590,119 @@ local function CreateReviewView()
     end)
     button:SetScript("OnLeave", GameTooltip_Hide)
   end
-  panel.yes = MakeButton(panel, "Yes", 96, function()
-    ReviewFlagSelected(true)
-  end)
-  panel.yes:SetPoint("BOTTOMLEFT", 0, 28)
-  Tip(panel.yes, "Yes, a slutmog", "Puts the piece on the list and never hides it as cropped. Then the next piece shows.")
-  panel.no = MakeButton(panel, "No", 96, function()
-    ReviewFlagSelected(false)
-  end)
-  panel.no:SetPoint("LEFT", panel.yes, "RIGHT", 6, 0)
-  Tip(panel.no, "No", "Takes the piece off the list. Then the next piece shows.")
-  panel.clear = MakeButton(panel, "Undo", 96, function()
+  bar.clear = MakeButton(bar, "Undo", 56, function()
     ReviewFlagSelected(nil)
   end)
-  panel.clear:SetPoint("LEFT", panel.no, "RIGHT", 6, 0)
-  Tip(panel.clear, "Undo", "Forgets your yes or no: the piece is judged by its measure again.")
-  panel.female = CreateFrame("CheckButton", nil, panel, "UICheckButtonTemplate")
-  panel.female:SetSize(24, 24)
-  panel.female:SetPoint("BOTTOMLEFT", -2, 0)
-  panel.female:SetHitRectInsets(0, -150, 0, 0)
-  local femaleText = panel:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
-  femaleText:SetPoint("LEFT", panel.female, "RIGHT", 2, 0)
+  bar.clear:SetPoint("TOPRIGHT", 0, -2)
+  Tip(bar.clear, "Undo", "Forgets your rating: the piece is judged by its measure again.")
+  bar.rates = {}
+  for n = 10, 1, -1 do
+    local b = MakeButton(bar, tostring(n), 26, function()
+      ReviewFlagSelected(n)
+    end)
+    if n == 10 then
+      b:SetPoint("RIGHT", bar.clear, "LEFT", -6, 0)
+    else
+      b:SetPoint("RIGHT", bar.rates[n + 1], "LEFT", -2, 0)
+    end
+    Tip(b, ("Rate it %d/10"):format(n), n >= ns.RATING_KEEP
+      and "Keeps the piece on the list (or puts it on); the higher the rating, the higher its buy score. Then the next piece shows."
+      or "Takes the piece off the list. Then the next piece shows.")
+    bar.rates[n] = b
+  end
+  local rateText = bar:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+  rateText:SetPoint("RIGHT", bar.rates[1], "LEFT", -6, 0)
+  rateText:SetText("Rating")
+  bar.name = bar:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+  bar.name:SetPoint("TOPLEFT", 4, -4)
+  bar.name:SetPoint("RIGHT", rateText, "LEFT", -12, 0)
+  bar.name:SetJustifyH("LEFT")
+  bar.name:SetWordWrap(false)
+  bar.info = bar:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+  bar.info:SetPoint("TOPLEFT", bar.name, "BOTTOMLEFT", 0, -3)
+  bar.info:SetPoint("RIGHT", bar, "RIGHT", -345, 0)
+  bar.info:SetJustifyH("LEFT")
+  bar.info:SetJustifyV("TOP")
+  bar.info:SetHeight(26)
+  bar.info:SetWordWrap(true)
+  -- second line, right: the female body box and the page arrows
+  view.next = PageArrow(bar, "Next", function()
+    ReviewPage(1)
+  end)
+  view.next:SetPoint("BOTTOMRIGHT", 0, -2)
+  view.pageText = bar:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+  view.pageText:SetPoint("RIGHT", view.next, "LEFT", -4, 0)
+  view.prev = PageArrow(bar, "Prev", function()
+    ReviewPage(-1)
+  end)
+  view.prev:SetPoint("RIGHT", view.pageText, "LEFT", -4, 0)
+  bar.female = CreateFrame("CheckButton", nil, bar, "UICheckButtonTemplate")
+  bar.female:SetSize(24, 24)
+  bar.female:SetPoint("RIGHT", view.prev, "LEFT", -96, 0)
+  bar.female:SetHitRectInsets(0, -80, 0, 0)
+  local femaleText = bar:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+  femaleText:SetPoint("LEFT", bar.female, "RIGHT", 2, 0)
   femaleText:SetText("Female body")
-  panel.female:SetScript("OnClick", function(self)
+  bar.female:SetScript("OnClick", function(self)
     state.female = self:GetChecked() and true or false
-    reviewView.shownId = nil
     Refresh()
   end)
-  Tip(panel.female, "Female body", "Shows the piece on a female body of your race when your character is male. The list measures the female textures.")
-  local canFemale = model and type(model.SetCustomRace) == "function"
-  panel.female:SetShown(canFemale and true or false)
+  Tip(bar.female, "Female body", "Shows the pieces on a female body of your race when your character is male. The list measures the female textures.")
+  local probe = view.tiles[1].model
+  local canFemale = probe and type(probe.SetCustomRace) == "function"
+  bar.female:SetShown(canFemale and true or false)
   femaleText:SetShown(canFemale and true or false)
-  if not model then
-    -- no model frame in this client: the list and the buttons still work
-    modelInset:Hide()
-    panel.name:ClearAllPoints()
-    panel.name:SetPoint("TOPLEFT", 4, -8)
-    panel.name:SetPoint("RIGHT", panel, "RIGHT", -4, 0)
+
+  -- keys while the pointer is over the grid: 1-9 and 0 (10) rate the selected
+  -- piece, the arrows move the selection. Other keys go on to the game, and
+  -- in combat the grid takes no keys at all.
+  local function Propagate(on)
+    if not (InCombatLockdown and InCombatLockdown()) then
+      pcall(view.SetPropagateKeyboardInput, view, on)
+    end
   end
+  local tick = 0
+  view:SetScript("OnUpdate", function(self, elapsed)
+    tick = tick + (elapsed or 0)
+    if tick < 0.1 then
+      return
+    end
+    tick = 0
+    local want = (MouseIsOver and MouseIsOver(grid) or false) and not (InCombatLockdown and InCombatLockdown())
+      and not (GetCurrentKeyBoardFocus and GetCurrentKeyBoardFocus())
+    want = want and true or false
+    if want ~= self.keys then
+      self.keys = want
+      if want then
+        Propagate(true)
+      end
+      pcall(self.EnableKeyboard, self, want)
+    end
+  end)
+  view:SetScript("OnKeyDown", function(self, key)
+    if InCombatLockdown and InCombatLockdown() then
+      return
+    end
+    local n = REVIEW_KEYS[key]
+    local step = key == "LEFT" and -1 or key == "RIGHT" and 1 or key == "UP" and -REVIEW_COLS or key == "DOWN" and REVIEW_COLS or nil
+    if (n or step) and not (IsModifierKeyDown and IsModifierKeyDown()) then
+      Propagate(false)
+      if n then
+        ReviewFlagSelected(n)
+      else
+        ReviewStep(step)
+      end
+    else
+      Propagate(true)
+    end
+  end)
+  view:SetScript("OnKeyUp", function()
+    Propagate(true)
+  end)
+  view:SetScript("OnHide", function(self)
+    self.keys = nil
+    pcall(self.EnableKeyboard, self, false)
+  end)
 end
 
 local function CreateTabs()

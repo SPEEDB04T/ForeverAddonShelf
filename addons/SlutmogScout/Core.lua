@@ -164,7 +164,18 @@ ns.GRADES = GRADES
 
 -- " (skimpy)" or " (skimpy, set by you)" for the tooltip line, "" without a grade
 function ns.GradeLabel(it)
-  return it and it.grade and (" (" .. it.grade .. (it.gradeMine and ", set by you" or "") .. ")") or ""
+  if not it then
+    return ""
+  end
+  local parts = {}
+  if it.grade then
+    parts[#parts + 1] = it.grade .. (it.gradeMine and ", set by you" or "")
+  end
+  local r = it.id and ns.Rating and ns.Rating(it.id)
+  if r then
+    parts[#parts + 1] = "rated " .. r .. "/10"
+  end
+  return #parts > 0 and (" (" .. table.concat(parts, ", ") .. ")") or ""
 end
 
 function ns.RebuildItems()
@@ -175,10 +186,13 @@ function ns.RebuildItems()
   -- switch the list's own names are used until the check has run again.
   local names = chk and chk.locale == Locale() and type(chk.names) == "table" and chk.names or nil
   local mine = db and type(db.grades) == "table" and db.grades or {}
-  -- the player's yes or no from the Review tab: a no takes a piece off the
+  -- the player's rating (or old yes or no) from the Review tab: 1-3 or a no takes a piece off the
   -- list, a yes puts it on (also a piece the list left off) and keeps it from
   -- being hidden as cropped
-  local review = db and type(db.review) == "table" and db.review or {}
+  local raw = db and type(db.review) == "table" and db.review or {}
+  -- a rating of 4 to 10 counts as a yes, 1 to 3 as a no (true and false are
+  -- yes and no answers from before ratings)
+  local review = setmetatable({}, { __index = function(_, id) return ns.ReviewVerdict(raw[id]) end })
   for id, it in pairs(ns.ITEMS) do
     it.id = id
     -- a grade the player set with /smog grade wins over the generator's
@@ -199,10 +213,12 @@ function ns.RebuildItems()
       local it = reviewItems[id]
       if not it then
         it = { name = r.name, armor = r.armor, slot = r.slot, q = r.q, req = r.req, skin = r.skin,
-          src = r.inst and "dungeon" or "world", inst = r.inst, fromReview = true,
-          look = "you said yes in the review" .. (r.look and (" (" .. r.look .. ")") or "") }
+          src = r.inst and "dungeon" or "world", inst = r.inst, fromReview = true }
         reviewItems[id] = it
       end
+      local n = tonumber(raw[id])
+      it.look = (n and ("you rated it " .. n .. "/10 in the review") or "you said yes in the review")
+        .. (r.look and (" (" .. r.look .. ")") or "")
       it.id, it.reviewYes = id, true
       local g = GRADES[mine[id]] and mine[id] or nil
       it.grade, it.gradeMine = g, g and true or nil
@@ -220,7 +236,7 @@ function ns.RebuildItems()
       end
     end
   end
-  -- look-alikes for fair values and the "unique look" rarity reason
+  -- look-alikes for the same-look checks and the "unique look" rarity reason
   wipe(byDisplay)
   for id, it in pairs(items) do
     if it.display then
@@ -310,7 +326,7 @@ function ns.AddCustom(text)
     db.hidden[id] = nil
     db.custom[id] = nil
     ns.RebuildItems()
-    if builtin.grade == "cropped" and not ns.ShowCropped() and not ns.Demanded(id) then
+    if builtin.grade == "cropped" and not ns.ShowCropped() then
       ns.Print(("%s is a built-in piece with a cropped look, hidden for now: |cffffff00/smog cropped|r or Filter > Show cropped pieces shows it."):format(builtin.name))
       ns.Fire("ITEMS")
       return
@@ -434,8 +450,8 @@ function ns.RemoveItem(text)
     return
   end
   local name = items[id].name
-  if type(db.review) == "table" and db.review[id] == true then
-    db.review[id] = nil -- a yes from the review would keep it on the list
+  if type(db.review) == "table" and ns.ReviewVerdict(db.review[id]) == true then
+    db.review[id] = nil -- a yes or a rating of 4+ from the review would keep it on the list
   end
   if db.custom[id] then
     db.custom[id] = nil
@@ -448,9 +464,25 @@ function ns.RemoveItem(text)
 end
 
 -------------------------------------------------------------------------------
--- Review: the player's yes or no on each piece, from the Review tab
+-- Review: the player's rating of each piece (1 to 10), from the Review tab
 -------------------------------------------------------------------------------
--- true (yes), false (no) or nil (not reviewed yet)
+ns.RATING_KEEP = 4 -- a rating of 4 or more keeps a piece on the list, 1 to 3 takes it off
+
+-- What a stored review answer means: true (keep it on the list), false (take
+-- it off) or nil (no answer). A number is a 1-10 rating; true and false are
+-- yes and no answers from before ratings.
+function ns.ReviewVerdict(v)
+  local n = tonumber(v)
+  if n then
+    return n >= ns.RATING_KEEP
+  end
+  if v == true or v == false then
+    return v
+  end
+  return nil
+end
+
+-- The player's stored answer: a rating 1-10, true (yes), false (no) or nil
 function ns.ReviewFlag(id)
   if db and type(db.review) == "table" then
     return db.review[id]
@@ -458,10 +490,25 @@ function ns.ReviewFlag(id)
   return nil
 end
 
--- Sets the player's yes (true), no (false) or clears it (nil). False when the
--- piece is neither on the list nor among the pieces it left off.
+-- The piece's look rating, 1-10: the player's own, else the one the list
+-- ships with (SuccuDev's), else nil
+function ns.Rating(id)
+  local n = tonumber(ns.ReviewFlag(id))
+  if n then
+    return n
+  end
+  local it = ns.ITEMS[id]
+  return it and tonumber(it.rating) or nil
+end
+
+-- Sets the player's rating (1-10), yes (true), no (false) or clears it (nil).
+-- False when the piece is neither on the list nor among the pieces it left off,
+-- or the rating is out of range.
 function ns.SetReview(id, flag)
   if not (ns.ITEMS[id] or (ns.REVIEW and ns.REVIEW[id]) or db.custom[id]) then
+    return false
+  end
+  if type(flag) == "number" and (flag ~= math.floor(flag) or flag < 1 or flag > 10) then
     return false
   end
   if type(db.review) ~= "table" then
@@ -469,6 +516,8 @@ function ns.SetReview(id, flag)
   end
   if flag == nil then
     db.review[id] = nil
+  elseif type(flag) == "number" then
+    db.review[id] = flag
   else
     db.review[id] = flag and true or false
   end
@@ -595,136 +644,106 @@ local function Median(list)
   return (list[n / 2] + list[n / 2 + 1]) / 2
 end
 
-local function ExternalPrice(id)
-  local api = Auctionator and Auctionator.API and Auctionator.API.v1
-  if api and api.GetAuctionPriceByItemID then
-    local ok, v = pcall(api.GetAuctionPriceByItemID, ADDON, id)
-    if ok and type(v) == "number" and v > 0 then
-      return v, "Auctionator"
-    end
-  end
-  if TSM_API and TSM_API.GetCustomPriceValue then
-    local ok, v = pcall(TSM_API.GetCustomPriceValue, "dbminbuyout", "i:" .. id)
-    if ok and type(v) == "number" and v > 0 then
-      return v, "TSM"
-    end
-  end
-end
-
 -------------------------------------------------------------------------------
--- Fair value: what a piece normally sells for, never taken from the very
--- listing it is judged against. Evidence, best first:
---   1. its own lowest prices in earlier scans (the current scan left out)
---   2. the other listings of it right now (a price ladder read after a scan)
---   3. pieces with the same look and armor type, then similar pieces
---      (same armor, slot and quality, level within 5, bare share within 15)
---   4. Auctionator or TradeSkillMaster
+-- Deals: a rare piece listed at half its slutmog worth or less (see ns.Worth).
 -------------------------------------------------------------------------------
-local DEAL_RATIO = 0.5        -- underpriced: the lowest price is at most half the fair value
-local DEAL_MIN_GAIN = 10000   -- and reselling at fair value earns at least 1 gold after the cut
+local DEAL_RATIO = 0.5        -- underpriced: the lowest price is at most half the worth
+local DEAL_MIN_GAIN = 10000   -- and reselling at its worth earns at least 1 gold after the cut
 local RARE_SEEN = 0.3         -- listed in at most 30% of your scans (3 or more) counts as rare
 local LADDER_MAX = 8          -- price-ladder searches after one scan
 local LADDER_TIMEOUT = 10     -- seconds one price-ladder search may take
 ns.DEAL_RATIO = DEAL_RATIO
 
-local peerCache = {}
-
-local function PricesChanged()
-  wipe(peerCache)
-end
+-- the worth needs no cache to clear; kept for the code that calls it after a scan
+local function PricesChanged() end
 ns.PricesChanged = PricesChanged
 
--- Recorded lowest prices, newest first. earlierOnly leaves out the current
--- scan's own price, so a piece is never judged against itself.
-local function Lows(p, earlierOnly, max)
-  local out = {}
-  local hist = type(p) == "table" and p.hist
-  if type(hist) ~= "table" then
-    return out
+-------------------------------------------------------------------------------
+-- Slutmog worth: what a piece should fetch as a slutmog. It rests on the
+-- piece's vendor price (what the game pays for it, the floor no price ever
+-- falls under for long) times its look, quality and rarity, never on auction
+-- prices: at a launch the market is young and prices climb as players make
+-- gold, so what pieces sold for so far, or sell for today, says little about
+-- what a look will fetch.
+--   look      the rating (yours, else SuccuDev's from the list), else its grade
+--   times     1 + 0.2 * look^2: 10/10 is 21 times its vendor price, 8 about 14,
+--             6 about 8, 4 about 4
+--   quality   blue 1.3, epic 1.6; dropped only in a dungeon 1.25; no other
+--             item has its look 1.15
+-------------------------------------------------------------------------------
+local WORTH_GRADE_LOOK = { bikini = 8, skimpy = 6, cropped = 4 }
+local WORTH_PLAIN_LOOK = 5      -- a piece without a rating or grade (added with /smog add)
+local WORTH_QUALITY = { [3] = 1.3, [4] = 1.6 }
+local WORTH_DUNGEON, WORTH_UNIQUE = 1.25, 1.15
+ns.WORTH_GRADE_LOOK = WORTH_GRADE_LOOK
+
+-- What the game's vendors pay for one, in copper, or nil when unknown.
+function ns.Vendor(id)
+  local ok, sell = pcall(function() return (select(11, C_Item.GetItemInfo(id))) end)
+  sell = ok and Num(sell) or nil
+  if sell and sell > 0 then
+    return sell
   end
-  local last = #hist
-  if earlierOnly and (p.qty or 0) > 0 and last > 0 and type(hist[last]) == "table" and hist[last][1] == p.lastSeen then
-    last = last - 1
-  end
-  for i = last, math.max(1, last - (max or 10) + 1), -1 do
-    local v = type(hist[i]) == "table" and Num(hist[i][2]) or nil
-    if v and v > 0 then
-      out[#out + 1] = v
+  -- the built entry may not carry it; the list's own rows do
+  local srcs = { items[id] or false, ns.ITEMS[id] or false, ns.REVIEW and ns.REVIEW[id] or false }
+  for i = 1, 3 do
+    sell = srcs[i] and Num(srcs[i].sell)
+    if sell and sell > 0 then
+      return sell
     end
   end
-  return out
+  return nil
 end
 
--- The other listings right now: the middle of the 2nd to 5th cheapest. Only
--- valid for the scan it was read after.
-local function LadderValue(p)
-  local l = type(p) == "table" and p.ladder
-  if type(l) ~= "table" or type(l.prices) ~= "table" or (p.qty or 0) == 0 or l.scan ~= p.lastSeen then
-    return nil
+-- The look score 1-10 the worth rests on, and where it came from: "rating"
+-- (a person rated it) or "grade" (the measure of its textures), or "none".
+function ns.LookScore(id, it)
+  local r = ns.Rating(id)
+  if r then
+    return r, "rating"
   end
-  local rest = {}
-  for i = 2, math.min(5, #l.prices) do
-    local v = Num(l.prices[i])
-    if v and v > 0 then
-      rest[#rest + 1] = v
-    end
+  local g = it and WORTH_GRADE_LOOK[it.grade]
+  if g then
+    return g, "grade"
   end
-  if #rest == 0 then
-    return nil
-  end
-  return Median(rest), #rest
+  return WORTH_PLAIN_LOOK, "none"
 end
 
-local function PeerValue(id, it)
-  local hit = peerCache[id]
-  if hit then
-    return hit.value, hit.basis, hit.n
+-- The piece's slutmog worth in copper (nil without a vendor price), and a
+-- table: vendor, look, lookFrom, times (worth / vendor) and why (the parts).
+function ns.Worth(id, it)
+  it = it or items[id]
+  local vendor = ns.Vendor(id)
+  if not (it and vendor) then
+    return nil, { vendor = vendor }
   end
-  local vals, basis = {}, nil
-  if it.display then
-    for _, pid in ipairs(byDisplay[it.display] or {}) do
-      local o = items[pid]
-      if pid ~= id and o and o.armor == it.armor then
-        local v = Median(Lows(db.prices[pid]))
-        if v then
-          vals[#vals + 1] = v
-        end
-      end
-    end
-    basis = "pieces with the same look"
+  local look, from = ns.LookScore(id, it)
+  local times = 1 + 0.2 * look * look
+  local why = { ("look %d/10%s: %.1f times"):format(look, from == "grade" and (" (" .. it.grade .. ")") or from == "none" and " (not rated)" or "", times) }
+  local q = WORTH_QUALITY[it.q or 2]
+  if q then
+    times = times * q
+    why[#why + 1] = ((it.q or 2) >= 4 and "epic" or "blue") .. (" x%.2g"):format(q)
   end
-  if #vals == 0 then
-    for pid, o in pairs(items) do
-      if pid ~= id and o.armor == it.armor and o.slot == it.slot and (o.q or 2) == (it.q or 2)
-          and math.abs((o.req or 0) - (it.req or 0)) <= 5 and math.abs((o.skin or 0) - (it.skin or 0)) <= 15 then
-        local v = Median(Lows(db.prices[pid]))
-        if v then
-          vals[#vals + 1] = v
-        end
-      end
-    end
-    basis = "similar pieces"
-    if #vals < 3 then
-      vals = {}  -- one or two loose look-alikes say too little
-    end
+  if it.inst then
+    times = times * WORTH_DUNGEON
+    why[#why + 1] = ("drops only in a dungeon x%.3g"):format(WORTH_DUNGEON)
   end
-  hit = { n = #vals }
-  if #vals > 0 then
-    hit.value, hit.basis = Median(vals), basis
+  if it.shared == 1 then
+    times = times * WORTH_UNIQUE
+    why[#why + 1] = ("a look no other item has x%.3g"):format(WORTH_UNIQUE)
   end
-  peerCache[id] = hit
-  return hit.value, hit.basis, hit.n
+  return math.floor(vendor * times + 0.5), { vendor = vendor, look = look, lookFrom = from, times = times, why = why }
 end
 
 -- Returns a table describing what is known about an item's price.
 --   low       lowest price in the last scan (nil when none were listed)
 --   qty       items listed in the last scan (nil before any scan)
---   fair      fair value (see above); fairBasis says where it came from,
---             fairN how many prices it rests on, sure "high", "medium" or "low"
---   value     best single estimate of what one sells for: the fair value when it
---             rests on this piece's own prices, else the lowest price now, else
---             the fair value from look-alikes or another addon
---   source    where value came from
+--   vendor    what a vendor pays for one
+--   fair      its slutmog worth (see above); fairBasis says what it rests on,
+--             sure "high" (a person rated its look), "medium" (its grade) or "low"
+--   worthWhy  the parts of the worth; times, worth / vendor
+--   value     the worth; source where it came from
 --   seenPct   share of scans in which the item was listed at all; scans: how many
 function ns.Price(id)
   local p = db.prices[id]
@@ -739,37 +758,14 @@ function ns.Price(id)
       info.seenPct = (p.seen or 0) / p.scans
     end
   end
-  local lows = Lows(p, true)
-  local fair, basis, n, sure, own
-  if #lows > 0 then
-    fair, basis, n, own = Median(lows), "your earlier scans", #lows, true
-    sure = n >= 3 and "high" or n == 2 and "medium" or "low"
-  end
-  if not fair or sure == "low" then
-    local lv, ln = LadderValue(p)
-    if lv then
-      fair, basis, n, own = lv, "the other listings now", ln, true
-      sure = ln >= 3 and "medium" or "low"
-    end
-  end
-  if not fair and items[id] then
-    local pv, pb, pn = PeerValue(id, items[id])
-    if pv then
-      fair, basis, n = pv, pb, pn
-      sure = (pb == "pieces with the same look" and pn >= 2) and "medium" or "low"
-    end
-  end
-  if not fair then
-    local ev, src = ExternalPrice(id)
-    if ev then
-      fair, basis, n, sure = ev, src, 1, "low"
-    end
-  end
-  info.fair, info.fairBasis, info.fairN, info.sure = fair, basis, n, sure
-  if own or (fair and not info.low) then
-    info.value, info.source = fair, basis
-  elseif info.low then
-    info.value, info.source = info.low, "last scan"
+  local worth, w = ns.Worth(id)
+  info.vendor = w.vendor
+  if worth then
+    info.fair, info.fairN, info.worthWhy, info.times = worth, 1, w.why, w.times
+    info.fairBasis = w.lookFrom == "rating" and "its vendor price and its rated look"
+      or w.lookFrom == "grade" and "its vendor price and its measured look" or "its vendor price"
+    info.sure = w.lookFrom == "rating" and "high" or w.lookFrom == "grade" and "medium" or "low"
+    info.value, info.source = worth, info.fairBasis
   end
   return info
 end
@@ -809,11 +805,11 @@ function ns.Rarity(id, info)
   return why, strong
 end
 
--- A deal: listed now, rare, and its lowest price at most half the fair value.
+-- A deal: listed now, rare, and its lowest price at most half its worth.
 function ns.Deal(id, info)
   info = info or ns.Price(id)
   local low, fair = info.low, info.fair
-  if not ns.Shown(items[id], info) or ns.NoDemand(id, info) then
+  if not ns.Shown(items[id], info) then
     return nil
   end
   if not (low and fair) or low > fair * DEAL_RATIO or fair * (1 - AH_CUT) - low < DEAL_MIN_GAIN then
@@ -849,78 +845,57 @@ function ns.NetValue(id)
 end
 
 -------------------------------------------------------------------------------
--- Look grade and demand. Each built-in piece has a grade: bikini, skimpy or
+-- Look grade. Each built-in piece has a grade: bikini, skimpy or
 -- cropped (a top that covers the bust, shorts that cover most of the thigh).
 -- Cropped pieces stay out of the Market list, the buys and the farm values
 -- unless the player asks for them. Pieces added by the player have no grade.
 --
--- Demand: the same browse scan returns every chest and leg piece of these
--- armor types, so the addon keeps the median lowest price of the pieces not on
--- the list, per quality and 5-level band (the "baseline"). A piece whose fair
--- value is barely above that baseline sells like ordinary gear: nobody pays
--- for its look. Off-list pieces listed far above it may be transmog pieces the
--- list misses.
+-- Off-list hints: the same browse scan returns every chest and leg piece of
+-- these armor types, so the addon keeps the median lowest price of the pieces
+-- not on the list, per quality and 5-level band (the "baseline"). An off-list
+-- piece listed far above it, in the same scan, may be a transmog piece the
+-- list misses. The baseline never values a piece on the list (see ns.Worth).
 -------------------------------------------------------------------------------
 local BASE_KEEP = 5        -- the baseline is the median of the last 5 scans' band medians
 local BASE_MIN_ROWS = 5    -- a band needs 5 ordinary pieces in a scan to count
-local NO_DEMAND = 1.3      -- a fair value under 1.3 times the baseline: no demand for the look
-local NO_DEMAND_SEEN = 3   -- once at least 3 of your scans listed the piece
 local OFF_RATIO = 3        -- an off-list piece listed at 3 times its baseline or more
 local OFF_KEEP = 30
 local OFF_SLOTS = { INVTYPE_CHEST = true, INVTYPE_ROBE = true, INVTYPE_LEGS = true }
-ns.NO_DEMAND, ns.NO_DEMAND_SEEN, ns.OFF_RATIO = NO_DEMAND, NO_DEMAND_SEEN, OFF_RATIO
+ns.OFF_RATIO = OFF_RATIO
 
 function ns.ShowCropped()
   return db and db.opts and db.opts.showCropped == true or false
 end
 
--- Easy, common pieces: gear players get by the dozen, never worth flipping.
---   a green world drop up to level 30 (every leveler loots them), unless its
---   own prices say it sells for 2 gold or more;
---   any piece your scans list nearly every time for under 2 gold.
--- Blue and epic pieces, dungeon drops and fished pieces are never common by level.
+-- Easy, common pieces: gear players get by the dozen, never worth flipping:
+-- a green world drop up to level 30 (every leveler loots them). Blue and epic
+-- pieces, dungeon drops and fished pieces are never common by level.
 local COMMON_MAX_REQ = 30
-local COMMON_FLOOR = 20000
-local COMMON_STEADY = 0.8
-local COMMON_STEADY_SCANS = 5
-ns.COMMON_MAX_REQ, ns.COMMON_FLOOR = COMMON_MAX_REQ, COMMON_FLOOR
-local OWN_BASIS = { ["your earlier scans"] = true, ["the other listings now"] = true }
+ns.COMMON_MAX_REQ = COMMON_MAX_REQ
 
 function ns.ShowCommon()
   return db and db.opts and db.opts.showCommon == true or false
 end
 
 -- Why the piece counts as easy, common gear, or nil when it does not.
--- info is ns.Price(id); it is looked up when left out.
+-- info is unused (kept for callers that pass ns.Price(id)).
 function ns.Common(it, info)
   if not it or it.custom then
-    return nil
-  end
-  info = info or (it.id and ns.Price(it.id)) or {}
-  local own = OWN_BASIS[info.fairBasis] and info.fair or nil
-  if own and (own >= COMMON_FLOOR or (it.id and ns.Demanded(it.id, info))) then
     return nil
   end
   if (it.q or 2) <= 2 and not it.inst and it.src ~= "fishing" and (it.req or 0) <= COMMON_MAX_REQ then
     return ("a green world drop of level %d: players levelling there loot them by the dozen"):format(it.req or 0)
   end
-  if own and info.seenPct and (info.scans or 0) >= COMMON_STEADY_SCANS and info.seenPct >= COMMON_STEADY then
-    return ("listed in %d%% of your scans for under %s"):format(math.floor(info.seenPct * 100 + 0.5), ns.Money(COMMON_FLOOR))
-  end
   return nil
 end
 
--- false for a cropped piece while cropped pieces are hidden (unless its prices
--- show demand, see ns.Demanded), and for an easy, common piece while those are
--- hidden. info as in ns.Common.
-local DEMAND_SHOW = 2     -- own prices at 2 times ordinary gear or more: demand evidence
-local GRADE_CROPPED = 0.85 -- a shown cropped piece without demand evidence scores lower
-ns.DEMAND_SHOW, ns.GRADE_CROPPED = DEMAND_SHOW, GRADE_CROPPED
+-- false for a cropped piece while cropped pieces are hidden (unless a rating
+-- or yes keeps it), and for an easy, common piece while those are hidden.
 function ns.Shown(it, info)
   if it == nil or not ns.InLevelRange(it) then
     return false
   end
-  if it.grade == "cropped" and not it.reviewYes and not ns.ShowCropped() and not (it.id and ns.Demanded(it.id, info)) then
+  if it.grade == "cropped" and not it.reviewYes and not ns.ShowCropped() then
     return false
   end
   return ns.ShowCommon() or not ns.Common(it, info)
@@ -950,38 +925,6 @@ end
 -- scans have not seen enough of it.
 function ns.Baseline(q, req)
   return BandBaseline(BandKey(q, req))
-end
-
--- Fair value divided by the baseline of its band (nil when either is unknown),
--- then the baseline.
-function ns.Premium(id, info)
-  local it = items[id]
-  info = info or ns.Price(id)
-  local base = it and it.q and info.fair and ns.Baseline(it.q, it.req)
-  if not base then
-    return nil
-  end
-  return info.fair / base, base
-end
-
--- True when the piece has been listed in a few scans and its fair value is
--- barely above ordinary gear of its level.
-function ns.NoDemand(id, info)
-  local prem = ns.Premium(id, info)
-  local p = db and db.prices[id]
-  return prem ~= nil and prem < NO_DEMAND and type(p) == "table" and (Num(p.seen) or 0) >= NO_DEMAND_SEEN
-end
-
--- Demand evidence: the piece's own prices put it at DEMAND_SHOW times ordinary
--- gear of its level or more. Returns that ratio, or nil. Such a piece is never
--- hidden or ruled out for its grade: what players pay beats what the textures say.
-function ns.Demanded(id, info)
-  info = info or ns.Price(id)
-  if not OWN_BASIS[info.fairBasis] then
-    return nil
-  end
-  local prem = ns.Premium(id, info)
-  return prem and prem >= DEMAND_SHOW and prem or nil
 end
 
 local craftedSet
@@ -1018,7 +961,7 @@ end
 local function UpdateBaseline(other, now)
   local bands, rows = {}, {}
   for id, price in pairs(other) do
-    if not (ns.ITEMS[id] or db.custom[id] or ns.ReviewFlag(id) == true) then
+    if not (ns.ITEMS[id] or db.custom[id] or ns.ReviewVerdict(ns.ReviewFlag(id)) == true) then
       local name, q, req, equip = CachedFacts(id)
       if name and q and q >= 2 and q <= 4 and equip and OFF_SLOTS[equip] then
         local key = BandKey(q, req)
@@ -1069,7 +1012,7 @@ function ns.OffList()
   local list = db and type(db.offList) == "table" and type(db.offList.list) == "table" and db.offList.list or {}
   local out = {}
   for _, r in ipairs(list) do
-    if type(r) == "table" and Num(r.id) and not (ns.ITEMS[r.id] or db.custom[r.id] or ns.ReviewFlag(r.id) == true) then
+    if type(r) == "table" and Num(r.id) and not (ns.ITEMS[r.id] or db.custom[r.id] or ns.ReviewVerdict(ns.ReviewFlag(r.id)) == true) then
       out[#out + 1] = r
     end
   end
@@ -1100,7 +1043,6 @@ ns.ReportOffList = ReportOffList
 local BUY_MIN_GAIN = 10000   -- a buy earns at least 1 gold, also after its risks
 local BUY_MARGIN = 1.3       -- buy up to the resale money / 1.3: 30% kept for risk
 local DEPOSIT_SHARE = 0.3    -- assumed: a 24-hour listing costs about 30% of the vendor price
-local WALL_SHARE = 0.6       -- other listings under 60% of the fair value make a cheap wall
 local SURE_MULT = { high = 1, medium = 0.8, low = 0.55 }
 ns.BUY_MIN_GAIN, ns.BUY_MARGIN = BUY_MIN_GAIN, BUY_MARGIN
 
@@ -1190,7 +1132,8 @@ end
 --   upTo      the most to pay for one; count, cost: copies listed at or under it
 --   resale    the expected sale price; gain what one earns after the cut and deposit
 --   risk      "low", "medium" or "high"; pros, cons: reasons for and against
---   cheaper   { id, low } when a same-look piece is listed under the fair value
+--   cheaper   { id, low } when a same-look piece is listed for less
+--   vendor    its vendor price; vendorTimes the price paid / vendor price
 --   easyFarm  { lo, hi, spot } when farming it yourself is quick
 function ns.Buy(id, info)
   local it = items[id]
@@ -1199,15 +1142,14 @@ function ns.Buy(id, info)
     return nil
   end
   local p = db.prices[id]
-  local b = { id = id, low = info.low, fair = info.fair, sure = info.sure, basis = info.fairBasis,
+  local b = { id = id, low = info.low, fair = info.fair, sure = info.sure, basis = info.fairBasis, vendor = info.vendor,
     pros = {}, cons = {}, score = 0, mult = 0, buy = false, risk = "high" }
   local function pro(text) b.pros[#b.pros + 1] = text end
   local function con(text) b.cons[#b.cons + 1] = text end
   local function stop(text) b.stop = b.stop or text end
   local alt = type(it.alt) == "table" and it.alt or {}
   local common = not ns.ShowCommon() and ns.Common(it, info)
-  local demanded = ns.Demanded(id, info)
-  if it.grade == "cropped" and not it.reviewYes and not ns.ShowCropped() and not demanded then
+  if it.grade == "cropped" and not it.reviewYes and not ns.ShowCropped() then
     stop("a cropped look (it covers the bust or most of the thigh), which few buy for slutmog")
   elseif common then
     b.common = common
@@ -1218,46 +1160,62 @@ function ns.Buy(id, info)
     stop(("a white or grey item has the same look (%s), often sold by a vendor"):format(it.altName or "a plain item"))
   end
   if not info.fair then
-    stop("no fair value yet: scan a few more times")
+    stop("no worth yet: the game has not told the addon its vendor price (point at it once, or scan again)")
     return b
   end
-  local prem, base = ns.Premium(id, info)
-  b.premium, b.baseline = prem, base
-  if prem and prem < NO_DEMAND and (Num(p and p.seen) or 0) >= NO_DEMAND_SEEN then
-    b.noDemand = true
-    stop(("it sells like ordinary gear of its level (about %s), so nobody pays extra for its look"):format(ns.Money(base)))
-  end
 
-  -- resale: the fair value, capped by the cheapest listed piece with the same look
+  -- resale: its slutmog worth. Auction prices are left out on purpose: at a
+  -- launch they climb as players make gold.
   local cheap, cheapLow, sameN = SameLookListed(id, it)
-  local resale = info.fair
-  if cheapLow and cheapLow < resale then
-    resale = cheapLow
+  if cheapLow and cheapLow < info.low then
     b.cheaper = { id = cheap, low = cheapLow }
   end
-  b.resale, b.deposit = resale, Deposit(id)
-  local net = resale * (1 - AH_CUT) - b.deposit
+  b.resale, b.deposit = info.fair, Deposit(id)
+  local net = info.fair * (1 - AH_CUT) - b.deposit
   b.gain = net - info.low
   b.upTo = math.floor(net / BUY_MARGIN)
   if b.gain < BUY_MIN_GAIN then
-    local o = b.cheaper and items[b.cheaper.id]
-    stop(o and ("%s has the same look and is listed for %s, so this would not sell for more"):format(o.name, ns.Money(b.cheaper.low))
-      or "reselling it would earn under 1 gold after the cut and the deposit")
+    stop("reselling it at its slutmog worth would earn under 1 gold after the cut and the deposit")
   elseif info.low > b.upTo then
-    stop("its price leaves less than 30% of the resale for risk")
+    stop("its price leaves less than 30% of its slutmog worth for risk")
   end
-  local under = 1 - info.low / info.fair
-  if under >= 0.25 then
-    pro(("listed %d%% under its fair value"):format(math.floor(under * 100 + 0.5)))
-  end
+  pro(("listed at %d%% of its slutmog worth (%s)"):format(math.floor(info.low / info.fair * 100 + 0.5), ns.Money(info.fair)))
   b.deal = ns.Deal(id, info) ~= nil
 
-  -- confidence of the fair value
+  -- the floor: a vendor always pays its vendor price, so only what you pay
+  -- above it is at risk
+  local v = 1
+  local vendor = info.vendor
+  if vendor and vendor > 0 then
+    local times = info.low / vendor
+    b.vendorTimes = times
+    v = Clamp(1 - 0.4 * math.max(0, info.low - vendor) / info.low, 0.6, 1)
+    if times <= 1 then
+      pro(("listed at or under its vendor price (%s): nothing to lose"):format(ns.Money(vendor)))
+    elseif times <= 3 then
+      pro(("costs only %.1f times its vendor price (%s): little to lose"):format(times, ns.Money(vendor)))
+    elseif times >= 10 then
+      con(("costs %d times its vendor price (%s): most of it is lost if it does not sell"):format(math.floor(times + 0.5), ns.Money(vendor)))
+    end
+  end
+
+  -- confidence of the worth: a person rated its look, or only its textures say
   local c = SURE_MULT[info.sure] or SURE_MULT.low
-  if info.sure == "high" then
-    pro(("its fair value rests on %d of your scans"):format(info.fairN or 3))
+  local look, lookFrom = ns.LookScore(id, it)
+  if lookFrom == "rating" then
+    if look >= 7 then
+      pro(("its look is rated %d/10"):format(look))
+    else
+      con(("its look is rated only %d/10"):format(look))
+    end
+  elseif lookFrom == "grade" then
+    con(("its look is not rated yet: its worth guesses from its %s grade (rate it in the Review tab)"):format(it.grade))
   else
-    con(("its fair value is a %s guess, from %s"):format(info.sure == "medium" and "fair" or "rough", info.fairBasis or "little data"))
+    con("its look is not rated or measured: its worth is a rough guess")
+  end
+  if b.cheaper then
+    local o = items[b.cheaper.id]
+    con(("%s has the same look and is listed for %s: buy that one first"):format(o and o.name or "another piece", ns.Money(b.cheaper.low)))
   end
 
   -- supply: this piece and its look
@@ -1269,20 +1227,6 @@ function ns.Buy(id, info)
     con(("%d are listed: you compete with the others"):format(qty))
   end
   local prices = LadderPrices(p)
-  if prices then
-    local wall = 0
-    for i = 2, #prices do
-      local v = Num(prices[i])
-      if v and v <= info.fair * WALL_SHARE then
-        wall = wall + 1
-      end
-    end
-    if wall > 0 then
-      s = s * math.max(0.5, 0.85 ^ wall)
-      con(("%d more %s listed under %d%% of its fair value: the price may be falling"):format(wall,
-        wall == 1 and "is" or "are", WALL_SHARE * 100))
-    end
-  end
   local before = EarlierQty(p)
   if before and qty >= before * 1.5 and qty >= before + 2 then
     s = s * 0.85
@@ -1332,30 +1276,8 @@ function ns.Buy(id, info)
     con(("%d bind-on-pickup %s the same look, so some players get it themselves"):format(bop, bop == 1 and "item has" or "items have"))
   end
 
-  -- demand for the look: what it sells for next to ordinary gear of its level
-  local d = 1
-  if prem then
-    d = Clamp(0.4 + 0.2 * prem, 0.6, 1)
-    if prem >= 2 then
-      pro(("it sells for %.1f times ordinary gear of its level"):format(prem))
-    else
-      con(("it sells for only %.1f times ordinary gear of its level (%s)"):format(prem, ns.Money(base)))
-    end
-  end
-
-  -- the grade only lowers the score, and only without demand evidence
-  local g = 1
-  if it.grade == "cropped" and not it.reviewYes then
-    if demanded then
-      pro(("a cropped look, but it sells for %.1f times ordinary gear of its level"):format(demanded))
-    else
-      g = GRADE_CROPPED
-      con("a cropped look: fewer players buy it for slutmog")
-    end
-  end
-
-  b.factors = { sure = c, supply = s, farm = f, look = o, demand = d, grade = g }
-  b.mult = c * s * f * o * d * g
+  b.factors = { sure = c, supply = s, farm = f, look = o, floor = v }
+  b.mult = c * s * f * o * v
   b.score = math.max(0, b.gain) * b.mult
   b.risk = b.mult >= 0.5 and "low" or b.mult >= 0.3 and "medium" or "high"
   if not b.stop and b.score < BUY_MIN_GAIN then
@@ -1729,8 +1651,8 @@ end
 
 -------------------------------------------------------------------------------
 -- Price ladder: after a scan, the auction house's per-item search reads the
--- other listings of a few pieces that may be deals, so their fair value does
--- not rest on look-alikes alone. One search at a time, throttled, at most
+-- other listings of a few pieces that may be buys, so the addon knows how many
+-- copies are listed under the buy-up-to price. One search at a time, throttled, at most
 -- LADDER_MAX per scan, each field read through Num().
 -------------------------------------------------------------------------------
 ladder.queue, ladder.keys, ladder.active = {}, {}, false
@@ -1743,16 +1665,15 @@ local function LadderApiPresent()
 end
 ns.LadderApiPresent = LadderApiPresent
 
--- First cut: listed now with another copy beside it, no fair value from its
--- own earlier prices that is sure enough already, and no crafted or plain item
--- with the same look (those are never worth buying, whatever the price).
+-- First cut: listed now with another copy beside it, and no crafted or plain
+-- item with the same look (those are never worth buying, whatever the price).
 local function LadderCandidates()
   local list = {}
   for id, it in pairs(items) do
     local info = ns.Price(id)
     local alt = type(it.alt) == "table" and it.alt or {}
-    if info.low and (info.qty or 0) >= 2 and not (info.fairBasis == "your earlier scans" and info.sure ~= "low")
-        and (Num(alt.made) or 0) == 0 and (Num(alt.plain) or 0) == 0 and ns.Shown(it, info) and not ns.NoDemand(id, info) then
+    if info.low and (info.qty or 0) >= 2
+        and (Num(alt.made) or 0) == 0 and (Num(alt.plain) or 0) == 0 and ns.Shown(it, info) then
       list[#list + 1] = { id = id, r = info.fair and info.low / info.fair or 1 }
     end
   end
@@ -2123,7 +2044,7 @@ function ns.RankSpots(filter)
   for id, it in pairs(items) do
     if not filter or filter(it) then
       local info = ns.Price(id)
-      if ns.Shown(it, info) and not ns.NoDemand(id, info) then
+      if ns.Shown(it, info) then
         counted[#counted + 1] = { id = id, it = it, value = info.value and info.value * (1 - AH_CUT) or nil }
       end
     end
@@ -2445,9 +2366,9 @@ function ns.SelfTest()
   need(ah.IsThrottledMessageSystemReady, "C_AuctionHouse.IsThrottledMessageSystemReady", "scanning")
   need(et.AuctionHouseSortOrder and et.AuctionHouseSortOrder.Price ~= nil, "Enum.AuctionHouseSortOrder.Price", "scanning")
   need(ah.SendSearchQuery and ah.MakeItemKey, "C_AuctionHouse.SendSearchQuery / MakeItemKey",
-    "reading a piece's other listings for its fair value")
+    "reading a piece's other listings")
   need(ah.GetNumItemSearchResults and ah.GetItemSearchResultInfo, "C_AuctionHouse.GetNumItemSearchResults / GetItemSearchResultInfo",
-    "reading a piece's other listings for its fair value")
+    "reading a piece's other listings")
   need(ci.GetItemInfoInstant, "C_Item.GetItemInfoInstant", "icons, adding pieces, the list check")
   need(ci.GetItemInfo, "C_Item.GetItemInfo", "links, adding pieces, the list check")
   need(ci.DoesItemExistByID, "C_Item.DoesItemExistByID", "the list check")
@@ -2492,10 +2413,6 @@ function ns.SelfTest()
   if #noDungeon > 0 then
     print("  |cffff5555Dungeon not in the dungeon list:|r " .. CappedList(noDungeon, 10))
   end
-  local api = Auctionator and Auctionator.API and Auctionator.API.v1
-  print(("  Optional price sources: Auctionator %s, TradeSkillMaster %s."):format(
-    api and api.GetAuctionPriceByItemID and "found" or "not loaded",
-    TSM_API and TSM_API.GetCustomPriceValue and "found" or "not loaded"))
   print(("  Game build %s. List generated from %s."):format(GameBuild(), tostring(ns.LIST and ns.LIST.build)))
   return #missing, #orphans + #noDungeon
 end
@@ -2551,13 +2468,13 @@ local function OnTooltipItem(tooltip, data)
     if b and b.cheaper and items[b.cheaper.id] then
       tooltip:AddDoubleLine("Same look, cheaper: " .. items[b.cheaper.id].name, ns.Money(b.cheaper.low))
     end
-  elseif info.value then
-    if info.qty ~= nil then
-      tooltip:AddDoubleLine("Not listed in your last scan. Fair value", ns.Money(info.value))
-    else
-      -- never been through a scan: the price comes from another addon
-      tooltip:AddDoubleLine("Fair value (" .. (info.source or "?") .. ")", ns.Money(info.value))
-    end
+  elseif info.qty ~= nil then
+    tooltip:AddLine("Not listed in your last scan.", 1, 1, 1)
+  end
+  if info.fair then
+    tooltip:AddDoubleLine("Slutmog worth", ns.Money(info.fair))
+    tooltip:AddLine(("%.1f times its vendor price (%s): %s."):format(info.times or 0, ns.Money(info.vendor or 0),
+      table.concat(info.worthWhy or {}, ", ")), 0.6, 0.6, 0.6, true)
   end
   if it.src == "fishing" then
     tooltip:AddLine(it.srcNote or "Fished up, not a mob drop.", 1, 1, 1, true)
@@ -2802,7 +2719,7 @@ SlashCmdList.SLUTMOGSCOUT = function(input)
     print("  |cffffff00/smog scan|r  scan the auction house (it must be open)")
     print("  |cffffff00/smog farm|r  open the farm guide")
     print("  |cffffff00/smog measured|r  open your measured farm results")
-    print("  |cffffff00/smog review|r  look at every piece, on the list or left off, and say yes or no")
+    print("  |cffffff00/smog review|r  see every piece, on the list or left off, in a grid and rate it 1-10")
     print("  |cffffff00/smog level|r 20-40  show only pieces of these required levels (|cffffff00off|r clears it)")
     print("  |cffffff00/smog add <item link or id> [note]|r  add your own piece")
     print("  |cffffff00/smog remove <item link or id>|r  take a piece off the list")
