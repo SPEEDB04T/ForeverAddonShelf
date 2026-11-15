@@ -15,7 +15,7 @@
 -- works too). A reminder in your own chat says when it is time for the next one.
 local ADDON, ns = ...
 
-ns.VERSION = "1.7.1"
+ns.VERSION = "1.8.0"
 ns.TITLE = "Slutmog Shop"
 ns.ICON = "Interface\\Icons\\INV_Misc_Coin_02"
 ns.ACCENT = { 0.96, 0.55, 0.78 }
@@ -148,6 +148,7 @@ local function Plain(text)
     return text
 end
 ns.Plain = Plain
+ns.Readable = Readable
 
 local function ItemInfo(link)
     local fn = (C_Item and C_Item.GetItemInfo) or GetItemInfo
@@ -1018,6 +1019,15 @@ local function PriceAt(w, where)
     return a and a.price > 0 and a.price or w.price
 end
 
+-- The ware whose turn it is, for a line that is not an ad (the mailbox pitch): link, price, where.
+function ns.WareOffer()
+    local p = ns.Next()
+    local w = p and p.ware and db.wares[p.ware]
+    if not (w and w.link) or w.unpriced then return nil end
+    local where = ns.Where(w)
+    return { item = w.link, price = ns.PriceText(PriceAt(w, where)), where = where, shop = ns.ShopName() }
+end
+
 -- One ad for a top and its bottom, when both can be had in the same place: both linked, one price.
 local function ComposeSetAd(wi, j, shop)
     local w, w2 = db.wares[wi], db.wares[j]
@@ -1516,6 +1526,7 @@ local function PrintHelp()
         "/slutshop set [top] [bottom] - sell two of your wares as a set, one ad for both (/slutshop unset [item] undoes it)",
         "/slutshop reroll - another ad for the same ware",
         "/slutshop prompt - the Post button in the middle of the screen, now",
+        "/slutshop mailbox - mailbox mode: emote back at admirers, see who looked and whispered, one-click replies",
         "/slutshop channel Trade - where ads go (Say, Yell, Guild or any channel you are in)",
         "/slutshop options - the options",
         "/slutshop status - what the shop is set to",
@@ -1609,6 +1620,8 @@ local function Slash(msg)
         else
             Print("shift-click a ware that is part of a set into the command: /slutshop unset [item]")
         end
+    elseif cmd == "mailbox" then
+        if ns.Mailbox then ns.Mailbox.Toggle() else Print("mailbox mode did not load.") end
     elseif cmd == "prompt" then
         if not (ns.UI and ns.UI.ShowPrompt and ns.UI.ShowPrompt(true)) then
             Print("nothing to post: " .. tostring(select(2, ns.Next())))

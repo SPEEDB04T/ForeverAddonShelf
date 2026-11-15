@@ -60,6 +60,7 @@ Openers and ad lines take turns, each used once before any repeats. If an ad is 
 | `/slutshop scan` | look through your bags for pieces from the slutmog list and put them on the shelf |
 | `/slutshop reroll` | another ad for the same ware |
 | `/slutshop prompt` | the Post button in the middle of the screen, now |
+| `/slutshop mailbox` | mailbox mode on or off (below) |
 | `/slutshop set [top] [bottom]` | sell two of your wares as a set, one ad for both (`/slutshop unset [item]` undoes it) |
 | `/slutshop ads [item]` | a piece's ready-made ads (without an item: which wares have them) |
 | `/slutshop channel Trade` | where ads go |
@@ -71,3 +72,13 @@ Openers and ad lines take turns, each used once before any repeats. If an ad is 
 ## Options
 
 Shortest gap between ads (60 seconds), the reminder and its sound, which ads (ready-made, by turns with yours, or only yours), whether pieces from your bags go on the shelf by themselves, whether only wares you still have go in, the order of wares, how prices read, and the minimap button.
+
+## Mailbox mode
+
+For standing around a city mailbox in your wares. `/slutshop mailbox` opens a small window and starts you dancing; closing the window turns the mode off.
+
+- **Emotes back by itself.** Somebody winks, whistles, kisses, flirts, dances or waves at you and the fitting emote goes back (a kiss gets a blush, a whistle a curtsey). Rude emotes get nothing. Somebody who targets you gets one wink. At most one emote per person in two minutes and one in six seconds overall, then you go back to dancing.
+- **The list** shows who emoted at you, who whispered you (with what they said) and who has you targeted (this needs nameplates shown). Nothing is saved; the list is gone when you log out.
+- **One-click replies.** Each row has the emote as a button, and **Pitch** for people who emoted at you or whispered you first: one whisper in the shop owner's voice with the ware whose turn it is and its price ("Staring is free. [item] is 10 gold pieces."). Once per person in ten minutes. The shop never whispers or speaks without your click, and never pitches somebody who only looked.
+- If the game refuses emotes from addons, the window says so and the emote buttons do the same with a click.
+- It reads emotes in English.

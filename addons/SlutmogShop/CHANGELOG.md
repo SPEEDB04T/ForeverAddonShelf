@@ -1,5 +1,9 @@
 # Changelog
 
+## 1.8.0
+
+- **Mailbox mode** (`/slutshop mailbox`): for standing around a city mailbox in your wares. The shop starts you dancing and emotes back by itself at whoever emotes at you (a kiss gets a blush, a whistle a curtsey, rude ones get nothing), and winks once at whoever targets you. A small window lists who emoted, whispered and looked, each with the emote as a button and **Pitch**: one whisper with the next ware and its price, only for people who emoted at you or whispered you first. Nothing is whispered or said without your click. Closing the window turns the mode off.
+
 ## 1.7.1
 
 - Fixed: "Don't be shy, show some thigh." and "Put the booty back in Booty Bay." could come up for a chest piece. They are legs-only now, and no ad that names a body area can come up for a piece it does not fit.
