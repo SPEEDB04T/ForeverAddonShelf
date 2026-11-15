@@ -758,3 +758,17 @@ SlashCmdList.TOTEMCOUNCIL = function(msg)
     end
     if ns.Kit then ns.Kit.Sync() end    -- an open options window follows what was typed
 end
+
+-- LookShots (a helper on the developer's machine only): the frames this addon
+-- draws itself, so each gets a screenshot the first time it shows. Harmless
+-- without it. The options window and minimap button are listed by the kit.
+LookShotsTargets = LookShotsTargets or {}
+LookShotsTargets[ADDON] = {
+    version = ns.VERSION,
+    frames = {
+        { label = "totem bar", frame = function() return TotemCouncilHUD end },
+        { label = "group plan", frame = function() return TotemCouncilBoard end },
+        { label = "accept box", frame = function() return TotemCouncilToast end },
+        { label = "totem menu", frame = function() return TotemCouncilMenu end },
+    },
+}

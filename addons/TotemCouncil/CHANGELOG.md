@@ -1,5 +1,9 @@
 # Changelog
 
+## 1.3.1
+
+- The addon's own frames (totem bar, group plan, accept box, totem menu) are listed for the developer's screenshot helper, so they can be checked against the game's UI. Nothing changes for players.
+
 ## 1.3.0
 
 - The bar now copies the game's own totem bar: 30-pixel totem buttons 8 apart with the totem-bar slot art, the time left under each icon the way buffs show it (white under a minute), and no coloured borders. A missing totem shows as a grey icon, a totem about to run out fades in and out like a buff running out, and a clash is one small red dot in the corner, with the details in the tooltip.
