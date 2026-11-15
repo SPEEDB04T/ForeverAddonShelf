@@ -88,8 +88,8 @@ local COLS = {
   { key = "type", label = "Type", width = 102, padL = 10, align = "LEFT" },
   { key = "look", label = "Look", width = 190, padL = 10, align = "LEFT",
     tip = "Measured from the item's texture: how much of the torso or legs it leaves bare." },
-  { key = "value", label = "Typical low", width = 94, padL = 10, align = "RIGHT", numeric = true,
-    tip = "Typical lowest price: the middle value of the lowest prices in your last 10 scans that had the piece. Grey when it is not listed right now. Before your first scan it comes from Auctionator or TradeSkillMaster if you have one." },
+  { key = "value", label = "Fair value", width = 94, padL = 10, align = "RIGHT", numeric = true,
+    tip = "What the piece normally sells for, never taken from the listing it is judged against: the middle of its lowest prices in your earlier scans, else its other listings now, else pieces that look the same, else Auctionator or TradeSkillMaster. Grey when it is not listed right now." },
   { key = "seen", label = "Seen %", width = 62, padL = 10, align = "RIGHT", numeric = true,
     tip = "Share of your scans in which the piece was listed at all." },
   { key = "mob", label = "Mob lvl", width = 66, padL = 10, align = "RIGHT", numeric = true,
@@ -120,9 +120,9 @@ for i, def in ipairs(TAB_DEFS) do
   TAB_INDEX[def[1]] = i
 end
 
-local state = { tab = "market", armor = "all", listedOnly = false, sortKey = "value", sortAsc = false, farmItem = nil }
+local state = { tab = "market", armor = "all", listedOnly = false, dealsOnly = false, sortKey = "value", sortAsc = false, farmItem = nil }
 local win, marketView, farmView, measuredView, statusText, scanButton, farmHeader, farmClear, listedCheck, listedText
-local filterButton
+local filterButton, dealsCheck, dealsText
 local tabButtons, armorButtons, headerText = {}, {}, {}
 
 local function ItemName(id, it)
@@ -209,10 +209,18 @@ function ns.FillItemTooltip(tip, id)
   if info.low then
     tip:AddDoubleLine("Lowest in your last scan", ns.Money(info.low) .. " " .. Grey(("(%d listed in all)"):format(info.qty or 0)), g1, g2, g3, w1, w2, w3)
   end
-  if info.value then
-    tip:AddDoubleLine("Typical lowest price (" .. (info.source or "?") .. ")", ns.Money(info.value, not info.low), g1, g2, g3, w1, w2, w3)
+  if info.fair then
+    tip:AddDoubleLine("Fair value", ns.Money(info.fair, not info.low), g1, g2, g3, w1, w2, w3)
+    tip:AddLine(("From %s (%d %s), %s confidence."):format(info.fairBasis or "?", info.fairN or 1,
+      (info.fairN or 1) == 1 and "price" or "prices", info.sure or "low"), e1, e2, e3, true)
+  elseif info.value then
+    tip:AddDoubleLine("Lowest price", ns.Money(info.value, not info.low), g1, g2, g3, w1, w2, w3)
   else
     tip:AddLine("No price yet. Scan at the auction house.", e1, e2, e3)
+  end
+  local deal = ns.Deal(id, info)
+  if deal then
+    tip:AddLine(("Underpriced: %d%% under its fair value. Rare: %s."):format(Pct(deal.under), table.concat(deal.why, ", ")), w1, w2, w3, true)
   end
   if info.seenPct then
     tip:AddDoubleLine("Listed in", ("%d%% of your scans"):format(Pct(info.seenPct)), g1, g2, g3, w1, w2, w3)
@@ -444,10 +452,11 @@ local function MarketData()
   for id, it in pairs(ns.Items()) do
     if ArmorFilter(it) then
       local info = ns.Price(id)
-      if not state.listedOnly or info.low then
+      local deal = ns.Deal(id, info)
+      if (not state.listedOnly or info.low) and (not state.dealsOnly or deal) then
         local lo, hi = ns.MobRange(it)
         rows[#rows + 1] = {
-          id = id, it = it, info = info, lo = lo, hi = hi,
+          id = id, it = it, info = info, lo = lo, hi = hi, deal = deal,
           name = it.name or "", type = TypeLabel(it), look = it.look or "",
           low = info.low or -1, qty = (info.qty and info.qty > 0) and info.qty or -1, value = info.value or -1,
           seen = info.seenPct or -1, mob = (it.src == "fishing" or it.inst) and -1 or lo,
@@ -457,6 +466,9 @@ local function MarketData()
   end
   local key, asc, numeric = state.sortKey, state.sortAsc, NUMERIC[state.sortKey]
   table.sort(rows, function(a, b)
+    if state.dealsOnly and a.deal.under ~= b.deal.under then
+      return a.deal.under > b.deal.under -- the deepest discount first
+    end
     local av, bv = a[key], b[key]
     if numeric then
       local amiss, bmiss = av < 0, bv < 0
@@ -505,7 +517,8 @@ local function RefreshMarket()
     SetStripe(row, i)
     row.icon:SetTexture(ItemIcon(d.id))
     local c = row.cells
-    c.name:SetText(ItemName(d.id, d.it) .. (d.it.custom and (" " .. Grey("*")) or ""))
+    c.name:SetText(ItemName(d.id, d.it) .. (d.it.custom and (" " .. Grey("*")) or "")
+      .. (d.deal and ("  " .. Grey(("%d%% under fair value"):format(Pct(d.deal.under)))) or ""))
     c.type:SetText(d.type)
     c.look:SetText(d.look)
     if d.info.low then
@@ -735,6 +748,10 @@ local function UpdateStatus()
     statusText:SetText(("Scanning... %d search results read"):format(scan.rows or 0))
     scanButton:SetText("Scanning")
     scanButton:Disable()
+  elseif ns.ladder and ns.ladder.active then
+    statusText:SetText(("Checking the other listings of possible deals... %d left"):format(#ns.ladder.queue + (ns.ladder.current and 1 or 0)))
+    scanButton:SetText("Scan")
+    scanButton:SetEnabled(ns.AuctionHouseOpen())
   else
     local n = 0
     for _ in pairs(ns.Items()) do
@@ -775,6 +792,8 @@ Refresh = function()
     end
     listedCheck:SetShown(state.tab == "market")
     listedText:SetShown(state.tab == "market")
+    dealsCheck:SetShown(state.tab == "market")
+    dealsText:SetShown(state.tab == "market")
   end
   marketView:SetShown(state.tab == "market")
   farmView:SetShown(state.tab == "farm")
@@ -873,7 +892,7 @@ local function SelectTab(key)
 end
 
 local function FilterIsDefault()
-  return state.armor == "all" and not state.listedOnly
+  return state.armor == "all" and not state.listedOnly and not state.dealsOnly
 end
 
 -- The filter: the game's filter dropdown, as the auction house's search bar
@@ -910,6 +929,12 @@ local function CreateFilterDropdown()
         state.listedOnly = not state.listedOnly
         Refresh()
       end)
+      root:CreateCheckbox("Underpriced only", function()
+        return state.dealsOnly
+      end, function()
+        state.dealsOnly = not state.dealsOnly
+        Refresh()
+      end)
     end
   end)
   if not ok then
@@ -917,7 +942,7 @@ local function CreateFilterDropdown()
     return nil
   end
   if pcall(dd.SetIsDefaultCallback, dd, FilterIsDefault) and pcall(dd.SetDefaultCallback, dd, function()
-    state.armor, state.listedOnly = "all", false
+    state.armor, state.listedOnly, state.dealsOnly = "all", false, false
     Refresh()
   end) then
     dd.smogValidate = true
@@ -947,6 +972,17 @@ local function CreateFilterButtons(startX)
   listedText:SetText("Listed now only")
   listedCheck:SetScript("OnClick", function(self)
     state.listedOnly = self:GetChecked() and true or false
+    Refresh()
+  end)
+  dealsCheck = CreateFrame("CheckButton", nil, win, "UICheckButtonTemplate")
+  dealsCheck:SetSize(24, 24)
+  dealsCheck:SetPoint("LEFT", listedCheck, "RIGHT", 110, 0)
+  dealsCheck:SetHitRectInsets(0, -100, 0, 0)
+  dealsText = win:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+  dealsText:SetPoint("LEFT", dealsCheck, "RIGHT", 2, 0)
+  dealsText:SetText("Underpriced only")
+  dealsCheck:SetScript("OnClick", function(self)
+    state.dealsOnly = self:GetChecked() and true or false
     Refresh()
   end)
 end

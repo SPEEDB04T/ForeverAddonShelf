@@ -114,6 +114,7 @@ local BIND_ON_ACQUIRE = ItemBind.OnAcquire or 1
 local BIND_QUEST = ItemBind.Quest or 4
 
 local items = {}
+local byDisplay = {}          -- display id -> ids on the list with that look
 
 local function GameBuild()
   if not GetBuildInfo then
@@ -180,6 +181,17 @@ function ns.RebuildItems()
         items[id] = it
       end
     end
+  end
+  -- look-alikes for fair values and the "unique look" rarity reason
+  wipe(byDisplay)
+  for id, it in pairs(items) do
+    if it.display then
+      byDisplay[it.display] = byDisplay[it.display] or {}
+      table.insert(byDisplay[it.display], id)
+    end
+  end
+  if ns.PricesChanged then
+    ns.PricesChanged()
   end
 end
 
@@ -365,40 +377,231 @@ local function ExternalPrice(id)
   end
 end
 
+-------------------------------------------------------------------------------
+-- Fair value: what a piece normally sells for, never taken from the very
+-- listing it is judged against. Evidence, best first:
+--   1. its own lowest prices in earlier scans (the current scan left out)
+--   2. the other listings of it right now (a price ladder read after a scan)
+--   3. pieces with the same look and armor type, then similar pieces
+--      (same armor, slot and quality, level within 5, bare share within 15)
+--   4. Auctionator or TradeSkillMaster
+-------------------------------------------------------------------------------
+local DEAL_RATIO = 0.5        -- underpriced: the lowest price is at most half the fair value
+local DEAL_MIN_GAIN = 10000   -- and reselling at fair value earns at least 1 gold after the cut
+local RARE_SEEN = 0.3         -- listed in at most 30% of your scans (3 or more) counts as rare
+local LADDER_MAX = 8          -- price-ladder searches after one scan
+local LADDER_TIMEOUT = 10     -- seconds one price-ladder search may take
+ns.DEAL_RATIO = DEAL_RATIO
+
+local peerCache = {}
+
+local function PricesChanged()
+  wipe(peerCache)
+end
+ns.PricesChanged = PricesChanged
+
+-- Recorded lowest prices, newest first. earlierOnly leaves out the current
+-- scan's own price, so a piece is never judged against itself.
+local function Lows(p, earlierOnly, max)
+  local out = {}
+  local hist = type(p) == "table" and p.hist
+  if type(hist) ~= "table" then
+    return out
+  end
+  local last = #hist
+  if earlierOnly and (p.qty or 0) > 0 and last > 0 and type(hist[last]) == "table" and hist[last][1] == p.lastSeen then
+    last = last - 1
+  end
+  for i = last, math.max(1, last - (max or 10) + 1), -1 do
+    local v = type(hist[i]) == "table" and Num(hist[i][2]) or nil
+    if v and v > 0 then
+      out[#out + 1] = v
+    end
+  end
+  return out
+end
+
+-- The other listings right now: the middle of the 2nd to 5th cheapest. Only
+-- valid for the scan it was read after.
+local function LadderValue(p)
+  local l = type(p) == "table" and p.ladder
+  if type(l) ~= "table" or type(l.prices) ~= "table" or (p.qty or 0) == 0 or l.scan ~= p.lastSeen then
+    return nil
+  end
+  local rest = {}
+  for i = 2, math.min(5, #l.prices) do
+    local v = Num(l.prices[i])
+    if v and v > 0 then
+      rest[#rest + 1] = v
+    end
+  end
+  if #rest == 0 then
+    return nil
+  end
+  return Median(rest), #rest
+end
+
+local function PeerValue(id, it)
+  local hit = peerCache[id]
+  if hit then
+    return hit.value, hit.basis, hit.n
+  end
+  local vals, basis = {}, nil
+  if it.display then
+    for _, pid in ipairs(byDisplay[it.display] or {}) do
+      local o = items[pid]
+      if pid ~= id and o and o.armor == it.armor then
+        local v = Median(Lows(db.prices[pid]))
+        if v then
+          vals[#vals + 1] = v
+        end
+      end
+    end
+    basis = "pieces with the same look"
+  end
+  if #vals == 0 then
+    for pid, o in pairs(items) do
+      if pid ~= id and o.armor == it.armor and o.slot == it.slot and (o.q or 2) == (it.q or 2)
+          and math.abs((o.req or 0) - (it.req or 0)) <= 5 and math.abs((o.skin or 0) - (it.skin or 0)) <= 15 then
+        local v = Median(Lows(db.prices[pid]))
+        if v then
+          vals[#vals + 1] = v
+        end
+      end
+    end
+    basis = "similar pieces"
+    if #vals < 3 then
+      vals = {}  -- one or two loose look-alikes say too little
+    end
+  end
+  hit = { n = #vals }
+  if #vals > 0 then
+    hit.value, hit.basis = Median(vals), basis
+  end
+  peerCache[id] = hit
+  return hit.value, hit.basis, hit.n
+end
+
 -- Returns a table describing what is known about an item's price.
---   low      lowest price in the last scan (nil when none were listed)
---   qty      items listed in the last scan (nil before any scan)
---   typical  median of the lowest prices seen over the last 10 scans that had it
---   value    best single estimate of what one sells for (typical > low > other addon)
---   source   where value came from
---   seenPct  share of scans in which the item was listed at all
+--   low       lowest price in the last scan (nil when none were listed)
+--   qty       items listed in the last scan (nil before any scan)
+--   fair      fair value (see above); fairBasis says where it came from,
+--             fairN how many prices it rests on, sure "high", "medium" or "low"
+--   value     best single estimate of what one sells for: the fair value when it
+--             rests on this piece's own prices, else the lowest price now, else
+--             the fair value from look-alikes or another addon
+--   source    where value came from
+--   seenPct   share of scans in which the item was listed at all; scans: how many
 function ns.Price(id)
   local p = db.prices[id]
   local info = {}
   if p then
     info.qty = p.qty
-    info.low = (p.qty or 0) > 0 and p.min or nil
+    info.low = (p.qty or 0) > 0 and Num(p.min) or nil
     info.lastSeen = p.lastSeen
     info.lastMin = p.lastMin
-    if p.hist and #p.hist > 0 then
-      local mins = {}
-      for i = math.max(1, #p.hist - 9), #p.hist do
-        mins[#mins + 1] = p.hist[i][2]
-      end
-      info.typical = Median(mins)
-    end
+    info.scans = p.scans
     if (p.scans or 0) > 0 then
       info.seenPct = (p.seen or 0) / p.scans
     end
   end
-  if info.typical then
-    info.value, info.source = info.typical, "your scans"
+  local lows = Lows(p, true)
+  local fair, basis, n, sure, own
+  if #lows > 0 then
+    fair, basis, n, own = Median(lows), "your earlier scans", #lows, true
+    sure = n >= 3 and "high" or n == 2 and "medium" or "low"
+  end
+  if not fair or sure == "low" then
+    local lv, ln = LadderValue(p)
+    if lv then
+      fair, basis, n, own = lv, "the other listings now", ln, true
+      sure = ln >= 3 and "medium" or "low"
+    end
+  end
+  if not fair and items[id] then
+    local pv, pb, pn = PeerValue(id, items[id])
+    if pv then
+      fair, basis, n = pv, pb, pn
+      sure = (pb == "pieces with the same look" and pn >= 2) and "medium" or "low"
+    end
+  end
+  if not fair then
+    local ev, src = ExternalPrice(id)
+    if ev then
+      fair, basis, n, sure = ev, src, 1, "low"
+    end
+  end
+  info.fair, info.fairBasis, info.fairN, info.sure = fair, basis, n, sure
+  if own or (fair and not info.low) then
+    info.value, info.source = fair, basis
   elseif info.low then
     info.value, info.source = info.low, "last scan"
-  else
-    info.value, info.source = ExternalPrice(id)
   end
   return info
+end
+
+-- Why a piece is hard to come by. The second return is true when at least one
+-- reason is strong; "only N listed now" alone is not, most pieces are scarce.
+function ns.Rarity(id, info)
+  local it = items[id]
+  local why, strong = {}, false
+  if not it then
+    return why, false
+  end
+  info = info or ns.Price(id)
+  local function add(text, isStrong)
+    why[#why + 1] = text
+    strong = strong or isStrong
+  end
+  if (it.q or 2) >= 4 then
+    add("epic quality", true)
+  elseif (it.q or 2) == 3 then
+    add("blue (rare) quality", true)
+  end
+  if it.inst then
+    add("drops only in " .. it.inst, true)
+  end
+  if info.seenPct and (info.scans or 0) >= 3 and info.seenPct <= RARE_SEEN then
+    add(("listed in only %d%% of your scans"):format(math.floor(info.seenPct * 100 + 0.5)), true)
+  end
+  if it.shared == 1 then
+    add("no other item in the game has its look", true)
+  end
+  if info.low and info.qty and info.qty <= 2 then
+    add(info.qty == 1 and "only one listed now" or "only two listed now", false)
+  end
+  return why, strong
+end
+
+-- A deal: listed now, rare, and its lowest price at most half the fair value.
+function ns.Deal(id, info)
+  info = info or ns.Price(id)
+  local low, fair = info.low, info.fair
+  if not (low and fair) or low > fair * DEAL_RATIO or fair * (1 - AH_CUT) - low < DEAL_MIN_GAIN then
+    return nil
+  end
+  local why, strong = ns.Rarity(id, info)
+  if not strong then
+    return nil
+  end
+  return { id = id, under = 1 - low / fair, low = low, fair = fair, sure = info.sure, basis = info.fairBasis, why = why }
+end
+
+function ns.Deals()
+  local out = {}
+  for id in pairs(items) do
+    local d = ns.Deal(id)
+    if d then
+      out[#out + 1] = d
+    end
+  end
+  table.sort(out, function(a, b)
+    if a.under ~= b.under then
+      return a.under > b.under
+    end
+    return a.id < b.id
+  end)
+  return out
 end
 
 function ns.NetValue(id)
@@ -411,6 +614,8 @@ end
 -------------------------------------------------------------------------------
 local scan = { active = false, rows = 0, pages = 0 }
 ns.scan = scan
+local StartLadder, StopLadder -- the price ladder read after a scan, below
+local ladder = {}
 
 local function BuildClassFilters()
   local seen, filters, classes = {}, {}, {}
@@ -488,6 +693,7 @@ local function Finish()
   end
   local now = time()
   local listed, total, skipped = 0, 0, 0
+  wipe(ladder.keys)
   -- Only the pieces that were on the list when the scan started were searched for.
   for id in pairs(scan.ids) do
     if items[id] then
@@ -511,6 +717,7 @@ local function Finish()
           p.min, p.qty, p.variants = f.min, f.qty, f.variants
           p.lastMin, p.lastSeen = f.min, now
           p.seen = (p.seen or 0) + 1
+          ladder.keys[id] = f.key
           p.hist[#p.hist + 1] = { now, f.min, f.qty }
           while #p.hist > HISTORY_MAX do
             table.remove(p.hist, 1)
@@ -527,7 +734,9 @@ local function Finish()
   StopTicker()
   ns.Print(("Scan done: %d of %d tracked pieces are listed right now (%d search results read).%s"):format(listed, total, scan.rows,
     skipped > 0 and (" %d could not be read and kept their earlier data."):format(skipped) or ""))
+  PricesChanged()
   ns.Fire("SCAN")
+  StartLadder()
 end
 
 -- Adds one page of browse results. Every field is checked: the game may hand
@@ -555,6 +764,10 @@ local function Absorb(results)
           f.variants = f.variants + 1
           if price and price > 0 and (not f.min or price < f.min) then
             f.min = price
+            -- the cheapest variant's key: a random-suffix piece ("of the Monkey")
+            -- is only found again with its suffix
+            f.key = { itemID = id, itemLevel = Num(key.itemLevel) or 0, itemSuffix = Num(key.itemSuffix) or 0,
+              battlePetSpeciesID = 0 }
           end
         end
       end
@@ -665,6 +878,7 @@ function ns.StartScan()
     ns.Print("A scan is already running.")
     return
   end
+  StopLadder(false)
   if not ScanApiPresent() then
     ns.Print("This game version lacks the auction house search this addon uses. |cffffff00/smog selftest|r shows what is missing.")
     return
@@ -715,6 +929,170 @@ function ns.StartScan()
     end
   end)
   ns.Fire("SCAN")
+end
+
+-------------------------------------------------------------------------------
+-- Price ladder: after a scan, the auction house's per-item search reads the
+-- other listings of a few pieces that may be deals, so their fair value does
+-- not rest on look-alikes alone. One search at a time, throttled, at most
+-- LADDER_MAX per scan, each field read through Num().
+-------------------------------------------------------------------------------
+ladder.queue, ladder.keys, ladder.active = {}, {}, false
+ns.ladder = ladder
+
+local function LadderApiPresent()
+  local ah = C_AuctionHouse
+  return (ah and ah.SendSearchQuery and ah.MakeItemKey and ah.GetNumItemSearchResults
+    and ah.GetItemSearchResultInfo and ah.IsThrottledMessageSystemReady) and true or false
+end
+ns.LadderApiPresent = LadderApiPresent
+
+-- First cut: listed now with another copy beside it, rare, and no fair value
+-- from its own earlier prices that is sure enough already.
+local function LadderCandidates()
+  local list = {}
+  for id in pairs(items) do
+    local info = ns.Price(id)
+    if info.low and (info.qty or 0) >= 2 and not (info.fairBasis == "your earlier scans" and info.sure ~= "low") then
+      local _, strong = ns.Rarity(id, info)
+      if strong then
+        list[#list + 1] = { id = id, r = info.fair and info.low / info.fair or 1 }
+      end
+    end
+  end
+  table.sort(list, function(a, b)
+    if a.r ~= b.r then
+      return a.r < b.r
+    end
+    return a.id < b.id
+  end)
+  local out = {}
+  for i = 1, math.min(LADDER_MAX, #list) do
+    out[i] = list[i].id
+  end
+  return out
+end
+
+local function ReportDeals()
+  local deals = ns.Deals()
+  if #deals == 0 then
+    return
+  end
+  local parts = {}
+  for i = 1, math.min(3, #deals) do
+    local d = deals[i]
+    local it = items[d.id]
+    parts[#parts + 1] = ("%s %s (fair %s)"):format(it and it.name or ("item " .. d.id), ns.Money(d.low), ns.Money(d.fair))
+  end
+  ns.Print(("%d rare %s underpriced: %s%s. The Market list's Filter > Underpriced only shows %s."):format(#deals,
+    #deals == 1 and "piece looks" or "pieces look", table.concat(parts, ", "),
+    #deals > 3 and (" and %d more"):format(#deals - 3) or "", #deals == 1 and "it" or "them"))
+end
+
+StopLadder = function(report)
+  if ladder.ticker then
+    ladder.ticker:Cancel()
+    ladder.ticker = nil
+  end
+  local was = ladder.active
+  ladder.active, ladder.current, ladder.key = false, nil, nil
+  wipe(ladder.queue)
+  if was then
+    PricesChanged()
+    ns.Fire("SCAN")
+  end
+  if report and was then
+    ReportDeals()
+  end
+end
+
+local function LadderStep()
+  if not ladder.active then
+    return
+  end
+  if ladder.current then
+    if GetTime() - ladder.sentAt <= LADDER_TIMEOUT then
+      return
+    end
+    ladder.current = nil -- no answer for this piece: go on with the next
+  end
+  if #ladder.queue == 0 then
+    StopLadder(true)
+    return
+  end
+  local okReady, ready = pcall(C_AuctionHouse.IsThrottledMessageSystemReady)
+  if not okReady or IsSecret(ready) or not ready then
+    return
+  end
+  local id = table.remove(ladder.queue, 1)
+  local okKey, key = true, ladder.keys[id]
+  if not key then
+    okKey, key = pcall(C_AuctionHouse.MakeItemKey, id)
+  end
+  if not okKey or type(key) ~= "table" then
+    StopLadder(true)
+    return
+  end
+  ladder.current, ladder.key, ladder.sentAt = id, key, GetTime()
+  local sorts = { { sortOrder = Enum.AuctionHouseSortOrder.Price, reverseSort = false } }
+  if not pcall(C_AuctionHouse.SendSearchQuery, key, sorts, false) then
+    StopLadder(true)
+  end
+end
+ns.LadderStep = LadderStep
+
+local function Field(t, k)
+  local ok, v = pcall(function() return t[k] end)
+  return ok and Num(v) or nil
+end
+
+local function OnLadderResults(itemKey)
+  if not (ladder.active and ladder.current) then
+    return
+  end
+  if (type(itemKey) == "table" and Field(itemKey, "itemID")) ~= ladder.current then
+    return -- the player's own search, not ours
+  end
+  local id, key = ladder.current, ladder.key
+  local okN, n = pcall(C_AuctionHouse.GetNumItemSearchResults, key)
+  n = okN and Num(n) or 0
+  local prices = {}
+  for i = 1, math.min(n, 10) do
+    local ok, r = pcall(C_AuctionHouse.GetItemSearchResultInfo, key, i)
+    if ok and type(r) == "table" then
+      local buy, qty = Field(r, "buyoutAmount"), Field(r, "quantity")
+      if buy and buy > 0 and (qty == nil or qty == 1) then
+        prices[#prices + 1] = buy
+      end
+    end
+  end
+  table.sort(prices)
+  local p = db.prices[id]
+  if p and #prices > 0 then
+    p.ladder = { scan = p.lastSeen, t = time(), prices = prices }
+  end
+  ladder.current = nil
+  PricesChanged()
+  LadderStep()
+end
+
+StartLadder = function()
+  StopLadder(false)
+  if not (LadderApiPresent() and ns.AuctionHouseOpen() and C_Timer and C_Timer.NewTicker) then
+    ReportDeals()
+    return
+  end
+  for _, id in ipairs(LadderCandidates()) do
+    ladder.queue[#ladder.queue + 1] = id
+  end
+  if #ladder.queue == 0 then
+    ReportDeals()
+    return
+  end
+  ladder.active = true
+  ladder.ticker = C_Timer.NewTicker(0.5, LadderStep)
+  ns.Fire("SCAN")
+  LadderStep()
 end
 
 -------------------------------------------------------------------------------
@@ -1058,6 +1436,10 @@ function ns.SelfTest()
   need(ah.RequestMoreBrowseResults, "C_AuctionHouse.RequestMoreBrowseResults", "scanning")
   need(ah.IsThrottledMessageSystemReady, "C_AuctionHouse.IsThrottledMessageSystemReady", "scanning")
   need(et.AuctionHouseSortOrder and et.AuctionHouseSortOrder.Price ~= nil, "Enum.AuctionHouseSortOrder.Price", "scanning")
+  need(ah.SendSearchQuery and ah.MakeItemKey, "C_AuctionHouse.SendSearchQuery / MakeItemKey",
+    "reading a piece's other listings for its fair value")
+  need(ah.GetNumItemSearchResults and ah.GetItemSearchResultInfo, "C_AuctionHouse.GetNumItemSearchResults / GetItemSearchResultInfo",
+    "reading a piece's other listings for its fair value")
   need(ci.GetItemInfoInstant, "C_Item.GetItemInfoInstant", "icons, adding pieces, the list check")
   need(ci.GetItemInfo, "C_Item.GetItemInfo", "links, adding pieces, the list check")
   need(ci.DoesItemExistByID, "C_Item.DoesItemExistByID", "the list check")
@@ -1150,12 +1532,16 @@ local function OnTooltipItem(tooltip, data)
   local info = ns.Price(id)
   if info.low then
     tooltip:AddDoubleLine("Lowest in your last scan", ns.Money(info.low) .. (" |c%s(%d listed in all)|r"):format(GreyHex(), info.qty or 0))
+    local deal = ns.Deal(id, info)
+    if deal then
+      tooltip:AddDoubleLine(("Underpriced: %d%% under its fair value"):format(math.floor(deal.under * 100 + 0.5)), ns.Money(deal.fair))
+    end
   elseif info.value then
     if info.qty ~= nil then
-      tooltip:AddDoubleLine("Not listed in your last scan. Typical lowest price", ns.Money(info.value))
+      tooltip:AddDoubleLine("Not listed in your last scan. Fair value", ns.Money(info.value))
     else
       -- never been through a scan: the price comes from another addon
-      tooltip:AddDoubleLine("Typical lowest price (" .. (info.source or "?") .. ")", ns.Money(info.value))
+      tooltip:AddDoubleLine("Fair value (" .. (info.source or "?") .. ")", ns.Money(info.value))
     end
   end
   if it.src == "fishing" then
@@ -1186,6 +1572,7 @@ frame:RegisterEvent("AUCTION_HOUSE_BROWSE_RESULTS_UPDATED")
 frame:RegisterEvent("AUCTION_HOUSE_BROWSE_RESULTS_ADDED")
 frame:RegisterEvent("AUCTION_HOUSE_BROWSE_FAILURE")
 frame:RegisterEvent("AUCTION_HOUSE_THROTTLED_SYSTEM_READY")
+frame:RegisterEvent("ITEM_SEARCH_RESULTS_UPDATED")
 
 frame:SetScript("OnEvent", function(_, event, arg1)
   if event == "ADDON_LOADED" then
@@ -1235,7 +1622,12 @@ frame:SetScript("OnEvent", function(_, event, arg1)
     end)
   elseif event == "AUCTION_HOUSE_CLOSED" then
     Abort("the auction house was closed.")
+    StopLadder(true)
     ns.Fire("AH_CLOSED")
+  elseif event == "ITEM_SEARCH_RESULTS_UPDATED" then
+    if ladder.active and not pcall(OnLadderResults, arg1) then
+      StopLadder(true) -- results this addon cannot read: keep what was read so far
+    end
   elseif event == "AUCTION_HOUSE_BROWSE_RESULTS_UPDATED" or event == "AUCTION_HOUSE_BROWSE_RESULTS_ADDED" then
     -- A result the addon cannot read must end the scan at once with nothing
     -- saved, not leave it half-updated until the timeout.
@@ -1256,6 +1648,7 @@ frame:SetScript("OnEvent", function(_, event, arg1)
     Abort("the auction house refused the search. Wait a few seconds and scan again.")
   elseif event == "AUCTION_HOUSE_THROTTLED_SYSTEM_READY" then
     RunPending()
+    LadderStep()
   end
 end)
 
@@ -1270,6 +1663,7 @@ end
 function ns.WipePrices()
   wipe(db.prices)
   db.lastScan = nil
+  PricesChanged()
   ns.Print("Saved prices cleared.")
   ns.Fire("SCAN")
 end

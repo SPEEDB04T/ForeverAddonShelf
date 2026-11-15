@@ -1,5 +1,31 @@
 # Changelog
 
+## 1.4.0
+
+Better detection, and rare pieces listed under their worth.
+
+**Detection.** Where the skin is bare now counts, not only how much of it.
+- Legs: the upper thigh and crotch count most, the hip strip under a tunic and the knees count little,
+  and the shins don't count at all. Plain trousers with bare shins (Seafarer's Pantaloons and 49 others)
+  are off the list. Thigh-high cut-outs (Elegant Leggings, Revenant, Templar, Glimmering) are on it.
+- Chest: the bust and belly count more than the neck and shoulders. A robe needs a bare top to be listed.
+- The list now has 151 pieces. Saved prices for pieces that left it are kept but no longer shown.
+
+**Fair value and underpriced pieces.** A piece is no longer judged by its own lowest price.
+- Each piece has a fair value. It comes from the piece's earlier scans (the current one left out), or
+  from its other listings right now. Failing those, it comes from pieces with the same look, then similar
+  pieces, then Auctionator or TradeSkillMaster. The tooltip says where it came from and how sure it is.
+- After a scan, up to 8 rare pieces that might be underpriced get one extra search each, to read their
+  other listings.
+- A piece counts as underpriced when it is listed at half its fair value or less, reselling it would earn
+  at least 1 gold after the cut, and it is rare. Rare means: blue or epic, dungeon-only, listed in 30% of
+  your scans or fewer, or a look no other item in the game has. Being one of only one or two listed is
+  not enough on its own.
+- The Market list's value column is now "Fair value". Underpriced pieces show how far under they are,
+  and Filter > Underpriced only lists them alone, deepest first. Their tooltip says why they count as rare.
+- One chat line after a scan names the underpriced pieces.
+- The farm guide values pieces at their fair value.
+
 ## 1.3.3
 
 - Lists the window's tabs and the auction house button for LookShots, a local screenshot helper, so they can be
