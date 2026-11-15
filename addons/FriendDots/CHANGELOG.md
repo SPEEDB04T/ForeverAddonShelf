@@ -1,5 +1,10 @@
 # Changelog
 
+## 1.4.1
+
+- The options window and the minimap button are redrawn by the shared kit: they now copy the game's own Options rows and its round minimap button.
+- Shorter option names, so every row fits on one line: "Health line at full health", "Click through hidden plates", "Friendly player nameplates", "Friendly plates only in combat". The rest of each sentence is in the row's tooltip.
+
 ## 1.4.0
 
 The dots are built like the game's own nameplate.

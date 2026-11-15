@@ -52,7 +52,9 @@ local function Rows()
               { "off", "Off" },
           },
           get = Get("hp"), set = Set("hp") },
-        { kind = "check", label = "Show the health line at full health too",
+        { kind = "check", label = "Health line at full health",
+          tip = "Shows the health line under the dot at full health too. Unticked, it only shows "
+              .. "when the player is missing health. Same as /fdots hpfull.",
           get = Get("hpAlways"), set = Set("hpAlways") },
         { kind = "choice", label = "Names",
           options = {
@@ -63,16 +65,17 @@ local function Rows()
           get = Get("names"), set = Set("names") },
 
         { kind = "header", text = "Nameplates" },
-        { kind = "check", label = "Clicks go through the hidden nameplates",
-          tip = "An invisible nameplate no longer catches clicks meant for the world. Changes outside combat.",
+        { kind = "check", label = "Click through hidden plates",
+          tip = "Clicks go through the hidden nameplates: an invisible nameplate no longer catches clicks "
+              .. "meant for the world. Changes outside combat. Same as /fdots click.",
           get = Get("clickThrough"), set = Set("clickThrough") },
-        { kind = "check", label = "Friendly player nameplates are on",
-          tip = "The game's own setting. The dots sit on these nameplates: without them there are no dots. "
+        { kind = "check", label = "Friendly player nameplates",
+          tip = "Friendly player nameplates are on: the game's own setting. The dots sit on these nameplates: without them there are no dots. "
               .. "Same as /fdots plates.",
           get = function() return ns.PlatesShown() end,
           set = function(value) ns.SetPlates(value) end },
-        { kind = "check", label = "Friendly nameplates only in combat",
-          tip = "Turns the game's friendly player nameplates on as a fight starts and off when it ends, "
+        { kind = "check", label = "Friendly plates only in combat",
+          tip = "Friendly nameplates only in combat: turns the game's friendly player nameplates on as a fight starts and off when it ends, "
               .. "so the dots only show in fights. Unticking it puts your own setting back. Same as /fdots combat.",
           get = Get("combatPlates"), set = Set("combatPlates") },
 
