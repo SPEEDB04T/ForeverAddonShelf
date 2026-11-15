@@ -13,36 +13,14 @@ local function Set(key)
     return function(value) ns.Set(key, value) end
 end
 
-local function Percent(value)
-    return ("%d%%"):format(math.floor(value * 100 + 0.5))
-end
-
 local function Rows()
     return {
-        { kind = "header", text = "Bar" },
-        { kind = "choice", label = "Show the bar",
-          tip = "The row of aura buttons. The aura that is on is checked, like on the stance bar; the one to switch to glows. "
-              .. "Same as /aura show. In a fight a change waits until the fight is over.",
-          options = {
-              { "always", "Always", "The frame is always on screen." },
-              { "combat", "In fights", "The frame appears when a fight starts and goes when it ends." },
-              { "never", "Never", "No frame. The sound and the line on screen still tell you." },
-          },
-          get = Get("show"), set = Set("show") },
-        { kind = "check", label = "Lock the bar in place",
-          tip = "Unticked, you can drag the bar by any of its buttons (outside a fight).",
-          get = Get("locked"), set = Set("locked") },
-        { kind = "slider", label = "Bar size", min = 0.5, max = 2, step = 0.05, format = "%.2f",
-          get = Get("scale"),
-          set = function(value)
-              if InCombatLockdown() then ns.Print("can't resize the frame in a fight.") return end
-              ns.Set("scale", value)
-          end },
-        { kind = "slider", label = "Fade when nothing to say", min = 0.2, max = 1, step = 0.05, format = Percent,
-          tip = "How solid the bar is while it has nothing to say, that is while your aura is the right one (100%: solid, like the stance bar). It turns fully solid when it suggests a switch.",
-          get = Get("idleAlpha"), set = Set("idleAlpha") },
-
         { kind = "header", text = "Advice" },
+        { kind = "check", label = "Glow the aura to switch to",
+          tip = "The game's spell-alert glow on that aura's stance bar button, and on any action bar button with it. "
+              .. "In a fight it stays until you switch, the advice changes or the fight ends. The aura's tooltip says why. "
+              .. "Same as /aura glow.",
+          get = Get("glow"), set = Set("glow") },
         { kind = "choice", label = "Play style",
           tip = "What the advice is for. Same as /aura style.",
           options = {
@@ -92,7 +70,7 @@ local function Rows()
               tip = "Shows what a suggestion looks like without a fight. Same as /aura test fire; /aura test off ends it.",
               click = function() ns.Test(ns.testing and "off" or "fire") end },
             { label = "Reset settings", confirm = true,
-              tip = "Puts every setting on this page, and the frame's place and size, back to how they started.",
+              tip = "Puts every setting on this page back to how it started.",
               click = function() ns.Reset() end },
         } },
     }

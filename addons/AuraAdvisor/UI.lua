@@ -1,15 +1,15 @@
--- Aura Advisor: the on-screen bar. A copy of the game's stance bar (Blizzard_ActionBar:
--- StanceBar.xml / StanceBar.lua): one SmallActionButtonTemplate button per aura you know, 30 px,
--- 2 px apart, no panel and no text. The aura that is on is checked, the way the stance bar
--- shows the active stance; the aura to switch to gets the game's spell-alert glow, the way a
--- proc shows on an action button. Why it is suggested is in the tooltip, the line in the middle
--- of the screen and /aura.
+-- Aura Advisor: the advice, shown in the game's own UI. There is no bar or frame of its own.
 --
--- The buttons are secure (they cast), so in a fight nothing here may be shown, hidden, moved
--- or re-aimed. That is why there is a button for every aura and the advice is only paint:
--- checked state, glow and icon colour can change in a fight, the buttons themselves can not.
+-- * The aura to switch to gets the game's spell-alert glow (ActionButtonSpellAlertTemplate,
+--   Blizzard_ActionBar/Shared/ActionButtonSpellAlerts.xml) on its button on the game's stance
+--   bar, and on any action bar button that holds that aura, the way the game marks a proc.
+-- * An aura's tooltip (stance bar, action bar, spell) gets the advice under it.
+--
+-- The glow frames are our own, made and run the way ActionButtonSpellAlertManager makes and
+-- runs its own (1.4 x the button, centred), but not through the manager: none of the game's
+-- tables ever holds anything of ours, and nothing on the game's buttons is changed. A child
+-- frame on a button, shown and hidden, is allowed in a fight.
 local addonName, ns = ...
-local Data = ns.Data
 local UI = {}
 ns.UI = UI
 
@@ -27,16 +27,10 @@ do
     LookShotsTargets["AuraAdvisor"] = {
         version = version,
         frames = {
-            { label = "aura bar", frame = function() return UI.frame end },
+            { label = "stance bar glow", frame = function() return UI.shotFrame end, pad = 60 },
         },
     }
 end
-
--- StanceBar's buttons: SmallActionButtonTemplate is 30 x 30; the stance bar's default Edit Mode
--- IconPadding is 2 (EditModePresetLayouts.lua).
-local GAME_SIZE, GAME_GAP = 30, 2
--- Only if this client lacked SmallActionButtonTemplate: the old ActionButtonTemplate, 36 px.
-local OLD_SIZE, OLD_GAP = 36, 6
 
 ----------------------------------------------------------------------
 -- The game's colours
@@ -63,320 +57,190 @@ local function Paint(name, text)
 end
 UI.Paint = Paint
 
-local function UseKeyDown()
-    local ok, v
-    if C_CVar and C_CVar.GetCVarBool then
-        ok, v = pcall(C_CVar.GetCVarBool, "ActionButtonUseKeyDown")
-    elseif GetCVarBool then
-        ok, v = pcall(GetCVarBool, "ActionButtonUseKeyDown")
-    end
-    return ok and v
-end
-
 local function Plain(v)
     if issecretvalue and issecretvalue(v) then return nil end
     return v
 end
 
--- [noform:N] keeps a click on the aura that is already on from doing anything.
-local function CastMacro(info)
-    if info.form then return ("/cast [noform:%d] %s"):format(info.form, info.name) end
-    return "/cast " .. info.name
-end
-UI.CastMacro = CastMacro
+----------------------------------------------------------------------
+-- Which of the game's buttons hold an aura
+----------------------------------------------------------------------
+-- The game's own action bars, by the names Blizzard_ActionBar/Shared/ActionBar.lua gives them.
+local BARS = { "ActionButton", "MultiBarBottomLeftButton", "MultiBarBottomRightButton", "MultiBarRightButton",
+               "MultiBarLeftButton", "MultiBar5Button", "MultiBar6Button", "MultiBar7Button" }
 
-----------------------------------------------------------------------
--- Tooltip: StanceButtonMixin_OnEnter's, with the advice added under it
-----------------------------------------------------------------------
-local function OnEnter(self)
-    local info = self.info
-    if not info then return end
-    local uber = GetCVarBool and select(2, pcall(GetCVarBool, "UberTooltips"))
-    if uber == true and GameTooltip_SetDefaultAnchor then
-        GameTooltip_SetDefaultAnchor(GameTooltip, self)
-    else
-        GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
+-- The aura an action slot holds: the spell itself, or a macro that casts it.
+local function KeyOfAction(slot)
+    slot = Plain(slot)
+    if type(slot) ~= "number" or not GetActionInfo then return nil end
+    local ok, kind, id = pcall(GetActionInfo, slot)
+    if not ok then return nil end
+    kind, id = Plain(kind), Plain(id)
+    if kind == "spell" then return ns.KeyFromSpell(id) end
+    if kind == "macro" and GetMacroSpell then
+        local got, spell = pcall(GetMacroSpell, id)
+        if got then return ns.KeyFromSpell(Plain(spell)) end
     end
-    local ok = false
-    if info.form and GameTooltip.SetShapeshift then
-        ok = pcall(GameTooltip.SetShapeshift, GameTooltip, info.form)
+end
+UI.KeyOfAction = KeyOfAction
+
+local function KeyOfForm(index)
+    index = Plain(index)
+    for key, info in pairs(ns.known) do
+        if info.form == index then return key end
     end
-    if not ok and info.spellID and GameTooltip.SetSpellByID then
-        ok = pcall(GameTooltip.SetSpellByID, GameTooltip, info.spellID)
+end
+
+-- The stance bar's button first (StanceButton i is stance bar slot i), then the action bars.
+local function Targets(key)
+    local list = {}
+    local info = ns.known[key]
+    if not info then return list end
+    if info.form then
+        local b = _G["StanceButton" .. info.form]
+        if type(b) == "table" then list[#list + 1] = b end
     end
-    if not ok then
-        GameTooltip:AddLine(info.name, RGB("HIGHLIGHT_FONT_COLOR"))
-        local r, g, b = RGB("NORMAL_FONT_COLOR")
-        GameTooltip:AddLine(Data.AURAS[self.key].does, r, g, b, true)
-    end
-    local res = ns.result
-    if res then
-        local taken = ns.OtherAuras()[self.key]
-        GameTooltip:AddLine(" ")
-        if self.key == res.shown then
-            local r, g, b = RGB("GREEN_FONT_COLOR")
-            GameTooltip:AddLine("Switch to this: " .. tostring(res.reason), r, g, b, true)
-        elseif res.why[self.key] then
-            local r, g, b = RGB(taken and "RED_FONT_COLOR" or "HIGHLIGHT_FONT_COLOR")
-            GameTooltip:AddLine(res.why[self.key], r, g, b, true)
+    for _, prefix in ipairs(BARS) do
+        for i = 1, 12 do
+            local b = _G[prefix .. i]
+            if type(b) == "table" and KeyOfAction(b.action) == key then list[#list + 1] = b end
         end
-        local r, g, b = RGB("GRAY_FONT_COLOR")
-        GameTooltip:AddLine("Right-click: every aura's points in chat", r, g, b, true)
     end
-    GameTooltip:Show()
+    return list
 end
-
-local function OnLeave()
-    if GameTooltip_Hide then GameTooltip_Hide() else GameTooltip:Hide() end
-end
+UI.Targets = Targets
 
 ----------------------------------------------------------------------
--- Moving: drag any button while the bar is unlocked, outside a fight
+-- The glow
 ----------------------------------------------------------------------
-function UI.SavePosition()
-    local point, _, relPoint, x, y = UI.frame:GetPoint()
-    if type(point) == "string" and type(x) == "number" and type(y) == "number" then
-        ns.db.point = { point, relPoint or point, x, y }
-    end
+local alerts = {}       -- the game's button -> our glow on it (false: this client can't make one)
+UI.alerts = alerts
+
+-- ActionButtonSpellAlertMixin stops the loop when the frame hides (the bar hid, say); start it
+-- again when it shows, while the suggestion stands.
+local function OnAlertShow(a)
+    if a.on and not a.ProcStartAnim:IsPlaying() and not a.ProcLoop:IsPlaying() then a.ProcLoop:Play() end
 end
 
-function UI.RestorePosition()
-    local f, p = UI.frame, ns.db.point
-    if not f or InCombatLockdown() then return end
-    f:ClearAllPoints()
-    if p then f:SetPoint(p[1], UIParent, p[2], p[3], p[4]) else f:SetPoint("CENTER", UIParent, "CENTER", 0, -150) end
-end
-
-local function StartMove()
-    local f = UI.frame
-    if not ns.db.locked and not InCombatLockdown() then f:StartMoving(); f.moving = true end
-end
-
-local function StopMove()
-    local f = UI.frame
-    if f.moving then
-        f:StopMovingOrSizing()
-        f.moving = nil
-        UI.SavePosition()
-    end
-end
-
-----------------------------------------------------------------------
--- Buttons
-----------------------------------------------------------------------
--- A CheckButton flips its own checked state when clicked (StanceButtonMixin_OnClick does the
--- same); put it back until the game says the aura really changed.
-local function PostClick(self, button, down)
-    self:SetChecked(self.on and true or false)
-    if button == "RightButton" and not down then ns.PrintWhy() end
-end
-
--- The game's button: SmallActionButtonTemplate with SecureActionButtonTemplate, the "barebones
--- combo" ActionButton.lua's UpdateFlyout names. Its own OnLoad lays out the art.
-local function GameButton(index, parent)
-    local ok, b = pcall(CreateFrame, "CheckButton", "AuraAdvisorButton" .. index, parent,
-        "SecureActionButtonTemplate, SmallActionButtonTemplate")
-    if ok and type(b) == "table" and type(b.icon) == "table" and type(b.cooldown) == "table" then
-        b.cooldown:SetSwipeColor(0, 0, 0)    -- as StanceButtonMixin_OnLoad
-        return b
-    end
-end
-
--- Only if this client lacked that template: the old ActionButtonTemplate's build.
-local function OldButton(index, parent)
-    local b = CreateFrame("CheckButton", "AuraAdvisorOldButton" .. index, parent, "SecureActionButtonTemplate")
-    b:SetSize(OLD_SIZE, OLD_SIZE)
-    b.icon = b:CreateTexture(nil, "BACKGROUND")
-    b.icon:SetAllPoints()
-    b:SetNormalTexture("Interface\\Buttons\\UI-Quickslot2")
-    local n = b:GetNormalTexture()
-    if n then
-        n:ClearAllPoints()
-        n:SetPoint("CENTER", 0, -1)
-        n:SetSize(66, 66)
-    end
-    b:SetPushedTexture("Interface\\Buttons\\UI-Quickslot-Depress")
-    b:SetHighlightTexture("Interface\\Buttons\\ButtonHilight-Square", "ADD")
-    b:SetCheckedTexture("Interface\\Buttons\\CheckButtonHilight")
-    local c = b:GetCheckedTexture()
-    if c and c.SetBlendMode then c:SetBlendMode("ADD") end
-    return b
-end
-
--- The game's spell-alert glow, built the way ActionButtonSpellAlerts.lua's GetAlertFrame builds
--- it: 1.4 x the button, centred. Made when the buttons are made (out of a fight) and run by
--- hand rather than through ActionButtonSpellAlertManager, so that none of the game's own tables
--- ever holds one of our buttons.
-local function NewGameAlert(b)
-    local ok, a = pcall(CreateFrame, "Frame", nil, b, "ActionButtonSpellAlertTemplate")
-    if not ok or type(a) ~= "table" or type(a.ProcStartAnim) ~= "table" or type(a.ProcLoop) ~= "table" then
+-- Built the way ActionButtonSpellAlerts.lua's GetAlertFrame builds it.
+local function GlowFrame(b)
+    local a = alerts[b]
+    if a ~= nil then return a or nil end
+    local ok, f = pcall(CreateFrame, "Frame", nil, b, "ActionButtonSpellAlertTemplate")
+    if not ok or type(f) ~= "table" or type(f.ProcStartAnim) ~= "table" or type(f.ProcLoop) ~= "table" then
+        alerts[b] = false
         return nil
     end
     local w, h = b:GetSize()
-    a:SetSize(w * 1.4, h * 1.4)
-    a:SetPoint("CENTER", b, "CENTER", 0, 0)
-    a:Hide()
-    return a
+    w, h = Plain(w), Plain(h)
+    if type(w) ~= "number" or type(h) ~= "number" or w <= 0 or h <= 0 then w, h = 30, 30 end
+    f:SetSize(w * 1.4, h * 1.4)
+    f:SetPoint("CENTER", b, "CENTER", 0, 0)
+    f:HookScript("OnShow", OnAlertShow)
+    f:Hide()
+    alerts[b] = f
+    return f
 end
 
-local function NewButton(key, index, parent)
-    local b = GameButton(index, parent)
-    UI.game = b and true or false
-    b = b or OldButton(index, parent)
-    b.key = key
-    b.icon:SetTexture(Data.AURAS[key].icon)
-    if UseKeyDown() then b:RegisterForClicks("AnyDown", "AnyUp") else b:RegisterForClicks("AnyUp") end
-    b:RegisterForDrag("LeftButton")
-    b:SetScript("OnEnter", OnEnter)
-    b:SetScript("OnLeave", OnLeave)
-    b:SetScript("OnDragStart", StartMove)
-    b:SetScript("OnDragStop", StopMove)
-    b:SetScript("PostClick", PostClick)
-    b.alert = NewGameAlert(b)
-    b:Hide()
-    return b
-end
-
--- The suggestion: the game's spell-alert glow on one button. Without the template, the
--- action button's own spell highlight (SpellHighlightAnim), which the game also uses.
-local function Alert(b, on)
-    if (b.alerting and true or false) == on then return end
-    b.alerting = on
-    local a = b.alert
-    if a then
-        if on then
-            a:Show()
-            a.ProcStartAnim:Play()
-        else
-            a.ProcStartAnim:Stop()
-            a.ProcLoop:Stop()
-            a:Hide()
-        end
-    elseif type(b.SpellHighlightTexture) == "table" and type(b.SpellHighlightAnim) == "table" then
-        b.SpellHighlightTexture:SetShown(on)
-        if on then b.SpellHighlightAnim:Play() else b.SpellHighlightAnim:Stop() end
+-- As ActionButtonSpellAlertManager's ShowAlert / HideAlert.
+local function SetGlow(a, on)
+    if (a.on and true or false) == on then return end
+    a.on = on
+    if on then
+        a:Show()
+        a.ProcStartAnim:Play()
+    else
+        a.ProcStartAnim:Stop()
+        a.ProcLoop:Stop()
+        a:Hide()
     end
 end
+
+-- Which buttons hold what changes with the bars; look again on the next think.
+function UI.Refresh()
+    UI.dirty = true
+    ns.thinkNow = true
+end
+
+function UI.Update(res)
+    local key = ns.db and ns.db.glow and res and res.shown or nil
+    if key == UI.glowKey and not UI.dirty then return end
+    UI.glowKey, UI.dirty = key, false
+    local list = key and Targets(key) or {}
+    local want = {}
+    for _, b in ipairs(list) do want[b] = true end
+    for b, a in pairs(alerts) do
+        if a and not want[b] then SetGlow(a, false) end
+    end
+    UI.shotFrame = nil
+    for _, b in ipairs(list) do
+        local a = GlowFrame(b)
+        if a then
+            SetGlow(a, true)
+            UI.shotFrame = UI.shotFrame or a
+        end
+    end
+end
+
+----------------------------------------------------------------------
+-- Tooltips: the advice under the game's own aura tooltip
+----------------------------------------------------------------------
+local function AddAdvice(tt, key)
+    local res = ns.result
+    if not (key and res and ns.enabled and ns.known[key]) then return end
+    local text, color
+    if key == res.shown then
+        text, color = "Aura Advisor: switch to this (" .. tostring(res.reason or "it fits better") .. ")", "GREEN_FONT_COLOR"
+    elseif key == res.current then
+        text, color = "Aura Advisor: on, and right for now", "NORMAL_FONT_COLOR"
+        local better = res.shown and ns.known[res.shown]
+        if better then text = "Aura Advisor: on, but " .. better.name .. " fits better" end
+    elseif res.why[key] then
+        text = "Aura Advisor: " .. res.why[key]
+        color = ns.OtherAuras()[key] and "RED_FONT_COLOR" or "HIGHLIGHT_FONT_COLOR"
+    end
+    if not text then return end
+    local r, g, b = RGB(color)
+    tt:AddLine(" ")
+    tt:AddLine(text, r, g, b, true)
+    tt:Show()
+end
+
+local HOOKS = {
+    SetShapeshift = function(tt, index) AddAdvice(tt, KeyOfForm(index)) end,
+    SetAction = function(tt, slot) AddAdvice(tt, KeyOfAction(slot)) end,
+    SetSpellByID = function(tt, id) AddAdvice(tt, ns.KeyFromSpell(Plain(id))) end,
+}
+
+local function Hook(name)
+    return function(...)
+        local ok, err = pcall(HOOKS[name], ...)
+        if not ok and not UI.hookError then
+            UI.hookError = true
+            ns.Print("tooltip error (said once): " .. tostring(Plain(err) or "a hidden value"))
+        end
+    end
+end
+
+----------------------------------------------------------------------
+-- Setup
+----------------------------------------------------------------------
+-- What the bars hold changes with these; the game updates its buttons on the same events, so
+-- the look waits for the next think, after the game's own handlers.
+local BAR_EVENTS = { "ACTIONBAR_SLOT_CHANGED", "ACTIONBAR_PAGE_CHANGED", "UPDATE_BONUS_ACTIONBAR",
+                     "UPDATE_MULTI_ACTIONBAR", "UPDATE_SHAPESHIFT_FORMS", "PLAYER_ENTERING_WORLD",
+                     "UPDATE_MACROS", "ACTIONBAR_HIDEGRID" }
 
 function UI.Create()
-    if UI.frame then return end
-    local f = CreateFrame("Frame", "AuraAdvisorFrame", UIParent)
-    UI.frame = f
-    f:SetSize(GAME_SIZE, GAME_SIZE)
-    f:SetFrameStrata("MEDIUM")
-    f:SetClampedToScreen(true)
-    f:SetMovable(true)
-
-    f.buttons = {}
-    for index, key in ipairs(Data.ORDER) do
-        f.buttons[key] = NewButton(key, index, f)
-    end
-    UI.size = UI.game and GAME_SIZE or OLD_SIZE
-    UI.gap = UI.game and GAME_GAP or OLD_GAP
-
-    -- the global cooldown after a switch, as StanceBarMixin shows it
-    f:RegisterEvent("UPDATE_SHAPESHIFT_COOLDOWN")
-    f:SetScript("OnEvent", function() UI.UpdateCooldowns() end)
-
-    UI.RestorePosition()
-    UI.ApplySecure()
-end
-
--- Everything the game only allows outside a fight: which buttons there are, what they cast,
--- where they sit, and whether the bar is shown. In a fight it waits for the fight to end.
-function UI.ApplySecure()
-    local f = UI.frame
-    if not f then return end
-    if InCombatLockdown() then UI.pending = true; return end
-    UI.pending = false
-    f:SetScale(ns.db.scale)
-
-    local size, gap = UI.size, UI.gap
-    local n = 0
-    for _, key in ipairs(Data.ORDER) do
-        local b, info = f.buttons[key], ns.known[key]
-        b.info = info
-        if info then
-            b.icon:SetTexture(info.icon)
-            b:SetAttribute("type1", "macro")
-            b:SetAttribute("macrotext1", CastMacro(info))
-            b:ClearAllPoints()
-            b:SetPoint("TOPLEFT", f, "TOPLEFT", n * (size + gap), 0)
-            b:Show()
-            n = n + 1
-        else
-            b:SetAttribute("type1", nil)
-            b:SetAttribute("macrotext1", nil)
-            b:Hide()
+    if UI.events then return end
+    local f = CreateFrame("Frame")
+    UI.events = f
+    for _, ev in ipairs(BAR_EVENTS) do pcall(f.RegisterEvent, f, ev) end
+    f:SetScript("OnEvent", UI.Refresh)
+    if hooksecurefunc and GameTooltip then
+        for name in pairs(HOOKS) do
+            if type(GameTooltip[name]) == "function" then hooksecurefunc(GameTooltip, name, Hook(name)) end
         end
     end
-    f:SetSize(math.max(size, n * size + math.max(0, n - 1) * gap), size)
-
-    if f.driven then
-        if UnregisterStateDriver then UnregisterStateDriver(f, "visibility") end
-        f.driven = nil
-    end
-    if n == 0 or ns.db.show == "never" then
-        f:Hide()
-    elseif ns.db.show == "combat" and RegisterStateDriver then
-        RegisterStateDriver(f, "visibility", "[combat] show; hide")
-        f.driven = true
-    else
-        f:Show()
-    end
-    UI.UpdateCooldowns()
-    UI.Update(ns.result)
-end
-
--- StanceBarMixin:UpdateState's cooldown part. In a fight the game may hide cooldowns from
--- addons; then the sweep is simply left out.
-function UI.UpdateCooldowns()
-    local f = UI.frame
-    if not f or not GetShapeshiftFormCooldown or not CooldownFrame_Set then return end
-    for _, key in ipairs(Data.ORDER) do
-        local b = f.buttons[key]
-        local form = b.info and b.info.form
-        if form and b.cooldown then
-            local ok, start, duration, enable = pcall(GetShapeshiftFormCooldown, form)
-            if ok and Plain(start) and Plain(duration) and Plain(enable) ~= nil then
-                pcall(CooldownFrame_Set, b.cooldown, start, duration, enable)
-            end
-        end
-    end
-end
-
-local function Fade(f, alpha)
-    pcall(f.SetAlpha, f, alpha)
-end
-
--- Can the aura be cast right now (StanceBarMixin:UpdateState's isCastable)?
-local function Castable(info)
-    if not (info.form and GetShapeshiftFormInfo) then return true end
-    local ok, _, _, castable = pcall(GetShapeshiftFormInfo, info.form)
-    if not ok then return true end
-    castable = Plain(castable)
-    return castable ~= false
-end
-
--- Paint only: safe in a fight.
-function UI.Update(res)
-    local f = UI.frame
-    if not f then return end
-    local taken = res and ns.OtherAuras() or {}
-    for _, key in ipairs(Data.ORDER) do
-        local b = f.buttons[key]
-        local info = b.info
-        if info then
-            b.on = res and key == res.current or false
-            b:SetChecked(b.on)
-            -- another paladin has it up: unavailable, so desaturated
-            b.icon:SetDesaturated(taken[key] and not b.on and true or false)
-            -- can't be cast right now (no mana): the stance bar's 0.4
-            if Castable(info) then b.icon:SetVertexColor(1, 1, 1) else b.icon:SetVertexColor(0.4, 0.4, 0.4) end
-            Alert(b, res and key == res.shown or false)
-        else
-            Alert(b, false)
-        end
-    end
-    Fade(f, (res and res.shown) and 1 or ns.db.idleAlpha)
+    UI.dirty = true
 end

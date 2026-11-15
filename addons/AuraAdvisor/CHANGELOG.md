@@ -1,5 +1,12 @@
 # Changelog
 
+## 1.2.0 (2026-11-15)
+
+- No bar of its own any more. The aura to switch to now glows on the game's own stance bar, and on any action bar button that holds it, with the game's proc glow.
+- In a fight the suggestion stays up until you switch, another aura takes over or the fight ends. Before, it went away as soon as the hits paused.
+- Hover an aura on the stance bar or an action bar: the game's tooltip now has the advice under it.
+- New option "Glow the aura to switch to" (`/aura glow`). The bar's settings (show, lock, size, fade) are gone, with their slash commands.
+
 ## 1.1.2 (2026-11-14)
 
 - Lists the aura bar for LookShots, the developer's screenshot helper, so the bar can be checked in the game. Does nothing for anyone without that helper.

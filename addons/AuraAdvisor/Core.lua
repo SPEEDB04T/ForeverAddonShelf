@@ -3,13 +3,15 @@ local ADDON, ns = ...
 local Data, Signals, Advisor = ns.Data, ns.Signals, ns.Advisor
 
 ns.ADDON = ADDON
-ns.VERSION = "1.0.0"
+do
+    local get = (C_AddOns and C_AddOns.GetAddOnMetadata) or GetAddOnMetadata
+    local ok, v = false, nil
+    if get then ok, v = pcall(get, ADDON or "AuraAdvisor", "Version") end
+    ns.VERSION = (ok and type(v) == "string") and v or "?"
+end
 
 local defaults = {
-    show = "always",            -- the frame: always | combat | never
-    locked = false,
-    scale = 1,
-    idleAlpha = 1,              -- how solid the bar is while there is nothing to suggest (solid, like the stance bar)
+    glow = true,                -- the game's spell-alert glow on the aura to switch to
     style = "auto",             -- auto | damage | tank | healer
     idle = "auto",              -- the aura between fights: auto | devotion | retribution | concentration
     sensitivity = "normal",     -- low | normal | high
@@ -19,12 +21,13 @@ local defaults = {
     chat = false,               -- a line in the chat window
 }
 local CHOICES = {
-    show = { always = true, combat = true, never = true },
     style = { auto = true, damage = true, tank = true, healer = true },
     idle = { auto = true, devotion = true, retribution = true, concentration = true },
     sensitivity = { low = true, normal = true, high = true },
 }
-local RANGES = { scale = { 0.5, 2 }, idleAlpha = { 0.2, 1 } }
+local RANGES = {}
+-- 1.0-1.1 had a bar of its own; 1.2 shows the advice on the game's bars. Its settings go.
+local OLD_KEYS = { "show", "locked", "scale", "idleAlpha", "point", "v110" }
 
 local TICK = 0.4                -- seconds between two looks at the fight
 local HOLD = 0.8                -- a suggestion must stand this long before it is shown
@@ -57,16 +60,7 @@ local function Repair(db)
             db[key] = math.max(RANGES[key][1], math.min(RANGES[key][2], have))
         end
     end
-    if db.point ~= nil and (type(db.point) ~= "table" or type(db.point[1]) ~= "string"
-        or type(db.point[3]) ~= "number" or type(db.point[4]) ~= "number") then
-        db.point = nil
-    end
-    -- 1.0.0 faded the bar to 0.6 by default; 1.1.0 keeps it solid like the stance bar. Only an
-    -- untouched 1.0.0 default moves; a value someone picked stays.
-    if not db.v110 then
-        if db.idleAlpha == 0.6 then db.idleAlpha = 1 end
-        db.v110 = true
-    end
+    for _, key in ipairs(OLD_KEYS) do db[key] = nil end
 end
 
 -- Only real settings, and only values of the right kind.
@@ -75,9 +69,6 @@ function ns.Set(key, value)
     if CHOICES[key] and not CHOICES[key][value] then return false end
     if RANGES[key] then value = math.max(RANGES[key][1], math.min(RANGES[key][2], value)) end
     ns.db[key] = value
-    if key == "show" or key == "scale" or key == "locked" then
-        if ns.UI and ns.UI.frame then ns.UI.ApplySecure() end
-    end
     ns.thinkNow = true
     return true
 end
@@ -317,15 +308,30 @@ function ns.Think(now)
     res.style, res.styleWhy = style, styleWhy
     ns.sticky = res.suggest
 
-    -- A suggestion is shown once it has stood for a moment, and then stays until it is gone.
+    -- A suggestion is shown once it has stood for a moment. In a fight it then stays until you
+    -- switch, another suggestion takes its place or the fight ends: hits come in bursts, and a
+    -- pause between two pulls of a boss is no reason to take it down.
     if res.suggest ~= pending.key then pending.key, pending.since = res.suggest, now end
-    if res.suggest and (res.suggest == ns.shownKey or now - pending.since >= HOLD) then
+    local fresh = res.suggest and (res.suggest == ns.shownKey or now - pending.since >= HOLD)
+    local held = ns.held
+    if fresh then
         res.shown = res.suggest
+        if held and ns.inCombat and held.key == res.suggest and not res.why[res.suggest] then
+            -- still ahead, but the hits behind it have faded: keep saying why it came up
+            res.reason, res.held = held.reason, true
+        else
+            ns.held = ns.inCombat and { key = res.suggest, reason = res.reason } or nil
+        end
+    elseif held and ns.inCombat and held.key ~= res.current and ns.knownSet[held.key]
+        and not ns.OtherAuras()[held.key] then
+        res.shown, res.reason, res.held = held.key, held.reason, true
+    else
+        ns.held = nil
     end
     local changed = res.shown ~= ns.shownKey
     ns.shownKey = res.shown
     ns.result, ns.summary = res, sum
-    -- Between fights the frame alone says it; sound and banner are for fights.
+    -- Between fights the glow alone says it; sound and banner are for fights.
     if changed and res.shown and (not res.quiet or (not res.current and ns.inCombat)) then
         Alert(res, now)
     end
@@ -350,7 +356,7 @@ local function OnUpdate(_, dt)
     if knownDirty then
         knownDirty, formsDirty = false, false
         ns.ResolveAuras()
-        ns.UI.ApplySecure()
+        ns.UI.Refresh()
     elseif formsDirty then
         formsDirty = false
         ns.ScanForms()
@@ -394,7 +400,7 @@ local function OnEvent(_, event, a1, a2, a3, a4, a5)
         ns.inCombat = false
         ns.forgetAt = GetTime() + FORGET_AFTER
         buffDirty, formsDirty = true, true
-        ns.UI.ApplySecure()             -- whatever had to wait for the fight to end
+        ns.held, ns.thinkNow = nil, true    -- the fight is over: so is its suggestion
     elseif event == "PLAYER_DEAD" then
         ns.seenCurrent = nil
         formsDirty, buffDirty = true, true
@@ -449,8 +455,6 @@ function ns.Reset()
     for k in pairs(ns.db) do ns.db[k] = nil end
     for k, v in pairs(defaults) do ns.db[k] = v end
     ns.db.minimap = minimap
-    ns.UI.RestorePosition()
-    ns.UI.ApplySecure()
     if ns.Kit then ns.Kit.RefreshMinimap() end
     ns.thinkNow = true
     ns.Print("settings reset")
@@ -503,6 +507,12 @@ function ns.PrintDebug()
         taken[#taken + 1] = Data.AURAS[key].short .. " (" .. (type(who) == "string" and who or "another paladin") .. ")"
     end
     ns.Print("auras from other paladins: " .. (#taken > 0 and table.concat(taken, ", ") or "none"))
+    local glowing = {}
+    for b, a in pairs(ns.UI.alerts) do
+        if a and a.on then glowing[#glowing + 1] = (b.GetName and b:GetName()) or "a button" end
+    end
+    ns.Print("glowing on: " .. (#glowing > 0 and table.concat(glowing, ", ") or "nothing")
+        .. (ns.held and ns.result and ns.result.held and " (held until you switch or the fight ends)" or ""))
 end
 
 -- A pretend burst of damage, to see what the advisor does without a fight.
@@ -550,22 +560,20 @@ local function HasKit()
     return false
 end
 
-local SHOW_TEXT = { always = "always shown", combat = "shown in fights only", never = "hidden" }
-
 local function Help()
     ns.Print("commands:")
     ns.Print("  /aura  - what the advisor thinks right now, and why")
     ns.Print("  /aura config  - the options window")
-    ns.Print("  /aura show always|combat|never  - the frame (now: " .. ns.db.show .. ")")
     ns.Print("  /aura style auto|damage|tank|healer  (now: " .. ns.db.style .. ")")
     ns.Print("  /aura default auto|devotion|retribution|concentration  - your aura between fights (now: " .. ns.db.idle .. ")")
     ns.Print("  /aura sens low|normal|high  - how quickly it suggests a switch (now: " .. ns.db.sensitivity .. ")")
-    ns.Print("  /aura sound | banner | chat | between  - switch that on or off")
+    ns.Print("  /aura glow | sound | banner | chat | between  - switch that on or off")
     ns.Print("  /aura test fire|frost|shadow|melee|push|off  - a pretend fight")
-    ns.Print("  /aura lock | unlock | scale <0.5-2> | minimap | reset | debug")
+    ns.Print("  /aura minimap | reset | debug")
 end
 
 local TOGGLES = {
+    glow = { "glow", "the glow on the aura to switch to" },
     sound = { "sound", "sound" },
     banner = { "banner", "the line in the middle of the screen" },
     chat = { "chat", "the line in chat" },
@@ -590,12 +598,9 @@ SlashCmdList.AURAADVISOR = function(msg)
             ns.Kit.SetMinimapShown(not ns.Kit.MinimapShown())
             ns.Print("minimap button " .. (ns.Kit.MinimapShown() and "on" or "off"))
         end
-    elseif cmd == "show" then
-        if ns.Set("show", arg) then
-            ns.Print("frame: " .. SHOW_TEXT[arg] .. (InCombatLockdown() and " (changes when the fight is over)" or ""))
-        else
-            ns.Print("usage: /aura show always|combat|never   (now: " .. ns.db.show .. ")")
-        end
+    elseif cmd == "show" or cmd == "lock" or cmd == "unlock" or cmd == "scale" then
+        ns.Print("there is no bar of its own any more: the aura to switch to glows on your stance bar "
+            .. "and action bars, and its tooltip says why. /aura glow switches the glow off or on.")
     elseif cmd == "style" or cmd == "role" then
         if ns.Set("style", arg) then
             ns.Print("play style: " .. arg)
@@ -620,16 +625,6 @@ SlashCmdList.AURAADVISOR = function(msg)
         ns.Print(text .. " " .. (ns.db[key] and "on" or "off"))
     elseif cmd == "test" then
         if not ns.Test(arg) then ns.Print("usage: /aura test fire|frost|shadow|melee|push|off") end
-    elseif cmd == "lock" or cmd == "unlock" then
-        ns.Set("locked", cmd == "lock")
-        ns.Print(ns.db.locked and "frame locked" or "bar unlocked (drag it by any of its buttons, outside a fight)")
-    elseif cmd == "scale" then
-        local n = tonumber(arg)
-        if n and n >= 0.5 and n <= 2 and not InCombatLockdown() then
-            ns.Set("scale", n)
-        else
-            ns.Print("usage: /aura scale 1.2 (outside a fight)")
-        end
     elseif cmd == "reset" then
         ns.Reset()
     elseif cmd == "debug" then
