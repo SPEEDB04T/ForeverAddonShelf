@@ -2,7 +2,7 @@
 local ADDON, ns = ...
 
 ns.ADDON = ADDON
-ns.VERSION = "1.0.0"
+ns.VERSION = "1.0.1"
 ns.NAME = "Turn-in Route"
 ns.ICON = "Interface\\Icons\\INV_Misc_Map_01"
 
@@ -162,7 +162,7 @@ function ns.NextStop()
         return true
     end
     ns.following = nil
-    if #plan.unknown + #plan.grouped > 0 then
+    if #plan.unknown + #plan.inside > 0 then
         ns.Print("No finished quest left on the route; the ones left are in the lists under it.")
     else
         ns.Print("No finished quests left to hand in.")
@@ -195,8 +195,8 @@ function ns.Report()
         ns.Print(("  %d. %s (%d), %s: %s"):format(leg.number, leg.text, #leg.quests, ns.Duration(leg.seconds),
             table.concat(titles, ", ")))
     end
-    for _, quest in ipairs(plan.grouped) do
-        ns.Print(("  -  %s (%s quest, not on the route)"):format(quest.title, quest.tagName or quest.tag))
+    for _, quest in ipairs(plan.inside) do
+        ns.Print(("  -  %s (hand in inside %s)"):format(quest.title, quest.turnIn.instance))
     end
     for _, quest in ipairs(plan.unknown) do
         ns.Print(("  -  %s (turn-in place unknown)"):format(quest.title))

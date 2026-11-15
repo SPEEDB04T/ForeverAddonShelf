@@ -8,7 +8,7 @@ Plans the trip that hands in your finished quests. It doesn't just go nearest-by
 3. Take the boat to Auberdine, then ride to Darkshore (1), 7 min
 ```
 
-- **Window:** `/turnin`. Each leg is a quest log header with its quests under it. Click a leg to point the game's quest arrow at it. Two lists sit under the route: group, dungeon and raid quests (hand those in with your group), and quests nobody knows the turn-in place for.
+- **Window:** `/turnin`. Each leg is a quest log header with its quests under it. Click a leg to point the game's quest arrow at it. Two lists sit under the route: quests handed in inside a dungeon or raid (named after the instance, since the route cannot lead in there), and quests nobody knows the turn-in place for. Dungeon, group and elite quests handed in outside, as most are, are on the route like any other; their row carries the quest log's tag ("Dungeon", "Group", "Elite").
 - **Follow the route:** the Follow route button, or `/turnin next`, super tracks the first stop. Once you hand it in, the arrow moves to the next stop. Tracking anything else ends this.
 - **Quest log:** with ForeverCore installed, the route is a side tab of the quest log. Without it, the quest log gets a side button that opens the window.
 - **Options:** `/turnin config`, or right-click the minimap button.

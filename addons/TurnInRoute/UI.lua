@@ -145,9 +145,9 @@ local function ShowRowTooltip(self)
         if ns.following and ns.following == data.id then
             GameTooltip:AddLine("Super tracked: handing it in moves the arrow to the next stop.", wr, wg, wb, true)
         end
-    elseif data.section == "group" then
-        GameTooltip:AddLine("Not on the route: a group, dungeon or raid quest waits for your group or sits in an instance.",
-            wr, wg, wb, true)
+    elseif data.section == "inside" then
+        GameTooltip:AddLine(("Not on the route: it is handed in inside %s, where the route cannot lead."):format(
+            quest.turnIn.instance), wr, wg, wb, true)
     else
         GameTooltip:AddLine("Not on the route: neither the game nor Questie says where it is handed in.", wr, wg, wb, true)
     end
@@ -155,7 +155,13 @@ local function ShowRowTooltip(self)
     local function Fact(label, value) GameTooltip:AddDoubleLine(label, value, gr, gg, gb, wr, wg, wb) end
     local turnIn = quest.turnIn
     if turnIn and turnIn.npc then Fact("Hand in to", turnIn.npc) end
-    if turnIn and turnIn.zone then Fact("Hand in at", turnIn.zone) elseif quest.zone then Fact("Zone", quest.zone) end
+    if turnIn and turnIn.instance then
+        Fact("Hand in inside", turnIn.instance)
+    elseif turnIn and turnIn.zone then
+        Fact("Hand in at", turnIn.zone)
+    elseif quest.zone then
+        Fact("Zone", quest.zone)
+    end
     if turnIn then Fact("Place from", SourceText(turnIn.source)) end
     if quest.level then Fact("Level", tostring(quest.level)) end
     if quest.tagName then Fact("Type", quest.tagName) end
@@ -275,8 +281,9 @@ end
 
 local function LineFor(data)
     local quest = data.quest
-    if data.section == "group" then
-        return quest.tagName or "Group quest"
+    if data.section == "inside" then
+        local npc = quest.turnIn.npc
+        return npc and (quest.turnIn.instance .. ": " .. npc) or quest.turnIn.instance
     elseif data.section == "unknown" then
         return quest.zone and (quest.zone .. ": turn-in place unknown") or "Turn-in place unknown"
     end
@@ -287,7 +294,9 @@ end
 
 local function FillRow(row, data)
     row.data = data
-    local tag = ns.IsTracked(data.id) and "Tracked" or nil
+    -- The right-hand tag: "Tracked" while the arrow points at it, else the quest's kind
+    -- ("Dungeon", "Group", "Elite"), the way the quest log tags its rows.
+    local tag = ns.IsTracked(data.id) and "Tracked" or data.quest.tagName
     row.tag:SetText(tag or "")
     row.tag:SetShown(tag ~= nil)
     row.title:ClearAllPoints()
@@ -365,7 +374,8 @@ function UI.LegTitle(leg)
     return ("%d. %s (%d), %s"):format(leg.number, leg.text, #leg.quests, ns.Duration(leg.seconds))
 end
 
-local GROUP_TIP = "Group, dungeon and raid quests are left off the route: hand them in with your group or inside the instance."
+local INSIDE_TIP = "These are handed in inside a dungeon or raid, where the route cannot lead. Dungeon and group "
+    .. "quests handed in outside are on the route like any other."
 local UNKNOWN_TIP = "Neither the game nor Questie says where these are handed in. Questie, when installed, knows most of them."
 
 -- What a list shows for a plan: { { header = {...} }, { row = {...} }, ... }
@@ -379,9 +389,9 @@ function UI.Items(plan)
         items[#items + 1] = { header = { leg = leg, title = UI.LegTitle(leg) } }
         for _, quest in ipairs(leg.quests) do Row(quest, leg, "leg") end
     end
-    if #(plan.grouped or {}) > 0 then
-        items[#items + 1] = { header = { title = "Group, dungeon and raid quests", tip = GROUP_TIP } }
-        for _, quest in ipairs(plan.grouped) do Row(quest, nil, "group") end
+    if #(plan.inside or {}) > 0 then
+        items[#items + 1] = { header = { title = "Hand in inside a dungeon", tip = INSIDE_TIP } }
+        for _, quest in ipairs(plan.inside) do Row(quest, nil, "inside") end
     end
     if #(plan.unknown or {}) > 0 then
         items[#items + 1] = { header = { title = "Turn-in place unknown", tip = UNKNOWN_TIP } }
@@ -430,7 +440,7 @@ function UI.FillList(list, plan, top)
 end
 
 function UI.IsEmpty(plan)
-    return #(plan.legs or {}) + #(plan.grouped or {}) + #(plan.unknown or {}) == 0
+    return #(plan.legs or {}) + #(plan.inside or {}) + #(plan.unknown or {}) == 0
 end
 
 ----------------------------------------------------------------------

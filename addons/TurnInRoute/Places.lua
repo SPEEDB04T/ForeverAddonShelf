@@ -12,13 +12,47 @@ local TAG_KIND = {
     [1] = "group", [21] = "class", [41] = "pvp", [62] = "raid", [81] = "dungeon", [83] = "legendary",
     [84] = "escort", [85] = "dungeon", [88] = "raid", [89] = "raid",
 }
--- Quests for a group, a dungeon or a raid: their turn-in can wait for the group or sit inside
--- an instance, so they get their own list instead of a place on the route.
-Places.GROUP_TAGS = { group = true, dungeon = true, raid = true }
+-- What the row says a quest is when the game gives no tag name.
+local TAG_LABEL = { group = "Group", dungeon = "Dungeon", raid = "Raid" }
 
 function Places.MapName(mapID)
     local info = C_Map and Call(C_Map.GetMapInfo, mapID)
     return Str(Field(info, "name"))
+end
+
+-- A dungeon or raid map (Enum.UIMapType.Dungeon): returns the instance's name, from the top
+-- dungeon map above it (a dungeon's floors are dungeon maps too), and the map above that
+-- (the zone outside); nil for any other map.
+function Places.InstanceName(mapID)
+    if not (mapID and C_Map and C_Map.GetMapInfo) then return nil end
+    local dungeon = Enum and Enum.UIMapType and Num(Enum.UIMapType.Dungeon) or 4
+    local info = Call(C_Map.GetMapInfo, mapID)
+    if Num(Field(info, "mapType")) ~= dungeon then return nil end
+    local name, outside = Str(Field(info, "name")), nil
+    for _ = 1, 5 do
+        local parent = Num(Field(info, "parentMapID"))
+        local up = parent and parent > 0 and Call(C_Map.GetMapInfo, parent)
+        if not up then break end
+        if Num(Field(up, "mapType")) ~= dungeon then outside = parent; break end
+        info = up
+        name = Str(Field(info, "name")) or name
+    end
+    return name or ("Instance " .. mapID), outside
+end
+
+-- A turn-in inside an instance: the route cannot lead there, so it gets its own list.
+-- A cave the game draws as a dungeon map but that lies in the open world (its point is on
+-- the same continent as the zone around it) stays on the route.
+local function InstanceTurnIn(mapID, pos)
+    local name, outside = Places.InstanceName(mapID)
+    if not name then return pos end
+    if pos and outside then
+        local zone = Places.WorldPos(outside, 0.5, 0.5)
+        if zone and zone.continent == pos.continent then return pos end
+    end
+    pos = pos or { map = mapID }
+    pos.instance, pos.zone = name, name
+    return pos
 end
 
 -- A point on a map (0..1) as { continent, x, y, map, zone } in world yards, or nil.
@@ -64,12 +98,14 @@ local function GameTurnIn(id, cache)
         if type(pins) ~= "table" then pins = false end
         cache[mapID] = pins
     end
-    if not pins then return nil end
-    for _, pin in ipairs(pins) do
+    -- Inside an instance the game may have no pin to show while you are outside: the
+    -- quest's map alone says where it is handed in.
+    for _, pin in ipairs(pins or {}) do
         if Num(Field(pin, "questID")) == id then
-            return Places.WorldPos(mapID, Num(Field(pin, "x")), Num(Field(pin, "y")))
+            return InstanceTurnIn(mapID, Places.WorldPos(mapID, Num(Field(pin, "x")), Num(Field(pin, "y"))))
         end
     end
+    return InstanceTurnIn(mapID, nil)
 end
 
 -- Questie (optional): the NPC or object that takes the quest, at its first known spawn, and its name.
@@ -91,7 +127,7 @@ local function QuestieTurnIn(db, id)
                         local point = type(points) == "table" and points[1]
                         local x, y = type(point) == "table" and Num(point[1]), type(point) == "table" and Num(point[2])
                         if mapID and x and y then
-                            local pos = Places.WorldPos(mapID, x / 100, y / 100)
+                            local pos = InstanceTurnIn(mapID, Places.WorldPos(mapID, x / 100, y / 100))
                             if pos then
                                 pos.npc = Str(Call(query, who, "name"))
                                 return pos
@@ -115,10 +151,11 @@ local function ReadTag(C, id, quest)
     else
         tagID, tagName = Num(a), Str(b)
     end
+    -- Only a label for the row: a finished quest is routed by where it is handed in, whatever
+    -- its tag (a dungeon quest is mostly handed in to someone in a town).
     quest.tag = tagID and TAG_KIND[tagID] or nil
-    quest.tagName = tagName
-    if not quest.tag and elite then quest.tag = "group" end
-    if not quest.tag and (quest.suggestedGroup or 0) >= 2 then quest.tag = "group" end
+    quest.elite = elite or nil
+    quest.tagName = tagName or (quest.tag and TAG_LABEL[quest.tag]) or (elite and "Elite") or nil
 end
 
 -- Returns the finished quests ({ id, title, level, zone, tag, tagName, xp, money, turnIn }) and

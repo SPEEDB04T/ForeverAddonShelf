@@ -1,7 +1,7 @@
 ## Interface: 16001, 16002
 ## Title: Turn-in Route
 ## Notes: Plans the trip to hand in your finished quests: zone by zone and town by town, with your flight paths, hearthstone, boats and zeppelins, one numbered leg at a time.
-## Version: 1.0.0
+## Version: 1.0.1
 ## OptionalDeps: Questie, ForeverCore
 ## SavedVariables: TurnInRouteDB
 ## SavedVariablesPerCharacter: TurnInRouteCharDB

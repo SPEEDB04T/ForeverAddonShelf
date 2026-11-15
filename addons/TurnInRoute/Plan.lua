@@ -379,17 +379,24 @@ end
 ----------------------------------------------------------------------
 function Plan.Make(quests, here, ctx)
     local Travel = ns.Travel
-    local plan = { legs = {}, grouped = {}, unknown = {}, seconds = 0, located = here ~= nil, travel = ctx }
+    local plan = { legs = {}, inside = {}, unknown = {}, seconds = 0, located = here ~= nil, travel = ctx }
     local placed = {}
+    -- Every finished quest goes where its turn-in is, whatever its tag; only a turn-in
+    -- inside an instance (where the route cannot lead) or an unknown one is left off.
     for _, quest in ipairs(quests or {}) do
-        if quest.tag and ns.Places.GROUP_TAGS[quest.tag] then
-            plan.grouped[#plan.grouped + 1] = quest
-        elseif not quest.turnIn then
+        local turnIn = quest.turnIn
+        if turnIn and turnIn.instance then
+            plan.inside[#plan.inside + 1] = quest
+        elseif not (turnIn and turnIn.x and turnIn.y and turnIn.continent) then
             plan.unknown[#plan.unknown + 1] = quest
         else
             placed[#placed + 1] = quest
         end
     end
+    table.sort(plan.inside, function(a, b)
+        if a.turnIn.instance ~= b.turnIn.instance then return a.turnIn.instance < b.turnIn.instance end
+        return a.id < b.id
+    end)
     if #placed == 0 then return plan end
 
     local stops = MakeStops(placed)
@@ -507,8 +514,8 @@ function Plan.Summary(plan)
     local count = 0
     for _, leg in ipairs(plan.legs) do count = count + #leg.quests end
     local extra = {}
-    if #plan.grouped > 0 then
-        extra[#extra + 1] = Plural(#plan.grouped, "group, dungeon or raid quest", "group, dungeon or raid quests")
+    if #plan.inside > 0 then
+        extra[#extra + 1] = Plural(#plan.inside, "quest handed in inside a dungeon", "quests handed in inside a dungeon")
     end
     if #plan.unknown > 0 then
         extra[#extra + 1] = Plural(#plan.unknown, "quest with no known turn-in place", "quests with no known turn-in place")
