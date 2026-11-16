@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.19.0
+
+- Mailbox mode, tips, the counter window and the numbers moved to their own addon, **Mailbox Slutting** (on the same addon page). Install it to keep them: with both installed everything looks and works as before, and your tips, tippers and numbers are copied over.
+- Without Mailbox Slutting the shop still posts ads, with the reminder window. `/slutshop mailbox` and `/slutshop counter` then say which addon to get.
+- The Accept tip key you bound under Slutmog Shop keeps working when Mailbox Slutting is installed.
+
 ## 1.18.0
 
 - Every third tip jar line counts the jar out loud: "counts the tip jar: 12 tips today.". The count is seeded like a busker's hat: today's real tips plus a head start of a few, picked once a day. It only ever goes up.

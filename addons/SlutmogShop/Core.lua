@@ -15,7 +15,20 @@
 -- works too). A reminder in your own chat says when it is time for the next one.
 local ADDON, ns = ...
 
-ns.VERSION = "1.18.0"
+-- Mailbox mode, tips, the counter and the numbers are their own addon since 1.19.0, Mailbox Slutting
+-- (SuccuDev: "can we split off mailbox slutting to its own addon"). When it is installed the shop
+-- reaches its parts under the old names: ns.Mailbox, ns.Tips, ns.Counter, ns.Stat and ns.Stats are
+-- looked up there, and are nil without it. It reaches the shop through the global SlutmogShopAPI.
+local MAIL = { Mailbox = true, Tips = true, Counter = true, Stat = true, Stats = true }
+setmetatable(ns, { __index = function(_, k)
+    if not MAIL[k] then return nil end
+    local m = rawget(_G, "MailboxSlutting")
+    if type(m) == "table" then return m[k] end
+end })
+SlutmogShopAPI = ns
+local MAIL_MISSING = "that is the Mailbox Slutting addon now, and it is not installed (or turned off). It is on the same addon page."
+
+ns.VERSION = "1.19.0"
 ns.TITLE = "Slutmog Shop"
 ns.ICON = "Interface\\Icons\\INV_Misc_Coin_02"
 ns.ACCENT = { 0.96, 0.55, 0.78 }
@@ -1493,51 +1506,6 @@ local function Log(channel, text, result)
     return entry
 end
 
--- The counter's numbers: per day (the last 30 kept) and all time. db.stats = { days = { [day] = {...} }, all = {...} }.
--- Keys: tips, tipCopper, ads, visitors, emotes, jar, welcomes, open (seconds the shop was open).
-local STAT_DAYS = 30
-local function DayKey(t)
-    t = t or time()
-    if type(date) == "function" then
-        local ok, d = pcall(date, "%Y-%m-%d", t)
-        if ok and type(d) == "string" then return d end
-    end
-    return ("%08d"):format(math.floor(t / 86400))
-end
-
-function ns.Stat(key, n)
-    if not db then return end
-    db.stats = type(db.stats) == "table" and db.stats or {}
-    local s = db.stats
-    s.days = type(s.days) == "table" and s.days or {}
-    s.all = type(s.all) == "table" and s.all or {}
-    local d = DayKey()
-    if type(s.days[d]) ~= "table" then
-        s.days[d] = {}
-        local keys = {}
-        for k in pairs(s.days) do keys[#keys + 1] = k end
-        table.sort(keys)
-        for i = 1, #keys - STAT_DAYS do s.days[keys[i]] = nil end
-    end
-    n = n or 1
-    s.days[d][key] = (tonumber(s.days[d][key]) or 0) + n
-    s.all[key] = (tonumber(s.all[key]) or 0) + n
-end
-
--- days nil: all time; 0: today; n: the last n days, today in.
-function ns.Stats(days)
-    local s = db and type(db.stats) == "table" and db.stats or {}
-    if days == nil then return type(s.all) == "table" and s.all or {} end
-    local out, now = {}, time()
-    for i = 0, math.max(0, days - 1) do
-        local t = type(s.days) == "table" and s.days[DayKey(now - i * 86400)]
-        if type(t) == "table" then
-            for k, v in pairs(t) do out[k] = (out[k] or 0) + (tonumber(v) or 0) end
-        end
-    end
-    return out
-end
-
 function ns.Wait()
     if not (db and ns.lastPostAt and db.gap and db.gap > 0) then return 0 end
     return max(0, db.gap - (Now() - ns.lastPostAt))
@@ -1648,7 +1616,7 @@ function ns.Post()
     ns.lastPostAt = Now()
     if db.channel == "TURNS" then db.turn = chatType == "YELL" and 1 or 2 end      -- the other one next
     db.posts = (db.posts or 0) + 1
-    ns.Stat("ads")
+    if ns.Stat then ns.Stat("ads") end      -- the counter's numbers (Mailbox Slutting)
     if ns.Counter and ns.Counter.Posted then pcall(ns.Counter.Posted) end
     if p.src then db.sent[p.src] = (tonumber(db.sent[p.src]) or 0) + 1 end
     sent.entry = Log(label, p.text, awaiting == sent and "sent" or "seen")
@@ -1769,7 +1737,7 @@ local function PrintHelp()
         "/slutshop set [top] [bottom] - sell two of your wares as a set, one ad for both (/slutshop unset [item] undoes it)",
         "/slutshop reroll - another ad for the same ware",
         "/slutshop prompt - the Post button in the middle of the screen, now",
-        "/slutshop mailbox - mailbox mode: emote back at admirers, see who looked and whispered, one-click replies (/smog mailbox works too)",
+        "/slutshop mailbox - start or stop dancing on the mailbox (the Mailbox Slutting addon; /smog mailbox and /mailslut open work too)",
         "/slutshop channel Trade - where ads go (Say, Yell, Guild, any channel you are in, or turns: Trade and Yell by turns)",
         "/slutshop options - the options",
         "/slutshop status - what the shop is set to",
@@ -1864,9 +1832,9 @@ local function Slash(msg)
             Print("shift-click a ware that is part of a set into the command: /slutshop unset [item]")
         end
     elseif cmd == "mailbox" then
-        if ns.Mailbox then ns.Mailbox.Toggle() else Print("mailbox mode did not load.") end
+        if ns.Mailbox then ns.Mailbox.Toggle() else Print(MAIL_MISSING) end
     elseif cmd == "counter" then
-        if ns.Counter then ns.Counter.Toggle() else Print("the counter did not load.") end
+        if ns.Counter then ns.Counter.Toggle() else Print(MAIL_MISSING) end
     elseif cmd == "prompt" then
         if not (ns.UI and ns.UI.ShowPrompt and ns.UI.ShowPrompt(true)) then
             Print("nothing to post: " .. tostring(select(2, ns.Next())))
@@ -1996,7 +1964,11 @@ end
 BINDING_HEADER_SLUTMOGSHOP = "Slutmog Shop"
 BINDING_NAME_SLUTMOGSHOP_POST = "Post the next ad"
 BINDING_NAME_SLUTMOGSHOP_TOGGLE = "Open or close the shop window"
-BINDING_NAME_SLUTMOGSHOP_ACCEPTTIP = "Accept a tip (a trade where only they give gold)"
+-- The tips went to Mailbox Slutting; the key you bound here keeps working.
+BINDING_NAME_SLUTMOGSHOP_ACCEPTTIP = "Accept a tip (Mailbox Slutting does it)"
+function SlutmogShop_AcceptTip()
+    if ns.Tips and ns.Tips.Accept then ns.Tips.Accept() end
+end
 
 function SlutmogShop_Post() ns.Post() end
 function SlutmogShop_Toggle() ToggleWindow() end

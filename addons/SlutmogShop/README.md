@@ -60,8 +60,8 @@ Openers and ad lines take turns, each used once before any repeats. If an ad is 
 | `/slutshop scan` | look through your bags for pieces from the slutmog list and put them on the shelf |
 | `/slutshop reroll` | another ad for the same ware |
 | `/slutshop prompt` | the Post button in the middle of the screen, now |
-| `/slutshop counter` | the counter up or away (below) |
-| `/slutshop mailbox` or `/smog mailbox` | the shop open or closed: dancing and replies (below) |
+| `/slutshop counter` | the counter up or away (needs Mailbox Slutting) |
+| `/slutshop mailbox` or `/smog mailbox` | start or stop dancing on the mailbox (needs Mailbox Slutting) |
 | `/slutshop set [top] [bottom]` | sell two of your wares as a set, one ad for both (`/slutshop unset [item]` undoes it) |
 | `/slutshop ads [item]` | a piece's ready-made ads (without an item: which wares have them) |
 | `/slutshop channel Trade` | where ads go |
@@ -74,30 +74,6 @@ Openers and ad lines take turns, each used once before any repeats. If an ad is 
 
 Shortest gap between ads (60 seconds), the reminder and its sound, which ads (ready-made, by turns with yours, or only yours), whether pieces from your bags go on the shelf by themselves, whether only wares you still have go in, the order of wares, how prices read, and the minimap button.
 
-## The counter
+## Mailbox Slutting
 
-The window that stays on screen while you stand at the mailbox, up from login:
-
-- **The ad**: the next ad with its item (hover it for the tooltip), a big **Post ad** button and **Reroll**. While you have to wait the button counts down ("Next ad in 3:40"); when the next ad is due it lights up.
-- **The mailbox panel** (below).
-- **The numbers**: today's tips and their gold, ads posted, visitors and time open. Hover for the last 7 days and all time.
-- **Open shop / Close shop**, **Wares** (the shop window) and **Options**.
-
-It gets out of the way in a fight and comes back after. Its close button puts it away and closes the shop; `/slutshop counter` brings it back.
-
-## Mailbox mode
-
-For standing around a city mailbox in your wares. **Open shop** on the counter (or `/slutshop mailbox`, `/smog mailbox`) starts you dancing and answering; **Close shop** stops it. Whoever is waiting for an answer is on the big button: it emotes at them (Wink at Bob, Smile at Bob...), Other emote picks a different one, Whisper price whispers them your ware and its price.
-
-Replies go out in /e with the game's own words ("winks slyly at Bob."), because the game's emotes play an animation that stops your dance. If the game does not let a line out, the real emote goes instead.
-
-- **Emotes back by itself.** Somebody winks, whistles, kisses, flirts, dances or waves at you and the fitting emote goes back (a kiss gets a blush, a whistle a curtsey). Rude emotes get a sad one back (cry, pout, frown, sigh) and no pitch. Somebody who targets you gets one wink. At most one emote per person in two minutes and one in six seconds overall, then you go back to dancing.
-- **On top of the mailbox.** The lines are written for dancing on the mailbox. Every 7 to 13 minutes, while people are around, one line at nobody ("does a little spin on the mailbox."). Somebody who keeps you targeted for half a minute gets one "glances at the tip jar, then down at Bob.". A tipper gets "dances for Bob." after the thank-you. The common replies take turns between a few wordings.
-- **The list** shows who emoted at you, who whispered you (with what they said) and who has you targeted (this needs nameplates shown). Nothing is saved; the list is gone when you log out.
-- **One-click replies.** Each row has the emote as a button, and **Pitch** for people who emoted at you or whispered you first: one whisper in the shop owner's voice with the ware whose turn it is and its price ("Staring is free. [item] is 10 gold pieces."). Once per person in ten minutes. The shop never whispers or speaks without your click, and never pitches somebody who only looked.
-- If the game refuses emotes from addons, the window says so and the emote buttons do the same with a click.
-- It reads emotes in English.
-
-## Tips
-
-When somebody opens a trade and gives you gold while you give nothing, an "Accept tip" button shows under the trade window. One click (or the "Accept a tip" key binding) takes it, and the shop thanks them with that same click in an emote everybody around sees, with the amount, and a bigger gesture for a bigger tip ("Smuttanie thanks Bob for the tip of 2 gold pieces.", "Smuttanie blows Bob a kiss for the tip of 10 gold pieces."). A few seconds later they get a little whisper too ("thank you <3"). The game does not let an addon accept a trade without a click or a key press, so it can't be fully automatic.
+Dancing on the mailbox, the emotes back, the tip jar, the Accept tip button and the counter window were part of this addon until 1.18.0. They are their own addon now, **Mailbox Slutting**, on the same addon page. Install both and nothing changes: the counter still shows the next ad with its Post button, Wares and Options, and Whisper price still whispers your ware. Your tips, tippers, numbers and the counter's place are copied over the first time. Without it the shop still posts ads, with the reminder window in the middle of the screen.
