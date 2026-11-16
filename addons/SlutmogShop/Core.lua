@@ -15,7 +15,7 @@
 -- works too). A reminder in your own chat says when it is time for the next one.
 local ADDON, ns = ...
 
-ns.VERSION = "1.15.2"
+ns.VERSION = "1.16.0"
 ns.TITLE = "Slutmog Shop"
 ns.ICON = "Interface\\Icons\\INV_Misc_Coin_02"
 ns.ACCENT = { 0.96, 0.55, 0.78 }
@@ -1411,8 +1411,12 @@ local FIXED = {
     { key = "SAY", label = "Say" },
     { key = "YELL", label = "Yell" },
     { key = "GUILD", label = "Guild" },
+    { key = "TURNS", label = "Trade and Yell by turns" },
 }
 ns.FIXED_CHANNELS = FIXED
+-- "TURNS": one ad to Trade, the next to Yell, and so on (SuccuDev: "maybe we should cycle channels
+-- between trade and yell"). Outside a capital city, where there is no Trade, every ad goes to Yell.
+local TURNS = { "Trade", "YELL" }
 
 local function Base(name)
     name = tostring(name or ""):lower()
@@ -1444,6 +1448,12 @@ end
 -- chatType, channel number, label; or nil and why not.
 function ns.ResolveChannel(key)
     key = key or db.channel
+    if key == "TURNS" then
+        local at = (tonumber(db and db.turn) or 1) == 2 and 2 or 1
+        local chatType, id, label = ns.ResolveChannel(TURNS[at])
+        if chatType then return chatType, id, label end
+        return ns.ResolveChannel(TURNS[3 - at])
+    end
     if key == "SAY" or key == "YELL" then return key, nil, ns.ChannelLabel(key) end
     if key == "GUILD" then
         if type(IsInGuild) == "function" and not IsInGuild() then return nil, "you are not in a guild." end
@@ -1636,6 +1646,7 @@ function ns.Post()
         return false
     end
     ns.lastPostAt = Now()
+    if db.channel == "TURNS" then db.turn = chatType == "YELL" and 1 or 2 end      -- the other one next
     db.posts = (db.posts or 0) + 1
     ns.Stat("ads")
     if ns.Counter and ns.Counter.Posted then pcall(ns.Counter.Posted) end
@@ -1759,7 +1770,7 @@ local function PrintHelp()
         "/slutshop reroll - another ad for the same ware",
         "/slutshop prompt - the Post button in the middle of the screen, now",
         "/slutshop mailbox - mailbox mode: emote back at admirers, see who looked and whispered, one-click replies (/smog mailbox works too)",
-        "/slutshop channel Trade - where ads go (Say, Yell, Guild or any channel you are in)",
+        "/slutshop channel Trade - where ads go (Say, Yell, Guild, any channel you are in, or turns: Trade and Yell by turns)",
         "/slutshop options - the options",
         "/slutshop status - what the shop is set to",
     }
@@ -1936,7 +1947,8 @@ local function Slash(msg)
             return
         end
         local up = rest:upper()
-        local key = (up == "SAY" or up == "YELL" or up == "GUILD") and up or rest
+        if up == "BOTH" or up == "TRADE YELL" or up == "TRADE AND YELL" then up = "TURNS" end
+        local key = (up == "SAY" or up == "YELL" or up == "GUILD" or up == "TURNS") and up or rest
         ns.Set("channel", key)
         local ok, why = ns.ResolveChannel(key)
         Print("ads go to " .. ns.ChannelLabel(key) .. "." .. (ok and "" or (" Right now " .. tostring(why))))

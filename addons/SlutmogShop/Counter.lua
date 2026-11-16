@@ -162,7 +162,8 @@ function C.Sync()
         frame.post:SetText(("Next ad in %d:%02d"):format(math.floor(wait / 60), math.ceil(wait) % 60))
         frame.post:SetEnabled(false)
     else
-        frame.post:SetText("Post ad")
+        local _, _, label = ns.ResolveChannel()
+        frame.post:SetText(ns.db.channel == "TURNS" and label and ("Post ad to " .. (label:match("^(.-) %- ") or label)) or "Post ad")
         frame.post:SetEnabled(true)
     end
     frame.reroll:SetEnabled(p ~= nil)

@@ -1,5 +1,9 @@
 # Changelog
 
+## 1.16.0
+
+- Post to has a new choice, "Trade and Yell by turns": one ad goes to Trade, the next is yelled, and so on. Outside a capital city, where there is no Trade, every ad is yelled. The counter's button says where the next one goes ("Post ad to Yell"). Also `/slutshop channel turns`.
+
 ## 1.15.2
 
 - A rude emote (spit, slap, rude, mock...) now gets a sad one back: cry, pout, frown or sigh, in the game's own words ("cries on Bob's shoulder."). No pitch for them.

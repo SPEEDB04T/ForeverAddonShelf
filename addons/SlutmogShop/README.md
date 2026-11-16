@@ -39,7 +39,7 @@ The game only lets an addon send a line to Trade or General from a click or a ke
   - `{price}`: its price ("10 gold pieces", or "10g" if you pick short prices)
   - `{items}`: as many wares with prices as fit ("[A] 10g, [B] 25g")
   - `{level}`: the ware's required level (openers can use it too)
-- **Post to**: Trade, General, any channel you have joined, Say, Yell or Guild. Trade only works in a capital city.
+- **Post to**: Trade, General, any channel you have joined, Say, Yell or Guild, or **Trade and Yell by turns** (one ad to Trade, the next yelled; all yelled where there is no Trade). Trade only works in a capital city.
 - At the bottom: the next ad exactly as people will read it, and its length (a chat line holds 255; an item link counts about 60 more than its name). **Post ad** posts it. **Yes** and **No** move on to the next one without posting and save what you thought of the line; No drops a ready-made line from your ads for good.
 
 Openers and ad lines take turns, each used once before any repeats. If an ad is too long for one chat message, a shorter opener is used, or none.
