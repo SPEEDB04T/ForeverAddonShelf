@@ -164,12 +164,21 @@ end
 -- the shop dances again a moment after one of its own, unless you stopped dancing yourself. It tries
 -- from a timer and again on any chat line that comes in, until the game echoes the dance: an emote
 -- from a timer has never been seen to work on this client, one from a chat event has.
-local REDANCE = 2                -- seconds after a wink or a smile before dancing again
-local RETRY = 2                  -- seconds between two tries
-local GIVE_UP = 20               -- seconds after which it stops trying
+-- Never in quick succession, and never at the same beat twice, so it does not look like a bot
+-- (SuccuDev: "make sure dance emote doesnt get spammed, add a cooldown to make things feel less bot-like").
+local REDANCE_MIN, REDANCE_MAX = 3, 7   -- seconds after a wink or a smile before dancing again, picked at random
+local DANCE_GAP = 15             -- seconds at least between two dances the shop does by itself
+local TRIES = 2                  -- dances it tries for one comeback, at most
+local GIVE_UP = 30               -- seconds after which it stops trying
 local dancing = false            -- you are dancing, as far as the shop knows
 local due                        -- when the dance should be back, until its echo
-local tried = -1e9
+local tries = 0
+local lastDance = -1e9           -- when the last dance went out
+
+function M.Random(a, b)
+    if math and math.random then return a + math.random() * (b - a) end
+    return b
+end
 
 -- What the shop tried and what came of it, the last 40, saved for looking into problems later.
 local function Log(what)
@@ -193,11 +202,12 @@ Emote = function(token, name, from)
         not ok and ("error " .. tostring(restricted)) or (Readable(restricted) and tostring(restricted) or "secret")))
     if not ok or (Readable(restricted) and restricted == true) then return false end
     if token == "DANCE" then
-        dancing = true
+        dancing, lastDance = true, Now()
     elseif dancing then
-        due = Now() + REDANCE
+        due, tries = Now() + M.Random(REDANCE_MIN, REDANCE_MAX), 0
+        local wait = math.max(due, lastDance + DANCE_GAP) - Now()
         if C_Timer and C_Timer.After then
-            C_Timer.After(REDANCE + 0.05, function() M.Redance("timer") end)
+            C_Timer.After(wait + 0.05, function() M.Redance("timer") end)
         end
     end
     local mine = { who = name and Short(name) or nil, how = how, token = token }
@@ -218,16 +228,17 @@ end
 function M.Redance(from)
     if not (on and dancing and due) then return false end
     local now = Now()
-    if now < due or now - tried < RETRY then return false end
-    if now - due > GIVE_UP then
+    local ready = math.max(due, lastDance + DANCE_GAP)
+    if now < ready then return false end
+    if now - ready > GIVE_UP or tries >= TRIES then
         due = nil
         Log("gave up dancing again")
         return false
     end
-    local done = Emote("DANCE", nil, from)
-    if done then tried = now end           -- refused: the next chat line may try straight away
+    local done = Emote("DANCE", nil, from)  -- refused: the next chat line may try straight away
+    if done then tries = tries + 1 end
     if C_Timer and C_Timer.After then
-        C_Timer.After(RETRY + 0.05, function() M.Redance("timer") end)
+        C_Timer.After(DANCE_GAP + 0.05, function() M.Redance("timer") end)
     end
     return done
 end
@@ -239,6 +250,7 @@ local function Echo(text)
     if not pend then
         -- one you did yourself: dancing or not is your call
         dancing = text:lower():find("danc", 1, true) ~= nil
+        if dancing then lastDance = Now() end
         due = nil
         return
     end
@@ -514,6 +526,8 @@ local function Auto(v, gap)
     if manual or not v.reply then return false end
     local now = Now()
     if now - lastAuto < GLOBAL_GAP or (v.emotedAt and now - v.emotedAt < gap) then return false end
+    -- a dance back only if you are not dancing already, and not right after the last one
+    if v.reply[2] == "DANCE" and (dancing or now - lastDance < DANCE_GAP) then return false end
     if not Emote(v.reply[2], v.name, "event") then
         Missed()
         return false

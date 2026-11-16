@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.12.4
+
+- The tip thank-you is an emote everybody around sees, with the amount ("Smuttanie thanks Bob for the tip of 5 gold pieces."). The plain thank emote only if the game refuses it.
+- A few seconds later, at a random moment, a little whisper to the tipper ("thank you <3" and a few others) instead of the amount whisper.
+- Mailbox mode dances less like a bot: never two dances by itself within 15 seconds, it waits a random 3 to 7 seconds before dancing again after a wink, tries at most twice, and does not dance back at somebody while you are dancing already.
+
 ## 1.12.3
 
 - A tip that goes through gets a whisper with the amount ("Thank you for the 5g tip!") next to the thank emote.

@@ -85,4 +85,4 @@ For standing around a city mailbox in your wares. `/slutshop mailbox` (or `/smog
 
 ## Tips
 
-When somebody opens a trade and gives you gold while you give nothing, an "Accept tip" button shows under the trade window. One click (or the "Accept a tip" key binding) takes it, and once it goes through the shop thanks them with an emote and a whisper saying how much ("Thank you for the 5g tip!"). The game does not let an addon accept a trade without a click or a key press, so it can't be fully automatic.
+When somebody opens a trade and gives you gold while you give nothing, an "Accept tip" button shows under the trade window. One click (or the "Accept a tip" key binding) takes it, and once it goes through the shop thanks them in an emote everybody around sees, with the amount ("Smuttanie thanks Bob for the tip of 5 gold pieces."). A few seconds later they get a little whisper too ("thank you <3"). The game does not let an addon accept a trade without a click or a key press, so it can't be fully automatic.

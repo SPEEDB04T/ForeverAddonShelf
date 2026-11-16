@@ -134,6 +134,31 @@ local function Update()
 end
 T.Update = Update
 
+-- "Smuttanie thanks Bob for the tip of 5 gold pieces."
+function T.Thanks(who, amount)
+    return "thanks " .. who .. " for the tip of " .. ns.PriceText(amount, "words") .. "."
+end
+
+-- A little whisper after it, a few seconds later like a person would (SuccuDev: "whisper can be a cute
+-- little thank you <3 or something, with a natural delay randomized").
+T.WHISPERS = { "thank you <3", "aww, thank you <3", "you're sweet, thank you <3", "ty ty <3", "thank you, cutie <3" }
+T.DELAY_MIN, T.DELAY_MAX = 3, 8
+local lastWhisper
+local function Whisper(who)
+    local list = T.WHISPERS
+    local line = list[math.random(#list)]
+    if #list > 1 then
+        while line == lastWhisper do line = list[math.random(#list)] end
+    end
+    lastWhisper = line
+    local delay = T.DELAY_MIN + math.random() * (T.DELAY_MAX - T.DELAY_MIN)
+    local function Go()
+        local send = (C_ChatInfo and C_ChatInfo.SendChatMessage) or SendChatMessage
+        if type(send) == "function" then pcall(send, line, "WHISPER", nil, who) end
+    end
+    if C_Timer and C_Timer.After then C_Timer.After(delay, Go) else Go() end
+end
+
 -- It went through: thank them, and count it.
 local function Done()
     local tip = last
@@ -147,18 +172,21 @@ local function Done()
     ns.Print(string.format("%s tipped you %s. Tips so far: %s.", tip.who or "Somebody", ns.MoneyText(tip.amount),
         ns.MoneyText(type(db) == "table" and db.tips or tip.amount)))
     if tip.who then
-        -- the emote cannot carry the amount, so a whisper says it (SuccuDev: "thanking people for their
-        -- tip should say how much they tipped me"); it goes only after a trade you accepted yourself
+        -- thanked out loud with the amount, as an emote everybody around sees (SuccuDev: "not a whisper.
+        -- in emote with the thank. it advertises to others they can tip me"). A text emote plays no
+        -- animation, so the dance goes on. If the game will not have it, the plain thank emote instead.
         local send = (C_ChatInfo and C_ChatInfo.SendChatMessage) or SendChatMessage
-        if type(send) == "function" then
-            pcall(send, "Thank you for the " .. ns.PriceText(tip.amount, "short") .. " tip!", "WHISPER", nil, tip.who)
-        end
-        local mb = ns.Mailbox
-        if mb and mb.IsOn and mb.IsOn() and mb.EmoteAt then
-            mb.EmoteAt("THANK", tip.who)
-        else
-            local fn = (C_ChatInfo and C_ChatInfo.PerformEmote) or DoEmote
-            if type(fn) == "function" then pcall(fn, "THANK", tip.who, true) end
+        local said = type(send) == "function"
+            and pcall(send, T.Thanks(tip.who, tip.amount), "EMOTE")
+        Whisper(tip.who)
+        if not said then
+            local mb = ns.Mailbox
+            if mb and mb.IsOn and mb.IsOn() and mb.EmoteAt then
+                mb.EmoteAt("THANK", tip.who)
+            else
+                local fn = (C_ChatInfo and C_ChatInfo.PerformEmote) or DoEmote
+                if type(fn) == "function" then pcall(fn, "THANK", tip.who, true) end
+            end
         end
     end
 end
