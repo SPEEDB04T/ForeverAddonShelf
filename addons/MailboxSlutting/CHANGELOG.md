@@ -1,5 +1,12 @@
 # Changelog
 
+## 1.1.0
+
+- Nothing of Slutmog Shop is in the window any more, with or without the shop installed: no ad row, no Post ad or Reroll, no Wares or Options button, no Whisper price, and its name on top is Mailbox Slutting. The shop reminds you of its ads in its own window again.
+- The button reads Start dancing / Stop dancing, and the texts no longer talk about a shop.
+- The numbers no longer count ads.
+- A whisperer on the big button is answered with an emote, like everybody else.
+
 ## 1.0.0
 
 - New addon, split off from Slutmog Shop 1.18.0: dancing on the mailbox with the emotes back, the idle and tip jar lines, the welcome back for tippers, the Accept tip button with its thank-you, the counter window and its numbers. Nothing about how they work has changed.

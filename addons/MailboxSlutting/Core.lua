@@ -4,14 +4,15 @@
 --                you; the idle lines, the tip jar lines and the welcome back for your tippers
 --   Tips.lua     the Accept tip button under the trade window, and the thank-you
 --   Counter.lua  the counter: the window that stays up while you stand there, with your numbers
---   Core.lua     this file: saved data, the numbers, the slash command, and the way to Slutmog Shop
+--   Core.lua     this file: saved data, the numbers and the slash command
 --
 -- It was part of Slutmog Shop until 1.18.0 (SuccuDev: "can we split off mailbox slutting to its own
--- addon"). It works alone. With Slutmog Shop installed too, the counter also shows the shop's next
--- ad with its Post button, and Whisper price whispers the ware whose turn it is.
+-- addon"). The two share nothing now: no ad, no wares and no shop button in here (SuccuDev: "I dont
+-- think you properly split it, I still see shop stuff in the mailslut window"). The one thing taken
+-- from the shop is what you had saved there (tips, tippers, numbers), copied once.
 local ADDON, ns = ...
 
-ns.VERSION = "1.0.0"
+ns.VERSION = "1.1.0"
 ns.TITLE = "Mailbox Slutting"
 ns.ICON = "Interface\\Icons\\INV_Letter_15"
 
@@ -32,25 +33,6 @@ function ns.Readable(v)
     if v == nil then return false end
     if issecretvalue and issecretvalue(v) then return false end
     return true
-end
-
----------------------------------------------------------------------------
--- Slutmog Shop, when it is installed
----------------------------------------------------------------------------
--- The shop's own table (it sets the global SlutmogShopAPI), or nil. Asked every time: the shop may
--- load after this file, and may not be there at all.
-function ns.Shop()
-    local s = rawget(_G, "SlutmogShopAPI")
-    if type(s) == "table" and type(s.db) == "table" and type(s.Next) == "function" then return s end
-    return nil
-end
-
--- The ware whose turn it is, for Whisper price: nil without the shop.
-function ns.WareOffer()
-    local s = ns.Shop()
-    if not (s and type(s.WareOffer) == "function") then return nil end
-    local ok, offer = pcall(s.WareOffer)
-    return ok and offer or nil
 end
 
 ---------------------------------------------------------------------------
@@ -150,8 +132,7 @@ end
 -- The numbers
 ---------------------------------------------------------------------------
 -- Per day (the last 30 kept) and all time. db.stats = { days = { [day] = {...} }, all = {...} }.
--- Keys: tips, tipCopper, ads (Slutmog Shop counts those here), visitors, emotes, jar, welcomes,
--- open (seconds the shop was open).
+-- Keys: tips, tipCopper, visitors, emotes, jar, welcomes, open (seconds you were dancing).
 local STAT_DAYS = 30
 local function DayKey(t)
     t = t or time()
@@ -260,7 +241,7 @@ BINDING_NAME_MAILBOXSLUTTING_ACCEPTTIP = "Accept a tip (a trade where only they 
 BINDING_NAME_MAILBOXSLUTTING_TOGGLE = "Start or stop dancing on the mailbox"
 function MailboxSlutting_Toggle() if ns.Mailbox and db then ns.Mailbox.Toggle() end end
 
--- The way in for Slutmog Shop (and for a look from /dump).
+-- For a look from /dump, and so Slutmog Shop's old /slutshop mailbox can still find it.
 MailboxSlutting = ns
 
 ---------------------------------------------------------------------------

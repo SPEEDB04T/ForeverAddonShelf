@@ -2,9 +2,9 @@
 
 For dancing on top of a city mailbox for tips, classic WoW style. You dance; the addon emotes back at whoever looks at you, emotes at you or whispers you, keeps a tip jar going, takes tips with one click and thanks for them, and counts it all.
 
-It works on its own. With **Slutmog Shop** installed too, the counter also shows the shop's next ad with a Post button, and you can whisper a ware's price to an admirer.
+It is its own addon: nothing of Slutmog Shop is in its window (no ad, no wares), and neither needs the other.
 
-It was part of Slutmog Shop until that addon's 1.18.0. If you used it there, your tips, tippers, numbers and the counter's place are copied over the first time you log in with both.
+It was part of Slutmog Shop until that addon's 1.18.0. If you used it there, your tips, tippers, numbers and the counter's place are copied over the first time you log in with both installed.
 
 ## Commands
 
@@ -15,29 +15,28 @@ It was part of Slutmog Shop until that addon's 1.18.0. If you used it there, you
 | `/mailslut stats` | today's and all-time tips |
 | `/mailslut sound` | the alert sounds on or off |
 
-`/mailboxslutting` works the same. With Slutmog Shop installed, `/slutshop mailbox`, `/slutshop counter` and `/smog mailbox` work too.
+`/mailboxslutting` works the same.
 
 ## The counter
 
 The window that stays on screen while you stand at the mailbox, up from login:
 
-- **The ad** (with Slutmog Shop installed): the shop's next ad with its item (hover it for the tooltip), a big **Post ad** button and **Reroll**. While you have to wait the button counts down ("Next ad in 3:40"); when the next ad is due it lights up.
 - **The mailbox panel** (below).
-- **The numbers**: today's tips and their gold, visitors and time open (and ads posted, with the shop). Hover for the last 7 days and all time.
-- **Open shop / Close shop**, and with Slutmog Shop **Wares** (the shop window) and **Options**.
+- **The numbers**: today's tips and their gold, visitors and time dancing. Hover for the last 7 days and all time.
+- **Start dancing / Stop dancing**.
 
-It gets out of the way in a fight and comes back after. Its close button puts it away and closes the shop; `/mailslut counter` brings it back.
+It gets out of the way in a fight and comes back after. Its close button puts it away and stops the dancing; `/mailslut counter` brings it back.
 
 ## On the mailbox
 
-**Open shop** on the counter (or `/mailslut open`) starts you dancing and answering; **Close shop** stops it. Whoever is waiting for an answer is on the big button: it emotes at them (Wink at Bob, Smile at Bob...), and Other emote picks a different one. With Slutmog Shop installed, Whisper price whispers them your ware and its price.
+**Start dancing** on the counter (or `/mailslut open`) starts you dancing and answering; **Stop dancing** stops it. Whoever is waiting for an answer is on the big button: it emotes at them (Wink at Bob, Smile at Bob...), and Other emote picks a different one.
 
 Replies go out in /e with the game's own words ("winks slyly at Bob."), because the game's emotes play an animation that stops your dance. If the game does not let a line out, the real emote goes instead.
 
-- **Emotes back by itself.** Somebody winks, whistles, kisses, flirts, dances or waves at you and the fitting emote goes back (a kiss gets a blush, a whistle a curtsey). Rude emotes get a sad one back (cry, pout, frown, sigh) and no pitch. Somebody who targets you gets one wink. At most one emote per person in two minutes and one in six seconds overall, then you go back to dancing.
+- **Emotes back by itself.** Somebody winks, whistles, kisses, flirts, dances or waves at you and the fitting emote goes back (a kiss gets a blush, a whistle a curtsey). Rude emotes get a sad one back (cry, pout, frown, sigh). Somebody who targets you gets one wink. At most one emote per person in two minutes and one in six seconds overall, then you go back to dancing.
 - **On top of the mailbox.** The lines are written for dancing on the mailbox. Every 7 to 13 minutes, while people are around, one line at nobody ("does a little spin on the mailbox."). Somebody who keeps you targeted for half a minute gets one "glances at the tip jar, then down at Bob.". A tipper gets "dances for Bob." after the thank-you. The common replies take turns between a few wordings.
 - **The list** shows who emoted at you, who whispered you (with what they said) and who has you targeted (this needs nameplates shown). Nothing is saved; the list is gone when you log out.
-- **One-click replies.** Each row has the emote as a button. With Slutmog Shop installed there is also **Whisper** for people who emoted at you or whispered you first: one whisper in the shop owner's voice with the ware whose turn it is and its price ("Staring is free. [item] is 10 gold pieces."). Once per person in ten minutes. The shop never whispers or speaks without your click, and never pitches somebody who only looked.
+- **One-click replies.** Each row has the emote as a button. Nothing is ever whispered or said without your click.
 - If the game refuses emotes from addons, the window says so and the emote buttons do the same with a click.
 - It reads emotes in English.
 

@@ -1,10 +1,11 @@
--- Mailbox Slutting: mailbox mode. For dancing on a city mailbox: the shop keeps a list of who
--- looked at you, emoted at you and whispered you, puts the one who is waiting for an answer on a
--- big button at the top, and gives everybody a one-click reply. /mailslut open turns it on (with
--- Slutmog Shop installed, /slutshop mailbox and /smog mailbox too); closing its window turns it off.
+-- Mailbox Slutting: mailbox mode. For dancing on a city mailbox: it keeps a list of who looked at
+-- you, emoted at you and whispered you, puts the one who is waiting for an answer on a big button
+-- at the top, and gives everybody a one-click reply. /mailslut open turns it on; closing its window
+-- turns it off. Nothing here knows about wares or ads: that is Slutmog Shop, another addon
+-- (SuccuDev: "I dont think you properly split it, I still see shop stuff in the mailslut window").
 --
--- It lives in the counter (Counter.lua), the window that stays up while you stand there; Open shop
--- turns it on. A reply says what the game's own emote would ("winks slyly at Bob."), in /e: the
+-- It lives in the counter (Counter.lua), the window that stays up while you stand there; Start
+-- dancing turns it on. A reply says what the game's own emote would ("winks slyly at Bob."), in /e: the
 -- game's emote stops the dance, a line in /e does not (SuccuDev: "do custom /emotes cancel dance
 -- animation? couldnt we replace all of them with the same wording"). If /e from the shop does not
 -- go out, the game's own emote is done instead.
@@ -18,7 +19,6 @@ local ROWS, ROW_H = 6, 26
 local PERSON_GAP = 120          -- seconds between two emotes by itself at the same person
 local LOOK_GAP = 900            -- ... at somebody who only looked
 local GLOBAL_GAP = 6            -- seconds between any two emotes by itself
-local PITCH_GAP = 600           -- seconds before the same person can be pitched again
 local KEEP = 20                 -- visitors remembered (this session only; nothing is saved)
 local WAIT = 300                -- seconds somebody counts as waiting for an answer
 local FADE_FROM, FADE_TO = 60, 300      -- a row fades between these ages...
@@ -167,14 +167,6 @@ M.WELCOMES = {
     "greets {name} warmly.",
 }
 
--- The pitch, in the shop owner's voice. {item} and {price} are the ware whose turn it is.
-M.PITCHES = {
-    "You looked. It's for sale: {item}, {price}.",
-    "That's {item}. {price} and it's yours.",
-    "Staring is free. {item} is {price}.",
-    "The mailbox isn't for sale. {item} is, {price}.",
-}
-
 local on = false
 local frame, events
 -- newest first: { name, kind = "look"|"emote"|"whisper", what, at, seen, reply = { word, token, label }, pitch = bool,
@@ -183,7 +175,6 @@ local visitors = {}
 local lastAuto = -1e9
 local lastAlert = -1e9
 local manual = false            -- the game refused an emote from the addon: buttons only
-local pitchTurn = 0
 local Sync
 
 local function Now()
@@ -516,7 +507,6 @@ local function Visit(name, kind, what, reply, pitch)
     end
     v.kind, v.what, v.at = kind, what, Now()
     if reply ~= nil then v.reply = reply or nil end
-    v.pitch = v.pitch or pitch or false
     if v.reply and (not v.token or reply) then v.token = Pick(v, v.token) end
     table.insert(visitors, 1, v)
     while #visitors > KEEP do table.remove(visitors) end
@@ -595,7 +585,6 @@ end
 Sync = function()
     if not (frame and frame:IsShown()) then return end
     local now = Now()
-    local offer = ns.WareOffer()
     for r = 1, ROWS do
         local row, v = frame.rows[r], visitors[r]
         if v then
@@ -614,15 +603,6 @@ Sync = function()
                 row.emote:Hide()
                 row.done:Hide()
             end
-            if v.pitch and ns.Shop() then      -- the wares are Slutmog Shop's
-                local pitched = v.pitchedAt and now - v.pitchedAt < PITCH_GAP
-                row.pitch:SetText(pitched and "Whispered" or "Whisper")
-                Fit(row.pitch, 72)
-                row.pitch:SetEnabled(not pitched and offer ~= nil)
-                row.pitch:Show()
-            else
-                row.pitch:Hide()
-            end
             row:Show()
         else
             SetReply(row.emote, nil)
@@ -637,14 +617,10 @@ Sync = function()
         local who = Short(v.name)
         cta.text:SetText(v.kind == "emote" and v.what or (who .. " " .. What(v, now)))
         cta.text:SetFontObject(GameFontNormalLarge or GameFontNormal)
-        local pitched = v.pitchedAt and now - v.pitchedAt < PITCH_GAP
-        local canPitch = (v.pitch and offer ~= nil and not pitched) and true or false
         cta.again.visitor = v
         cta.again:Show()
-        cta.pitch.visitor = v
-        cta.pitch:SetShown(canPitch)
         -- the row of big buttons must fit the window: the send button gets what is left
-        local room = CTA_W - Fit(cta.again, 100) - 6 - (canPitch and (Fit(cta.pitch, 110) + 6) or 0)
+        local room = CTA_W - Fit(cta.again, 100) - 6
         local label = Label(v) or "Emote"
         cta.emote:SetText(label .. " at " .. who)
         local _, fits = Fit(cta.emote, 150, room)
@@ -655,21 +631,19 @@ Sync = function()
         SetReply(cta.emote, v)
         cta.emote:Show()
     else
-        cta.text:SetText(not on and "The shop is closed. Open shop to dance and greet whoever comes by."
+        cta.text:SetText(not on and "You are not dancing. Start dancing to greet whoever comes by."
             or (#visitors == 0 and "Nobody yet. Stand where they can see you." or "Nobody is waiting for an answer."))
         cta.text:SetFontObject(GameFontDisableLarge or GameFontDisable)
         SetReply(cta.emote, nil)
         cta.emote:Hide()
         cta.again.visitor = nil
         cta.again:Hide()
-        cta.pitch.visitor = nil
-        cta.pitch:Hide()
     end
     if Away() then
         frame.status:SetText("You are AFK: nothing goes out by itself until you are back.")
     else
         frame.status:SetText(manual and "No emotes back by itself here: the replies are your click."
-            or "The big button does that emote at them. Whisper price whispers your ware.")
+            or "The big button does that emote at them.")
     end
     Fade()
 end
@@ -718,7 +692,7 @@ Missed = function()
     misses = misses + 1
     if misses >= MISSES and on and not manual then
         manual = true
-        ns.Print("the game does not let the shop emote by itself here. The buttons in the mailbox window do it with a click.")
+        ns.Print("the game does not let an addon emote by itself here. The buttons in the window do it with a click.")
         Sync()
     end
 end
@@ -939,7 +913,7 @@ local function AwayPrompt(away)
         end
         if StaticPopupDialogs and type(StaticPopup_Show) == "function" then
             StaticPopupDialogs.MAILBOXSLUTTING_AFK = StaticPopupDialogs.MAILBOXSLUTTING_AFK or {
-                text = "You are AFK.\n\nShoppers see <AFK> over your head, and the shop is not emoting until you are back. Move, or click below.",
+                text = "You are AFK.\n\nPeople see <AFK> over your head, and nothing is emoted back until you are back. Move, or click below.",
                 button1 = "I'm back",
                 OnAccept = function()
                     local send = (C_ChatInfo and C_ChatInfo.SendChatMessage) or SendChatMessage
@@ -1003,15 +977,6 @@ local function Text(parent, font)
     return fs
 end
 
-local function PitchTip(self)
-    if not GameTooltip then return end
-    GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
-    GameTooltip:SetText("Whisper price")
-    GameTooltip:AddLine("Whispers this person one line about the ware whose turn it is, with its price. "
-        .. "Only for somebody who emoted at you or whispered you first, and once in ten minutes.", 1, 0.82, 0, true)
-    GameTooltip:Show()
-end
-
 local function ReplyTip(self)
     local v = self.visitor
     if not (GameTooltip and v and v.reply) then return end
@@ -1023,25 +988,6 @@ end
 
 local function HideTip()
     if GameTooltip then GameTooltip:Hide() end
-end
-
-function M.Pitch(v)
-    local offer = ns.WareOffer()
-    if not (v and v.pitch and offer) then return false end
-    local now = Now()
-    if v.pitchedAt and now - v.pitchedAt < PITCH_GAP then return false end
-    pitchTurn = pitchTurn % #M.PITCHES + 1
-    local text = M.PITCHES[pitchTurn]:gsub("{(%a+)}", function(k) return offer[k] end)
-    if offer.where == "ah" then text = text .. " It's on the auction house." end
-    local send = (C_ChatInfo and C_ChatInfo.SendChatMessage) or SendChatMessage
-    if type(send) ~= "function" or not pcall(send, text, "WHISPER", nil, v.name) then
-        ns.Print("the game refused the whisper to " .. Short(v.name) .. ".")
-        return false
-    end
-    v.pitchedAt = now
-    if v.kind == "whisper" then v.doneAt = now end      -- a whisper is answered by the pitch
-    Sync()
-    return true
 end
 
 local TOP = 96                  -- title, who is waiting, the big button
@@ -1102,13 +1048,7 @@ local function Build(host)
     cta.again:SetPoint("LEFT", cta.emote, "RIGHT", 6, 0)
     cta.again:SetScript("OnClick", function(self) M.Another(self.visitor) end)
     cta.again:Hide()
-    cta.pitch = Button(f, "Whisper price", 110, 30)
-    cta.pitch:SetPoint("LEFT", cta.again, "RIGHT", 6, 0)
-    cta.pitch:SetScript("OnClick", function(self) M.Pitch(self.visitor) end)
-    cta.pitch:SetScript("OnEnter", PitchTip)
-    cta.pitch:SetScript("OnLeave", HideTip)
     cta.emote:Hide()
-    cta.pitch:Hide()
 
     f.rows = {}
     for r = 1, ROWS do
@@ -1116,10 +1056,8 @@ local function Build(host)
         row:SetHeight(ROW_H)
         row:SetPoint("TOPLEFT", f, "TOPLEFT", 12, -TOP + DY - (r - 1) * ROW_H)
         row:SetPoint("TOPRIGHT", f, "TOPRIGHT", -12, -TOP + DY - (r - 1) * ROW_H)
-        row.pitch = Button(row, "Whisper", 72)
-        row.pitch:SetPoint("RIGHT", row, "RIGHT", 0, 0)
         row.emote = ReplyButton(row, "Emote", 62)
-        row.emote:SetPoint("RIGHT", row.pitch, "LEFT", -4, 0)
+        row.emote:SetPoint("RIGHT", row, "RIGHT", 0, 0)
         row.emote:SetScript("OnEnter", ReplyTip)
         row.emote:SetScript("OnLeave", HideTip)
         row.done = row:CreateTexture(nil, "ARTWORK")        -- the game's ready-check tick: answered
@@ -1137,9 +1075,6 @@ local function Build(host)
         row.what = Text(row, "GameFontHighlightSmall")
         row.what:SetPoint("LEFT", row.name, "RIGHT", 6, 0)
         row.what:SetPoint("RIGHT", row.age, "LEFT", -6, 0)
-        row.pitch:SetScript("OnClick", function() M.Pitch(visitors[r]) end)
-        row.pitch:SetScript("OnEnter", PitchTip)
-        row.pitch:SetScript("OnLeave", HideTip)
         row:Hide()
         f.rows[r] = row
     end
@@ -1162,7 +1097,7 @@ local function Build(host)
         if not GameTooltip then return end
         GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
         GameTooltip:SetText("Tip jar")
-        GameTooltip:AddLine("Says a short line about your tip jar in /e. The shop does it by itself every 20 to 30 minutes "
+        GameTooltip:AddLine("Says a short line about your tip jar in /e. It goes out by itself every 20 to 30 minutes "
             .. "while somebody is around; the button lights up when the game did not let it.", 1, 0.82, 0, true)
         GameTooltip:Show()
     end)
@@ -1211,7 +1146,7 @@ function M.Start()
     frame:Show()
     Emote("DANCE", nil, "start")
     Tick()
-    ns.Print("the shop is open: you dance, and the big button winks or smiles at whoever is waiting. Close shop on the counter ends it.")
+    ns.Print("you are dancing, and the big button winks or smiles at whoever is waiting. Stop dancing on the counter ends it.")
     return true
 end
 
@@ -1228,7 +1163,7 @@ function M.Stop(fromHide)
     end
     Sync()
     if ns.Counter and ns.Counter.Sync then ns.Counter.Sync() end
-    ns.Print("the shop is closed.")
+    ns.Print("stopped dancing.")
 end
 
 function M.Toggle()
