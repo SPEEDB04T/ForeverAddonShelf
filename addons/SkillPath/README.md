@@ -16,6 +16,8 @@ A point-by-point leveling guide for your profession, worked out from your own re
 - **The chance** a craft gives a point: orange always; yellow and green (grey level - skill) / (grey level - yellow level); grey never.
 - **Prices:** what you hold is free (bank too, unless you turn that off). Then the cheapest auction listings: per unit for reagents sold by the unit, the cheapest set of whole lots for the rest. Then the vendor price: the one you saw at a vendor, or the item's vendor price from the game's data. Your own auctions are left out. Items bound on pickup have no price: you farm or make them.
 - **Old prices:** an auction price older than 3 hours (adjustable) is still used, but the step and the total say it is old.
+- **Selling what is left:** what the guide crafts and no later step uses counts at its vendor sell price, so the guide can pick a recipe whose result sells back for more. The top shows the net cost; "Left over to sell" lists each leftover and what it is worth. A made item a later step uses up isn't counted as sold.
+- **Auction house resale (optional, off at first):** leftovers can count at the cheapest auction price after the 5% cut, but only as many as were seen to sell. The auction house shows listings, never sales, so the addon compares scans of the item: units listed at one scan and gone at the next were bought, cancelled or ran out, which is the most that can have sold. That rate per day, times "Days of sales to count" (3), is how many count at the auction price; the rest count at the vendor price. Until an item has 4 hours of scans behind it (kept for a week), it counts at the vendor price, and the guide says so. With the option on, the scan also reads what your recipes make.
 
 ## Auction scan
 

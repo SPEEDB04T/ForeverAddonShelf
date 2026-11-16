@@ -21,11 +21,27 @@ end
 ----------------------------------------------------------------------
 -- What n crafts of a recipe cost, given what earlier steps used
 ----------------------------------------------------------------------
--- Returns cost (of the priced reagents), whether every reagent is priced, the item chosen for
--- each slot, the missing items (with the reason) and the items priced from an old scan.
+-- What n left-over units of an item are worth (0 when nothing values them).
+local function Value(ctx, item, n)
+    if not ctx.value or n <= EPS then return 0 end
+    return ctx.value(item, n) or 0
+end
+
+-- How many of the `need` units taken after `used` come out of what earlier steps made (your own
+-- units, from bags and bank, are taken first).
+local function FromMade(ctx, sup, item, need)
+    local used, have, made = ctx.used[item] or 0, sup.have, ctx.made[item] or 0
+    return math.max(0, math.min(used + need, have + made) - math.max(used, have))
+end
+
+-- Returns cost (gold for the priced reagents), whether every reagent is priced, the item chosen
+-- for each slot, the missing items (with the reason), the items priced from an old scan, and
+-- `extra`: credit (what selling this craft's output would give back), given (what made items it
+-- uses would have sold for) and take[slot] (how many made units each slot uses).
 local function CraftCost(ctx, r, crafts)
     local cost, priced = 0, true
     local choice, missing, stale = {}, nil, nil
+    local extra = { credit = 0, given = 0, take = {} }
     if r.currency then
         priced = false
         missing = { { why = "it also costs a currency, which has no gold price" } }
@@ -37,15 +53,24 @@ local function CraftCost(ctx, r, crafts)
     end
     for i, slot in ipairs(r.slots or {}) do
         local need = slot.qty * crafts
-        local bestCost, bestItem, bestSup
+        local bestCost, bestItem, bestSup, bestTake, bestGiven
         for _, item in ipairs(slot.items) do
             local sup = ctx.supply(item)
             local c = ctx.marginal(sup, ctx.used[item] or 0, need, ctx.made[item] or 0)
-            if c and (not bestCost or c < bestCost) then bestCost, bestItem, bestSup = c, item, sup end
+            if c then
+                local take = FromMade(ctx, sup, item, need)
+                local left = (ctx.made[item] or 0) - (ctx.madeUsed[item] or 0)
+                local given = Value(ctx, item, left) - Value(ctx, item, math.max(0, left - take))
+                if not bestCost or c + given < bestCost + bestGiven then
+                    bestCost, bestItem, bestSup, bestTake, bestGiven = c, item, sup, take, given
+                end
+            end
         end
         if bestCost then
             cost = cost + bestCost
             choice[i] = bestItem
+            extra.take[i] = bestTake
+            extra.given = extra.given + bestGiven
             -- An auction price was part of it, and that scan is old.
             if bestCost > EPS and bestSup.stale and bestSup.listed > 0 then
                 stale = stale or {}
@@ -58,19 +83,47 @@ local function CraftCost(ctx, r, crafts)
             missing[#missing + 1] = { item = slot.items[1], why = ns.Prices.Missing(ctx.supply(slot.items[1])) }
         end
     end
-    return cost, priced, choice, missing, stale
+    if r.out and r.outQty and r.outQty > 0 then
+        local left = (ctx.made[r.out] or 0) - (ctx.madeUsed[r.out] or 0)
+        local n = crafts * r.outQty
+        extra.credit = Value(ctx, r.out, left + n) - Value(ctx, r.out, left)
+    end
+    return cost, priced, choice, missing, stale, extra
 end
 Pl.CraftCost = CraftCost
 
-local function Commit(ctx, r, crafts, choice)
+local function Commit(ctx, r, crafts, choice, extra)
     for i, slot in ipairs(r.slots or {}) do
         local item = choice[i]
-        if item then ctx.used[item] = (ctx.used[item] or 0) + slot.qty * crafts end
+        if item then
+            ctx.used[item] = (ctx.used[item] or 0) + slot.qty * crafts
+            local take = extra and extra.take[i] or 0
+            if take > 0 then ctx.madeUsed[item] = (ctx.madeUsed[item] or 0) + take end
+        end
     end
     if r.out and r.outQty and r.outQty > 0 then
         ctx.made[r.out] = (ctx.made[r.out] or 0) + crafts * r.outQty
     end
 end
+
+-- What is left of everything the guide made, and what selling it gives back.
+local function Leftovers(ctx)
+    local list, back = {}, 0
+    for item, made in pairs(ctx.made) do
+        local left = made - (ctx.madeUsed[item] or 0)
+        if left > 0.05 then
+            local value = Value(ctx, item, left)
+            back = back + value
+            list[#list + 1] = { item = item, left = left, value = value }
+        end
+    end
+    table.sort(list, function(a, b)
+        if math.abs(a.value - b.value) > EPS then return a.value > b.value end
+        return a.item < b.item
+    end)
+    return list, back
+end
+Pl.Leftovers = Leftovers
 
 -- How a recipe does at one skill: chance, points per craft and expected crafts for those points.
 local function AtSkill(ctx, r, s, limit)
@@ -107,11 +160,12 @@ end
 ----------------------------------------------------------------------
 -- The whole guide
 ----------------------------------------------------------------------
--- args: skill, max, target, offset, seenSkill, recipes, supply(item), marginal(sup, used, k, extra)
+-- args: skill, max, target, offset, seenSkill, recipes, supply(item), marginal(sup, used, k, extra),
+-- value(item, n) (what n left-over units sell for; optional)
 function Pl.Build(args)
     local ctx = {
         offset = args.offset or 0, seenSkill = args.seenSkill or args.skill,
-        supply = args.supply, marginal = args.marginal, used = {}, made = {},
+        supply = args.supply, marginal = args.marginal, value = args.value, used = {}, made = {}, madeUsed = {},
     }
     local plan = { ok = true, from = args.skill, to = args.target, max = args.max, points = {}, steps = {},
         total = 0, totalComplete = true, missing = {}, stale = {}, notes = {}, untrusted = 0 }
@@ -136,10 +190,11 @@ function Pl.Build(args)
         for _, r in ipairs(candidates) do
             local chance, gain, crafts, orange = AtSkill(ctx, r, s, limit)
             if chance then
-                local cost, priced, choice, missing, stale = CraftCost(ctx, r, crafts)
+                local cost, priced, choice, missing, stale, extra = CraftCost(ctx, r, crafts)
+                local net = cost + extra.given - extra.credit
                 local c = { r = r, chance = chance, gain = gain, crafts = crafts, orange = orange, cost = cost,
-                    priced = priced, choice = choice, missing = missing, stale = stale,
-                    perPoint = cost / gain, craftsPerPoint = crafts / gain }
+                    priced = priced, choice = choice, missing = missing, stale = stale, extra = extra, net = net,
+                    perPoint = net / gain, craftsPerPoint = crafts / gain }
                 if priced then
                     if Better(c, best) then best = c end
                 else
@@ -167,10 +222,11 @@ function Pl.Build(args)
                 end
             end
         end
-        Commit(ctx, pick.r, pick.crafts, pick.choice)
+        Commit(ctx, pick.r, pick.crafts, pick.choice, pick.extra)
         local point = { s = s, to = s + pick.gain, r = pick.r, chance = pick.chance, gain = pick.gain,
             crafts = pick.crafts, orange = pick.orange, cost = pick.priced and pick.cost or nil, known = pick.cost,
-            priced = pick.priced, missing = pick.missing, stale = pick.stale, alts = alts }
+            priced = pick.priced, missing = pick.missing, stale = pick.stale, alts = alts,
+            credit = pick.extra.credit, given = pick.extra.given, net = pick.priced and pick.net or nil }
         plan.points[#plan.points + 1] = point
         if pick.priced then
             plan.total = plan.total + pick.cost
@@ -193,6 +249,8 @@ function Pl.Build(args)
             last.to = point.to
             last.crafts = last.crafts + pick.crafts
             last.cost = last.cost + (pick.cost or 0)
+            last.credit = last.credit + pick.extra.credit
+            last.given = last.given + pick.extra.given
             last.points[#last.points + 1] = point
             if alts then
                 for _, c in ipairs(alts) do last.alts[c.r.id] = c end
@@ -201,6 +259,7 @@ function Pl.Build(args)
         else
             local step = { kind = "craft", r = pick.r, name = pick.r.name, from = s, to = point.to,
                 crafts = pick.crafts, cost = pick.cost or 0, priced = pick.priced, points = { point },
+                credit = pick.extra.credit, given = pick.extra.given,
                 stale = pick.stale and true or false, alts = {} }
             for _, c in ipairs(alts or {}) do step.alts[c.r.id] = c end
             plan.steps[#plan.steps + 1] = step
@@ -209,6 +268,8 @@ function Pl.Build(args)
     end
     plan.reached = s
     plan.used, plan.made = ctx.used, ctx.made
+    plan.leftovers, plan.back = Leftovers(ctx)
+    plan.net = plan.total - plan.back
     plan.ctx = ctx
     return plan
 end
@@ -253,8 +314,8 @@ end
 -- Recipes you don't know that would make the guide cheaper, or reach past where it stops.
 function Pl.Options(plan, prof, limit)
     local out = {}
-    local ctx = { offset = prof.offset or 0, seenSkill = prof.seenSkill, used = {}, made = {},
-        supply = ns.Prices.Supply, marginal = ns.Prices.Marginal }
+    local ctx = { offset = prof.offset or 0, seenSkill = prof.seenSkill, used = {}, made = {}, madeUsed = {},
+        supply = ns.Prices.Supply, marginal = ns.Prices.Marginal, value = ns.Prices.ValueOf }
     for _, r in ipairs(prof.recipes or {}) do
         if not r.known and r.trust then
             local o = { r = r, learnAt = r.rank, source = r.source, covers = 0, saving = 0 }
@@ -262,13 +323,13 @@ function Pl.Options(plan, prof, limit)
                 if o.learnAt and s < o.learnAt then return nil end
                 local chance, gain, crafts = AtSkill(ctx, r, s, lim)
                 if not chance then return nil end
-                local cost, priced = CraftCost(ctx, r, crafts)
-                return gain, cost, priced
+                local cost, priced, _, _, _, extra = CraftCost(ctx, r, crafts)
+                return gain, cost + extra.given - extra.credit, priced
             end
             for _, p in ipairs(plan.points) do
                 local gain, cost, priced = Try(p.s, p.to)
                 if gain and priced and p.priced then
-                    local diff = (p.cost / p.gain - cost / gain) * p.gain
+                    local diff = (p.net / p.gain - cost / gain) * p.gain
                     if diff >= 1 then
                         o.saving = o.saving + diff
                         o.from = o.from or p.s
@@ -323,6 +384,7 @@ function Pl.ForProfession(prof)
     local plan = Pl.Build({
         skill = skill, max = max, target = target, offset = prof.offset or 0, seenSkill = prof.seenSkill,
         recipes = prof.recipes or {}, supply = ns.Prices.Supply, marginal = ns.Prices.Marginal,
+        value = ns.Prices.ValueOf,
     })
     plan.name, plan.prof, plan.line = prof.name, prof, prof.line
     plan.shopping = Pl.Shopping(plan)
@@ -349,6 +411,17 @@ function Pl.ForProfession(prof)
     if nStale > 0 then
         notes[#notes + 1] = ("%d %s auction prices older than %d h: scan again for today's."):format(nStale,
             nStale == 1 and "reagent uses" or "reagents use", ns.db.staleHours or 3)
+    end
+    if ns.db.sellAH then
+        local waiting = 0
+        for _, e in ipairs(plan.leftovers) do
+            if ns.Prices.Resale(e.item).waiting then waiting = waiting + 1 end
+        end
+        if waiting > 0 then
+            notes[#notes + 1] = ("%d %s the guide leaves over %s no auction sales seen yet, so %s at the vendor price: "
+                .. "it takes a few scans hours apart to see what sells."):format(waiting,
+                waiting == 1 and "item" or "items", waiting == 1 and "has" or "have", waiting == 1 and "it counts" or "they count")
+        end
     end
     if plan.untrusted > 0 then
         notes[#notes + 1] = ("%d known %s didn't match the game's colours, so %s only used while the game shows %s orange (/skillpath debug)."):format(

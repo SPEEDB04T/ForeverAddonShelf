@@ -83,7 +83,8 @@ end
 -- Supply: what getting x more units of an item costs, past the free ones
 ----------------------------------------------------------------------
 local cache = {}
-function P.Invalidate() cache = {} end
+local resale = {}
+function P.Invalidate() cache, resale = {}, {} end
 
 local function Prefix(segs)
     local U, K = {}, {}
@@ -228,7 +229,9 @@ end
 ----------------------------------------------------------------------
 -- Vendors: the price a merchant actually shows (with any discount)
 ----------------------------------------------------------------------
-function P.Interest()
+-- The reagents of the saved professions; with outputs, also what their known recipes make
+-- (scanned only when auction house sales are counted).
+function P.Interest(outputs)
     local set = {}
     local char = ns.Char()
     for _, prof in pairs(char and char.profs or {}) do
@@ -236,9 +239,14 @@ function P.Interest()
             for _, slot in ipairs(r.slots or {}) do
                 for _, item in ipairs(slot.items) do set[item] = true end
             end
+            if outputs and r.known and r.out then set[r.out] = true end
         end
     end
     return set
+end
+
+local function Watched()
+    return P.Interest(ns.db.sellAH)
 end
 
 local function MerchantItem(i)
@@ -295,7 +303,7 @@ function P.ScanList(all)
     local store = AHStore()
     local now = ns.Clock()
     local list = {}
-    for item in pairs(P.Interest()) do
+    for item in pairs(Watched()) do
         local vendor = P.Vendor(item)
         local rec = store[item]
         local fresh = type(rec) == "table" and Num(rec.t) and now - rec.t < FRESH_SKIP
@@ -445,12 +453,172 @@ local function ReadItems(key)
     return list, full == false
 end
 
+----------------------------------------------------------------------
+-- Sales: the auction house never says what sold, only what is listed. Between two scans of an
+-- item, the units that are no longer listed were bought, or cancelled, or ran out; that count,
+-- over the hours between the scans, is the most it can have sold. Kept for a week.
+----------------------------------------------------------------------
+local OBS_MAX_GAP = 48 * 3600        -- longer than the longest auction: everything could have run out
+local OBS_KEEP = 7 * 86400
+local DEMAND_MIN_HOURS = 4           -- less watching than this isn't enough to say how fast it sells
+local MAX_LISTINGS = 80
+
+-- Units listed in `old` that aren't in `new`. Commodities are compared price by price, item
+-- auctions lot by lot. When a list was cut short, only prices both lists cover are compared.
+local function Gone(old, new, cutOld, cutNew)
+    local top = math.huge
+    if cutOld and old[#old] then top = math.min(top, old[#old][1]) end
+    if cutNew and new[#new] then top = math.min(top, new[#new][1]) end
+    local function Key(e) return e[3] and (e[1] .. ":" .. e[2] .. ":" .. tostring(e[4])) or tostring(e[1]) end
+    local now = {}
+    for _, e in ipairs(new) do
+        if e[1] < top then
+            local k = Key(e)
+            now[k] = (now[k] or 0) + (e[3] and 1 or e[2])
+        end
+    end
+    local gone = 0
+    local before = {}
+    for _, e in ipairs(old) do
+        if e[1] < top then
+            local k = Key(e)
+            before[k] = (before[k] or 0) + (e[3] and 1 or e[2])
+            before[k .. "#q"] = e[3] and e[2] or 1
+        end
+    end
+    for k, n in pairs(before) do
+        if not k:find("#q", 1, true) then
+            local left = n - (now[k] or 0)
+            if left > 0 then gone = gone + left * before[k .. "#q"] end
+        end
+    end
+    return gone
+end
+P.Gone = Gone
+
 local function Record(item, list, partial)
     table.sort(list, function(a, b) return a[1] < b[1] end)
-    while #list > 80 do table.remove(list) end
-    AHStore()[item] = { t = ns.Clock(), l = list, partial = partial or nil }
+    local cut = #list > MAX_LISTINGS
+    while #list > MAX_LISTINGS do table.remove(list) end
+    local now = ns.Clock()
+    local store = AHStore()
+    local prev = store[item]
+    local obs = {}
+    if type(prev) == "table" then
+        for _, o in ipairs(type(prev.obs) == "table" and prev.obs or {}) do
+            if Num(o.t) and now - o.t <= OBS_KEEP then obs[#obs + 1] = o end
+        end
+        local gap = Num(prev.t) and now - prev.t
+        if gap and gap > 0 and gap <= OBS_MAX_GAP and not partial and not prev.partial and type(prev.l) == "table" then
+            obs[#obs + 1] = { t = now, gone = Gone(prev.l, list, prev.cut, cut), dt = gap }
+        end
+    end
+    store[item] = { t = now, l = list, partial = partial or nil, cut = cut or nil, obs = #obs > 0 and obs or nil }
 end
 P.Record = Record
+
+
+-- At most how many units of an item left the auction house per day, and over how many hours
+-- and scans that was seen. nil until it has been watched for DEMAND_MIN_HOURS.
+function P.Demand(item)
+    local rec = AHStore()[item]
+    if type(rec) ~= "table" or type(rec.obs) ~= "table" then return nil end
+    local gone, secs, n = 0, 0, 0
+    local now = ns.Clock()
+    for _, o in ipairs(rec.obs) do
+        if Num(o.t) and Num(o.gone) and Num(o.dt) and now - o.t <= OBS_KEEP then
+            gone, secs, n = gone + o.gone, secs + o.dt, n + 1
+        end
+    end
+    if secs < DEMAND_MIN_HOURS * 3600 then return nil, secs / 3600, n end
+    return gone / secs * 86400, secs / 3600, n
+end
+
+----------------------------------------------------------------------
+-- What the guide makes and doesn't use again: what selling it gives back
+----------------------------------------------------------------------
+local AH_CUT = 0.05      -- the auction house keeps 5% of a sale; the deposit comes back when it sells
+
+-- The vendor sell price (the game's item data). nil while the item isn't loaded.
+function P.SellPrice(item)
+    local packed = ns.CallAll(C_Item and C_Item.GetItemInfo, item)
+    if packed[1] == nil then
+        if C_Item and C_Item.RequestLoadItemDataByID then pcall(C_Item.RequestLoadItemDataByID, item) end
+        return nil
+    end
+    return Num(packed[11]) or 0
+end
+
+-- How units of an item that is left over are valued, with everything that number rests on:
+--   vendor: the sell price per unit (0 when vendor sales aren't counted or it has none);
+--   ah: what one sells for at the auction house after the cut, when it beats the vendor;
+--   cap: how many are counted at that price (sales seen per day x days counted);
+--   why: why the auction house isn't counted, in words.
+function P.Resale(item)
+    local res = resale[item]
+    if res then return res end
+    res = { item = item }
+    local sell = P.SellPrice(item)
+    res.sell = sell
+    res.vendor = ns.db.sellVendor and sell or 0
+    res.cap = 0
+    local bound = BindType(item) == 1
+    if not ns.db.sellAH then
+        res.why = "auction house sales aren't counted (options)"
+    elseif bound then
+        res.why = "it binds when picked up"
+    else
+        local latest = AHStore()[item]
+        if type(latest) ~= "table" or not Num(latest.t) or type(latest.l) ~= "table" then
+            res.why = "not scanned at the auction house yet"
+            res.waiting = true
+        else
+            res.age = ns.Clock() - latest.t
+            res.stale = res.age > (Num(ns.db.staleHours) or 3) * 3600
+            local cheapest = latest.l[1] and Num(latest.l[1][1])
+            res.listed = 0
+            for _, e in ipairs(latest.l) do res.listed = res.listed + (Num(e[2]) or 0) end
+            res.lowest = cheapest
+            local perDay, hours, scans = P.Demand(item)
+            res.perDay, res.hours, res.scans = perDay, hours, scans
+            if not cheapest then
+                res.why = ("none listed at the last scan (%s), so there is no price to sell at"):format(ns.Age(res.age))
+            elseif not perDay then
+                res.why = ("watched for %.1f h so far; it takes %d h of scans to see how fast it sells")
+                    :format(hours or 0, DEMAND_MIN_HOURS)
+                res.waiting = true
+            else
+                local net = cheapest * (1 - AH_CUT)
+                if net <= (sell or 0) then
+                    res.why = "the vendor pays more than the auction house after its cut"
+                elseif perDay <= 0 then
+                    res.why = ("none sold in %.0f h of scans"):format(hours)
+                else
+                    res.ah = net
+                    res.cap = math.floor(perDay * (Num(ns.db.sellDays) or 3))
+                    if res.cap <= 0 then
+                        res.ah = nil
+                        res.why = ("about %.1f a day sell, less than one in %d days"):format(perDay, ns.db.sellDays or 3)
+                    end
+                end
+            end
+        end
+    end
+    resale[item] = res
+    return res
+end
+
+-- What n left-over units are worth: the first `cap` at the auction house price, the rest at the vendor.
+function P.ValueOf(item, n)
+    if n <= 1e-9 then return 0 end
+    local res = P.Resale(item)
+    local vendor = res.vendor or 0
+    if res.ah then
+        local atAH = math.min(n, res.cap)
+        return atAH * res.ah + (n - atAH) * vendor
+    end
+    return n * vendor
+end
 
 function P.OnEvent(event, a)
     if event == "AUCTION_HOUSE_SHOW" then
@@ -476,7 +644,7 @@ function P.OnEvent(event, a)
         local recent = scan.own[item] and now - scan.own[item] < 5
         if not (ours or recent) then scan.lastForeign = now end
         -- Results are facts whoever asked: keep them for reagents the guide uses.
-        if ours or recent or P.Interest()[item] then
+        if ours or recent or Watched()[item] then
             local list, partial
             if commodity then list, partial = ReadCommodity(item) else list, partial = ReadItems(a) end
             Record(item, list, partial)

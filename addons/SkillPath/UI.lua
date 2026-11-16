@@ -145,6 +145,20 @@ local function StepTooltip(row, step)
         end
         GameTooltip:AddDoubleLine(UI.PointText(p), CostText(p.cost or 0, p.priced), wr, wg, wb, wr, wg, wb)
     end
+    if (step.credit or 0) >= 0.5 or (step.given or 0) >= 0.5 then
+        if (step.credit or 0) >= 0.5 then
+            GameTooltip:AddLine(("Selling what it makes gives back about %s."):format(ns.Money(step.credit)), wr, wg, wb, true)
+        end
+        if (step.given or 0) >= 0.5 then
+            GameTooltip:AddLine(("It uses up made items that would sell for about %s."):format(ns.Money(step.given)),
+                wr, wg, wb, true)
+        end
+        local net = step.cost + (step.given or 0) - (step.credit or 0)
+        if step.priced then
+            GameTooltip:AddLine(net >= 0 and ("Net: about %s."):format(ns.Money(net))
+                or ("Net: about %s profit."):format(ns.Money(-net)), wr, wg, wb, true)
+        end
+    end
     GameTooltip:AddLine(" ")
     GameTooltip:AddLine("Reagents for one craft", nr, ng, nb)
     AddReagents(GameTooltip, r)
@@ -177,6 +191,47 @@ local function ShopTooltip(row, e)
     GameTooltip:AddLine(("The guide uses about %s; you have %d%s."):format(ns.Crafts(e.need), e.have,
         e.made > 0.05 and (", and its earlier steps make about " .. ns.Crafts(e.made)) or ""), wr, wg, wb, true)
     GameTooltip:AddLine(UI.SourceText(e.item), gr, gg, gb, true)
+end
+
+-- What one left-over item is worth, and what that rests on.
+function UI.SellLines(e)
+    local res = ns.Prices.Resale(e.item)
+    local lines = {}
+    if res.ah then
+        local atAH = math.min(e.left, res.cap)
+        lines[#lines + 1] = ("Auction house: %s of them at %s each after the 5%% cut (cheapest listing %s, %s)."):format(
+            ns.Crafts(atAH), ns.Money(res.ah), ns.Money(res.lowest), ns.Age(res.age))
+        lines[#lines + 1] = ("About %.1f a day left the auction house over %.0f h of scans (%d %s); %d %s of that is counted."):format(
+            res.perDay, res.hours, res.scans + 1, res.scans + 1 == 1 and "scan" or "scans", ns.db.sellDays or 3,
+            (ns.db.sellDays or 3) == 1 and "day" or "days")
+        lines[#lines + 1] = "That count is the most that sold: auctions that were cancelled or ran out leave too. "
+            .. "It assumes yours are the cheapest. The deposit comes back when an auction sells."
+        if res.stale then lines[#lines + 1] = "That price is old: scan again." end
+    end
+    if res.vendor and res.vendor > 0 then
+        local rest = res.ah and math.max(0, e.left - res.cap) or e.left
+        if rest > 0.05 then
+            lines[#lines + 1] = ("Vendor: %s at %s each."):format(ns.Crafts(rest), ns.Money(res.vendor))
+        end
+    elseif not ns.db.sellVendor then
+        lines[#lines + 1] = "Vendor sales aren't counted (options)."
+    elseif res.sell == nil then
+        lines[#lines + 1] = "Its vendor price isn't loaded yet."
+    else
+        lines[#lines + 1] = "Vendors don't buy it."
+    end
+    if not res.ah and res.why then lines[#lines + 1] = "Not counted at the auction house: " .. res.why .. "." end
+    return lines
+end
+
+local function SellTooltip(row, e)
+    if not pcall(GameTooltip.SetItemByID, GameTooltip, e.item) then GameTooltip:SetText(ns.Prices.ItemName(e.item)) end
+    local wr, wg, wb = Color("HIGHLIGHT_FONT_COLOR", 1, 1, 1)
+    local gr, gg, gb = Color("GRAY_FONT_COLOR", 0.5, 0.5, 0.5)
+    GameTooltip:AddLine(" ")
+    GameTooltip:AddLine(("The guide makes about %s that no later step uses: worth about %s."):format(
+        ns.Crafts(e.left), ns.Money(e.value)), wr, wg, wb, true)
+    for _, line in ipairs(UI.SellLines(e)) do GameTooltip:AddLine(line, gr, gg, gb, true) end
 end
 
 local function OptionTooltip(row, o)
@@ -212,6 +267,8 @@ function UI.ShowTooltip(row)
         StepTooltip(row, e.step)
     elseif e.kind == "shop" then
         ShopTooltip(row, e.entry)
+    elseif e.kind == "sell" then
+        SellTooltip(row, e.entry)
     elseif e.kind == "option" then
         OptionTooltip(row, e.option)
     elseif e.kind == "point" then
@@ -249,7 +306,7 @@ function UI.Click(row, button)
         local link
         if r then
             link = RecipeLink(r.id)
-        elseif e.kind == "shop" then
+        elseif e.kind == "shop" or e.kind == "sell" then
             link = select(2, ns.Call(C_Item and C_Item.GetItemInfo, e.entry.item))
         end
         if link and HandleModifiedItemClick then HandleModifiedItemClick(link) end
@@ -352,7 +409,7 @@ local function BuildRow(row)
 
     row:SetScript("OnEnter", function(self)
         local kind = self.element and self.element.kind
-        if kind == "step" or kind == "shop" or kind == "option" then self.Highlight:Show() end
+        if kind == "step" or kind == "shop" or kind == "sell" or kind == "option" then self.Highlight:Show() end
         UI.ShowTooltip(self)
     end)
     row:SetScript("OnLeave", function(self)
@@ -362,7 +419,7 @@ local function BuildRow(row)
     row:SetScript("OnMouseUp", function(self, button) UI.Click(self, button) end)
 end
 
-local CARD_KINDS = { step = true, shop = true, option = true, train = true, gap = true }
+local CARD_KINDS = { step = true, shop = true, sell = true, option = true, train = true, gap = true }
 
 local function ShowParts(row, kind)
     local card = CARD_KINDS[kind] or false
@@ -459,6 +516,27 @@ local function InitRow(row, e)
         end
         row.Sub:SetText(sub)
         row.Background:SetVertexColor(1, 1, 1)
+    elseif e.kind == "sell" then
+        local s = e.entry
+        local res = ns.Prices.Resale(s.item)
+        SetIcon(row, ns.Prices.ItemIcon(s.item), false)
+        local count = math.floor(s.left + 0.5)
+        if SetItemButtonCount then SetItemButtonCount(row.Item, count) elseif row.Item.Count then
+            row.Item.Count:SetText(count > 1 and tostring(count) or "")
+        end
+        row.Text:SetText(ns.Prices.ItemName(s.item))
+        row.Text:SetTextColor(wr, wg, wb)
+        local where
+        if res.ah and s.left > res.cap + 0.05 then
+            where = ("%d at the auction house, the rest to a vendor"):format(res.cap)
+        elseif res.ah then
+            where = "auction house"
+        elseif s.value >= 0.5 then
+            where = "vendor"
+        end
+        row.Sub:SetText(where and ("About %s back: %s"):format(ns.Money(s.value), where) or "Nothing counted for it")
+        row.Sub:SetTextColor(wr, wg, wb)
+        row.Background:SetVertexColor(1, 1, 1)
     elseif e.kind == "option" then
         local o = e.option
         SetIcon(row, o.r.icon, true)
@@ -525,6 +603,10 @@ function UI.Elements()
     else
         cost = ("Expected cost: %s for the priced part"):format(CostText(plan.total, true))
     end
+    if (plan.back or 0) >= 0.5 then
+        cost = cost .. (plan.net >= 0 and (", net %s"):format(ns.Money(plan.net))
+            or (", net %s profit"):format(ns.Money(-plan.net)))
+    end
     out[#out + 1] = { kind = "head", title = ("%s %d to %d"):format(plan.name, plan.from, plan.to), cost = cost,
         status = HeadStatus(plan), scan = ns.Prices.IsOpen() }
     for _, note in ipairs(plan.notes) do out[#out + 1] = { kind = "note", text = note } end
@@ -544,6 +626,14 @@ function UI.Elements()
     if #plan.shopping > 0 then
         out[#out + 1] = { kind = "header", text = "Shopping list" }
         for _, entry in ipairs(plan.shopping) do out[#out + 1] = { kind = "shop", entry = entry } end
+    end
+    local leftovers = {}
+    for _, entry in ipairs(plan.leftovers or {}) do
+        if entry.left >= 0.5 then leftovers[#leftovers + 1] = entry end
+    end
+    if #leftovers > 0 then
+        out[#out + 1] = { kind = "header", text = "Left over to sell" }
+        for _, entry in ipairs(leftovers) do out[#out + 1] = { kind = "sell", entry = entry } end
     end
     if #plan.options > 0 then
         out[#out + 1] = { kind = "header", text = "Recipes you could learn" }

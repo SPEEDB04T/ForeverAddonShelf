@@ -1,3 +1,8 @@
+## 1.1.0
+- What the guide crafts and no later step uses now counts at its vendor sell price, so a recipe whose result sells back for more can be the cheaper way up. The top shows the net cost, and a new "Left over to sell" list says what each leftover is worth.
+- Optional (off at first): leftovers can count at the cheapest auction price after the 5% cut, but only as many as were seen to sell. The auction house doesn't show sales, so the addon compares scans: units listed at one scan and gone at the next were bought (or cancelled, or ran out), which is the most that can have sold. Until an item has 4 hours of scans behind it, it counts at the vendor price, and the guide says so. "Days of sales to count" (3 at first) sets how many days of those sales count at the auction price; the rest go to a vendor.
+- A made item a later step uses up isn't counted as sold too.
+
 ## 1.0.0
 - New addon: a point-by-point leveling guide for your profession, worked out from your own recipe list and real reagent prices. `/skillpath` opens it; it also opens beside the professions window.
 - For every skill point: which recipe to craft, the chance a craft gives the point, the expected number of crafts and what they cost. Orange always gives a point; yellow and green use the game's chance (grey level minus skill, over grey minus yellow).

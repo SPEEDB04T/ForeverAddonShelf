@@ -2,7 +2,7 @@
 local ADDON, ns = ...
 
 ns.ADDON = ADDON
-ns.VERSION = "1.0.0"
+ns.VERSION = "1.1.0"
 ns.NAME = "SkillPath"
 ns.ICON = "Interface\\Icons\\INV_Misc_Note_01"
 
@@ -16,6 +16,9 @@ local defaults = {
     showOptions = true,  -- recipes you don't know yet that would help
     staleHours = 3,      -- an auction price older than this is called out as old
     autoScan = true,     -- read reagent prices a few seconds after the auction house opens
+    sellVendor = true,   -- what the guide makes and doesn't use again counts at its vendor sell price
+    sellAH = false,      -- ...or at the auction house, for as many as were seen to sell there
+    sellDays = 3,        -- how many days of those sales to count
 }
 
 ----------------------------------------------------------------------
@@ -210,6 +213,10 @@ function ns.Report()
     end
     ns.Print(("%s %d -> %d: %s expected%s."):format(p.name, p.from, p.to, ns.Money(p.total),
         p.totalComplete and "" or " for the priced part (some reagents have no price)"))
+    if (p.back or 0) >= 0.5 then
+        ns.Print(("  Selling what is left gives back about %s, so it nets %s."):format(ns.Money(p.back),
+            p.net >= 0 and ns.Money(p.net) or (ns.Money(-p.net) .. " profit")))
+    end
     for _, step in ipairs(p.steps) do
         if step.kind == "craft" then
             local cost = step.priced and ns.Money(step.cost) or "no price"

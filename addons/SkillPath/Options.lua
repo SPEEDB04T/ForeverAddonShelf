@@ -58,6 +58,24 @@ local function Rows()
               click = function() ns.Prices.Forget() end },
         } },
 
+        { kind = "header", text = "Selling what you make" },
+        { kind = "check", label = "Count leftovers at the vendor price",
+          tip = "What the guide crafts and doesn't use in a later step counts at its vendor sell price, so a recipe "
+              .. "whose result sells back for more can be the cheaper way up. Off: crafted items count as worth nothing.",
+          get = Get("sellVendor"), set = Set("sellVendor") },
+        { kind = "check", label = "Count auction house sales",
+          tip = "Leftovers can count at the cheapest auction price (after the auction house's 5% cut), but only as "
+              .. "many as were seen to sell. The auction house doesn't show sales, so the addon compares scans: "
+              .. "units listed at one scan and gone at the next were bought (or cancelled, or ran out). Until an "
+              .. "item has been watched for 4 hours of scans, it counts at the vendor price. The rest always counts "
+              .. "at the vendor price. What you craft is then scanned too.",
+          get = Get("sellAH"), set = Set("sellAH") },
+        { kind = "slider", label = "Days of sales to count", min = 1, max = 14, step = 1,
+          format = function(value) return ("%d %s"):format(value, value == 1 and "day" or "days") end,
+          tip = "How many days of the sales seen are counted at the auction house price: with 2 a day seen and 3 "
+              .. "days, up to 6 of an item count there, the rest at the vendor.",
+          get = function() return ns.db.sellDays or 3 end, set = Set("sellDays") },
+
         { kind = "header", text = "Window" },
         { kind = "slider", label = "Window size", min = 0.5, max = 2, step = 0.05, format = "%.2f",
           tip = "Makes the guide window bigger or smaller.",
@@ -90,8 +108,13 @@ local function Status()
     local plan = ns.Plan()
     if not plan.ok then return { plan.why } end
     local cost = ns.Money(plan.total)
-    return { ("%s %d to %d: %s expected%s."):format(plan.name, plan.from, plan.to, cost,
-        plan.totalComplete and "" or " for the priced part") }
+    local net = ""
+    if (plan.back or 0) >= 0.5 then
+        net = plan.net >= 0 and (", net %s after selling what is left"):format(ns.Money(plan.net))
+            or (", %s profit after selling what is left"):format(ns.Money(-plan.net))
+    end
+    return { ("%s %d to %d: %s expected%s%s."):format(plan.name, plan.from, plan.to, cost,
+        plan.totalComplete and "" or " for the priced part", net) }
 end
 Options.Status = Status
 
