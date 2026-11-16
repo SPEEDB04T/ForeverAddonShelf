@@ -21,7 +21,9 @@ local RANK_STEP = 75      -- each trainer rank raises the cap by this much
 local TOP_RANK = 300      -- the last rank's cap: no trainer raises it further
 Pl.TOP = TOP_RANK
 local AHEAD_MAX = 64      -- points looked ahead when a reagent is sold in whole lots
-local SPARE_Z = 1.28      -- spare reagents for the unlucky run: this many deviations, 9 runs in 10
+-- Spare reagents: with all of them bought, the chance that a run is short of anything.
+local SPARE_SHORT = 0.01
+Pl.SPARE_ODDS = "99 runs in 100"
 Pl.RANK_STEP = RANK_STEP
 
 -- The chance that one craft at this skill gives a point.
@@ -243,41 +245,71 @@ local function Use(ctx, item, n)
 end
 
 -- A craft that isn't sure to give its point may take more crafts than expected: how much the
--- count of each reagent can vary, for the spare units on the shopping list.
-local function Spread(ctx, item, units, crafts, chance)
+-- count of each reagent can vary, for the spare units on the shopping list. The crafts one point
+-- takes follow the geometric law; its spread (var), skew (k3) and tail weight (k4) add up over
+-- the points. `uses` collects what one craft of this point takes of each item.
+local function Spread(ctx, item, units, crafts, chance, uses)
     if chance >= 1 or crafts <= EPS then return end
     local per = units / crafts
-    ctx.var[item] = (ctx.var[item] or 0) + per * per * (1 - chance) / (chance * chance)
+    local miss = 1 - chance
+    uses[item] = (uses[item] or 0) + per
+    ctx.k3, ctx.k4 = ctx.k3 or {}, ctx.k4 or {}
+    ctx.var[item] = (ctx.var[item] or 0) + per ^ 2 * miss / chance ^ 2
+    ctx.k3[item] = (ctx.k3[item] or 0) + per ^ 3 * miss * (2 - chance) / chance ^ 3
+    ctx.k4[item] = (ctx.k4[item] or 0) + per ^ 4 * miss * (chance * chance - 6 * chance + 6) / chance ^ 4
+end
+
+-- How many deviations over the average leave a chance `tail` of going higher on the normal
+-- curve (Abramowitz and Stegun 26.2.23, good to 0.0005).
+local function Deviations(tail)
+    local t = math.sqrt(-2 * math.log(tail))
+    return t - (2.515517 + 0.802853 * t + 0.010328 * t * t)
+        / (1 + 1.432788 * t + 0.189269 * t * t + 0.001308 * t * t * t)
+end
+
+-- Units over the average that an item's use passes only with chance `tail`. The crafts a point
+-- takes have a long upper tail, so the normal curve alone comes out short; the skew and the tail
+-- weight correct it (Cornish-Fisher). tests/SkillPath/spare_check.py compares it with the exact
+-- odds: never under, a unit or two over.
+function Pl.Spare(var, k3, k4, tail)
+    if not var or var <= EPS then return 0 end
+    local z = Deviations(tail)
+    local sd = math.sqrt(var)
+    local g1, g2 = (k3 or 0) / (sd * var), (k4 or 0) / (var * var)
+    local w = z + (z * z - 1) * g1 / 6 + (z ^ 3 - 3 * z) * g2 / 24 - (2 * z ^ 3 - 5 * z) * g1 * g1 / 36
+    return sd * math.max(w, z)
 end
 
 -- Takes a chosen source out of the supply; `subs` collects the recipes crafted for their output.
-local function CommitPart(ctx, part, subs, crafts, chance)
+local function CommitPart(ctx, part, subs, crafts, chance, uses)
     if part.stock > EPS then
         Use(ctx, part.item, part.stock)
-        Spread(ctx, part.item, part.stock, crafts, chance)
+        Spread(ctx, part.item, part.stock, crafts, chance, uses)
     end
     local m = part.make
     if m then
         subs[#subs + 1] = { r = m.r, crafts = m.crafts, item = part.item, n = part.n - part.stock }
-        for _, sub in ipairs(m.parts) do CommitPart(ctx, sub, subs, crafts, chance) end
+        for _, sub in ipairs(m.parts) do CommitPart(ctx, sub, subs, crafts, chance, uses) end
     end
 end
 
+-- Returns the recipes crafted for their output, and what one craft takes of each item when the
+-- point isn't sure (nil when it is).
 local function Commit(ctx, r, crafts, choice, extra, chance)
-    local subs = {}
+    local subs, uses = {}, {}
     for i, slot in ipairs(r.slots or {}) do
         local part = extra and extra.parts[i]
         if part then
-            CommitPart(ctx, part, subs, crafts, chance or 1)
+            CommitPart(ctx, part, subs, crafts, chance or 1, uses)
         elseif choice[i] then
             Use(ctx, choice[i], slot.qty * crafts)      -- no price: still on the shopping list
-            Spread(ctx, choice[i], slot.qty * crafts, crafts, chance or 1)
+            Spread(ctx, choice[i], slot.qty * crafts, crafts, chance or 1, uses)
         end
     end
     if r.out and r.outQty and r.outQty > 0 then
         ctx.made[r.out] = (ctx.made[r.out] or 0) + crafts * r.outQty
     end
-    return subs
+    return subs, next(uses) and uses or nil
 end
 
 -- What is left of everything the path made, in whole units, and what selling it gives back.
@@ -389,18 +421,19 @@ local function Learn(ctx, plan, r, s)
     ctx.learned[r.id] = { r = r, info = info, fee = fee, unknown = unknown, at = s, order = plan.nLearned }
     plan.total = plan.total + fee
     if unknown then plan.feesUnknown = plan.feesUnknown + 1 end
-    if info.how == "trainer" and not info.seen then plan.assumed = plan.assumed + 1 end
+    if info.how == "trainer" and not info.seen and not info.table then plan.assumed = plan.assumed + 1 end
     return true
 end
 
--- With no trainer's list read, a trainer recipe is taken to be learnable at its yellow skill:
--- that is the latest it can be. Where nothing gives skill, the one that turns yellow soonest may
+-- A profession with no trainer table and no trainer's list read: a trainer recipe is taken to be
+-- learnable at its yellow skill. Where nothing gives skill, the one that turns yellow soonest may
 -- be taught already, but that is not known: the path stops there and names it, with its skill.
 local function Unread(ctx, candidates, s, limit)
     local pick
     for _, r in ipairs(candidates) do
         local info = ctx.learn[r.id]
-        if info and info.how == "trainer" and not info.seen and info.at > s and not ctx.learned[r.id]
+        if info and info.how == "trainer" and not info.seen and not info.table and info.at > s
+            and not ctx.learned[r.id]
             and AtSkill(ctx, r, s, limit) then
             local now = pick and ctx.learn[pick.id]
             if not now or info.at < now.at or (info.at == now.at and r.id < pick.id) then pick = r end
@@ -457,8 +490,23 @@ local function Build(args, banned)
     local s, cap = args.skill, args.max
     while s < args.target do
         if s >= cap then
-            while s >= cap do cap = cap + RANK_STEP end
-            plan.steps[#plan.steps + 1] = { kind = "train", at = s, rank = cap, learn = {}, fee = 0, unknown = 0 }
+            -- The next rank: what it costs joins the fees (a rank with no known fee: not in the cost).
+            local step = { kind = "train", at = s, learn = {}, fee = 0, unknown = 0, ranks = {} }
+            while s >= cap do
+                cap = cap + RANK_STEP
+                local rank = args.rank and args.rank(cap) or { cap = cap, how = "trainer" }
+                step.ranks[#step.ranks + 1] = rank
+                if rank.fee then
+                    step.fee = step.fee + rank.fee
+                    plan.fees = plan.fees + rank.fee
+                    plan.total = plan.total + rank.fee
+                else
+                    step.unknown = step.unknown + 1
+                    plan.feesUnknown = plan.feesUnknown + 1
+                end
+            end
+            step.rank = cap
+            plan.steps[#plan.steps + 1] = step
         end
         local limit = math.min(cap, args.target)
         local best, bestUnpriced
@@ -500,7 +548,7 @@ local function Build(args, banned)
                 end
             end
         end
-        local subs = Commit(ctx, pick.r, pick.crafts, pick.choice, pick.extra, pick.chance)
+        local subs, per = Commit(ctx, pick.r, pick.crafts, pick.choice, pick.extra, pick.chance)
         local learnedNow = Learn(ctx, plan, pick.r, s)
         for _, sub in ipairs(subs) do
             if Learn(ctx, plan, sub.r, s) then learnedNow = true end
@@ -508,7 +556,7 @@ local function Build(args, banned)
         ctx.prev = pick.r
         local point = { s = s, to = s + pick.gain, r = pick.r, chance = pick.chance, gain = pick.gain,
             crafts = pick.crafts, orange = pick.orange, cost = pick.priced and pick.cost or nil, known = pick.cost,
-            priced = pick.priced, missing = pick.missing, stale = pick.stale, alts = alts, subs = subs,
+            priced = pick.priced, missing = pick.missing, stale = pick.stale, alts = alts, subs = subs, per = per,
             credit = pick.extra.credit, given = pick.extra.given, net = pick.priced and pick.net or nil }
         plan.points[#plan.points + 1] = point
         plan.total = plan.total + pick.cost
@@ -610,7 +658,8 @@ local function Schedule(plan)
         if step.kind == "train" then
             local prev = steps[#steps]
             if prev and prev.kind == "train" and prev.at == step.at then
-                prev.rank = step.rank
+                prev.rank, prev.ranks = step.rank, step.ranks
+                prev.fee, prev.unknown = prev.fee + step.fee, prev.unknown + step.unknown
             else
                 steps[#steps + 1] = step
                 prev = step
@@ -655,7 +704,8 @@ end
 
 -- args: skill, max, target, offset, seenSkill, recipes, supply(item), marginal(sup, used, k, extra),
 -- value(item, n) (what n left-over units sell for; optional), learn(recipe) (how a recipe that
--- isn't known is learned: { how = "trainer" or "item", at = skill, fee, item, seen }; optional)
+-- isn't known is learned: { how = "trainer" or "item", at = skill, fee, item, seen }; optional),
+-- rank(cap) (the rank that gives that cap: { cap, skill, fee, level, how, item }; optional)
 function Pl.Build(args)
     local banned = {}
     local plan = Build(args, banned)
@@ -696,43 +746,57 @@ end
 -- What to buy, and the recipes worth finding
 ----------------------------------------------------------------------
 -- One entry per reagent the path takes from outside: need (expected units), have, made (by the
--- path), buy (whole units), cost, from, spare (more units that cover an unlucky run) and what
--- they cost, missing (why there is no price), short (units more than are listed).
+-- path), buy (whole units), cost, from, spare (more units for bad luck: with every spare bought
+-- a run is short of something only SPARE_SHORT of the time) and what they cost, missing (why
+-- there is no price), short (units more than are listed).
 function Pl.Shopping(plan)
     local list = {}
     local Prices = ns.Prices
     local ctx = plan.ctx
+    local k3, k4 = ctx.k3 or {}, ctx.k4 or {}
+    -- The chance of running short is shared out over the reagents whose use can vary, so that
+    -- all of them together stay inside it.
+    local risky = 0
+    for item, need in pairs(plan.used) do
+        if need > EPS and (ctx.var[item] or 0) > EPS then risky = risky + 1 end
+    end
+    local tail = SPARE_SHORT / math.max(1, risky)
     for item, need in pairs(plan.used) do
         if need > EPS then
             local sup = ctx.supply(item)
-            local buy = math.max(0, math.ceil((ctx.bought[item] or 0) - 1e-6))
+            local bought = ctx.bought[item] or 0
+            local buy = math.max(0, math.ceil(bought - 1e-6))
             local cost = Prices.Cost(sup, buy)
             local e = { item = item, need = need, have = sup.have, made = plan.made[item] or 0, buy = buy, cost = cost,
                 stale = sup.stale and sup.listed > 0 and buy > 0 }
-            if buy > 0 then
+            -- What you have past the average need, and the rounding up to whole units, are spare already.
+            local over = Pl.Spare(ctx.var[item], k3[item], k4[item], tail)
+            local slack = math.max(0, (sup.have or 0) - (ctx.haveUsed[item] or 0)) + (buy - bought)
+            local spare = math.max(0, math.ceil(over - slack - 1e-6))
+            local n = buy > 0 and buy or spare
+            if n > 0 then
                 local fromAH = sup.listed > 0
                 if fromAH and sup.vendor then
                     -- A vendor's price is the ceiling: listings above it were left out.
-                    local ah = math.min(buy, sup.listed)
-                    e.from = ah >= buy and "auction house" or "auction house and vendor"
+                    local ah = math.min(n, sup.listed)
+                    e.from = ah >= n and "auction house" or "auction house and vendor"
                 elseif fromAH then
                     e.from = "auction house"
                 elseif sup.vendor then
                     e.from = sup.vendorFrom == "vendor" and "vendor" or "vendor (item data)"
                 end
-                if not cost then
-                    e.missing = Prices.Missing(sup)
-                    if sup.listed > 0 and sup.listed < buy then
-                        e.short = buy - sup.listed
-                        e.listed = sup.listed
-                        e.costListed = Prices.Cost(sup, sup.listed)
-                    end
+            end
+            if buy > 0 and not cost then
+                e.missing = Prices.Missing(sup)
+                if sup.listed > 0 and sup.listed < buy then
+                    e.short = buy - sup.listed
+                    e.listed = sup.listed
+                    e.costListed = Prices.Cost(sup, sup.listed)
                 end
-                local spare = math.ceil(SPARE_Z * math.sqrt(ctx.var[item] or 0) - 1e-6)
-                if spare > 0 and cost then
-                    local more = Prices.Cost(sup, buy + spare)
-                    e.spare, e.spareCost = spare, more and (more - cost) or nil
-                end
+            end
+            if spare > 0 then
+                local more = cost and Prices.Cost(sup, buy + spare)
+                e.spare, e.spareCost = spare, more and (more - cost) or nil
             end
             list[#list + 1] = e
         end
@@ -898,6 +962,7 @@ function Pl.ForProfession(prof)
         skill = skill, max = max, target = target, offset = prof.offset or 0, seenSkill = prof.seenSkill,
         recipes = prof.recipes or {}, supply = ns.Prices.Supply, marginal = ns.Prices.Marginal,
         value = ns.Prices.ValueOf, learn = function(r) return R.Learn(prof.line, r) end,
+        rank = function(cap) return R.Rank(prof.line, cap) end,
     })
     plan.name, plan.prof, plan.line = prof.name, prof, prof.line
     plan.shopping = Pl.Shopping(plan)
@@ -961,6 +1026,7 @@ function Pl.ForCustomer(order)
         skill = from, max = Pl.CapAt(from), target = target, offset = 0, seenSkill = from,
         recipes = recipes, supply = ns.Prices.Bare, marginal = ns.Prices.Marginal,
         value = ns.Prices.ValueOf, learn = function(r) return R.Learn(line, r, true) end,
+        rank = function(cap) return R.Rank(line, cap) end,
     })
     plan.name, plan.line, plan.forOther, plan.order = name, line, true, order
     plan.prof = { line = line, name = name, recipes = recipes, offset = 0, seenSkill = from, skill = from }

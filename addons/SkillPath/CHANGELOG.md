@@ -1,3 +1,11 @@
+## 1.4.0
+- The auction house tab now shows the whole path, step by step, like the professions tab: every step on the left, the picked step on the right. Before it showed only what to buy and what to sell. Click an item on the buy or sell step to search for it.
+- Trainer fees and skills are known from the start. The addon now carries its own table of what every profession trainer teaches on Forever, from which skill and for how much (468 recipes), so a path no longer says "fee not read" until you have stood at a trainer. A trainer's own list, once you open it, still wins over the table (a reputation discount changes the fee). `/skillpath debug` lists any row a trainer showed differently.
+- Rank training is in the path and the cost: "Trainer at skill 75: train Journeyman (cap 150, 5s)", with the level the rank asks for. Cooking, First Aid and Fishing get Expert from a book a vendor sells and Artisan from a quest, and the step says so.
+- Where a trainer teaches nothing that goes on, the path now says so as a fact instead of waiting for a trainer visit.
+- Spare reagents are now sized so that 99 runs in 100 need nothing more (before: 9 in 10 for each reagent alone, which often left a run short of something). The shopping list says what the spare is for, and a reagent you hold enough of for the average run is listed when only its spare is left to buy. The spare's cost stays apart from the total.
+- The SkillPath tab at the bottom of the auction house no longer shows as "SkillPa..." the first time the window opens.
+
 ## 1.3.1
 - Sending a plan checks that every line arrives. The game can drop chat an addon sends by itself, with no error, so the plan could stop after its first line while the addon said it was sent. Now each line is checked against the game's own echo of it.
 - When a line doesn't come back, the guide window opens with a "Send next" button: each click sends the next three lines (`/skillpath send next` does the same). The addon remembers this and starts the next plan on clicks.

@@ -2,7 +2,7 @@
 local ADDON, ns = ...
 
 ns.ADDON = ADDON
-ns.VERSION = "1.3.1"
+ns.VERSION = "1.4.0"
 ns.NAME = "SkillPath"
 ns.ICON = "Interface\\Icons\\INV_Misc_Note_01"
 
@@ -498,6 +498,11 @@ local function Debug()
         if r.known and not r.trust then
             ns.Print(("  not trusted: %s (%s)"):format(r.name or r.id, r.why or "?"))
         end
+    end
+    local same, differ = ns.Recipes.TrainCheck()
+    if same + #differ > 0 then
+        ns.Print(("trainer table: %d rows as a trainer showed them, %d not"):format(same, #differ))
+        for _, text in ipairs(differ) do ns.Print("  " .. text) end
     end
     if ns.Prices then ns.Prices.Debug() end
 end

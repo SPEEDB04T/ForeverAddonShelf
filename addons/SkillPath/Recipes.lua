@@ -64,6 +64,40 @@ function R.Rows(line)
     return rows
 end
 
+-- Data.lua's trainer table for a line: [recipe] = { at = skill, fee = copper (nil: not known) }.
+-- nil when the line has no table.
+local trained = {}
+function R.Train(line)
+    if trained[line] == nil then
+        local text = ns.Data and ns.Data.TRAIN and ns.Data.TRAIN[line]
+        local rows = false
+        if type(text) == "string" then
+            rows = {}
+            for spell, skill, fee in text:gmatch("(%d+):(%d+):(%d*)") do
+                rows[tonumber(spell)] = { at = tonumber(skill), fee = tonumber(fee) }
+            end
+        end
+        trained[line] = rows
+    end
+    return trained[line] or nil
+end
+
+-- The rank that raises a line's cap to `cap`: { cap, skill (what it asks for), fee (nil: not
+-- known), level, how = "trainer", "book" (with item) or "quest" }. nil when the table has none.
+function R.Rank(line, cap)
+    local text = ns.Data and ns.Data.RANKS and ns.Data.RANKS[line]
+    if type(text) ~= "string" then return nil end
+    for c, skill, fee, level, how in text:gmatch("(%d+):(%d+):(%d*):(%d+):(%w+)") do
+        if tonumber(c) == cap then
+            local info = { cap = cap, skill = tonumber(skill), fee = tonumber(fee), level = tonumber(level),
+                how = how == "q" and "quest" or "trainer" }
+            local item = how:match("^b(%d+)$")
+            if item then info.how, info.item = "book", tonumber(item) end
+            return info
+        end
+    end
+end
+
 -- The highest grey level of any recipe in the line: no skill past it can be reached by crafting.
 function R.Ceiling(line)
     local top = 0
@@ -293,7 +327,7 @@ function R.LineByName(text)
 end
 
 local ordered = {}
-function R.Forget() ordered = {} end
+function R.Forget() ordered, trained = {}, {} end
 
 -- Only what comes with the profession is known: the path says what else to learn and when. A
 -- recipe your own professions window showed keeps the name and icon the game gave it there.
@@ -427,13 +461,16 @@ function R.ReadTrainer()
     return read or 0, lines
 end
 
--- How a recipe you haven't learned can be learned: { how = "trainer", at, fee, seen } or
+-- How a recipe you haven't learned can be learned: { how = "trainer", at, fee, seen, table } or
 -- { how = "item", item, at }. nil (and why) when the path can't count on it.
---   * On a trainer's list that was read: at the skill and fee it showed.
+--   * On a trainer's list that was read: at the skill and fee it showed (seen).
+--   * In Data.lua's trainer table: at its skill and fee (table). The fee is before any reputation
+--     discount, so the real one is never higher. A list that was read past that skill and doesn't
+--     have the recipe wins: that trainer doesn't teach it.
 --   * Taught by a recipe item (Data.lua): from the skill the item asks for.
---   * Neither, and no trainer's list read that reaches its level: taken to be a trainer's, learned
---     at its yellow skill (a recipe is orange from the skill it is learned at up to there, so the
---     trainer can't ask for more).
+--   * None of those: no trainer teaches it (a quest or a drop does), so the path leaves it out.
+--     Only a profession with no trainer table still takes such a recipe to be a trainer's,
+--     learned at its yellow skill.
 --   * What it makes only a specialisation can use (Gnomish or Goblin Engineering): only that
 --     specialisation is taught it, so it is left out unless you have it.
 -- other: the path is for someone else. Their level and specialisation aren't known, and a recipe
@@ -447,24 +484,70 @@ function R.Learn(line, r, other)
     end
     local seen = ns.db and type(ns.db.trainer) == "table" and ns.db.trainer[line]
     local entry = type(seen) == "table" and type(seen.list) == "table" and seen.list[r.id]
+    local rows = R.Train(line)
+    local known = rows and rows[r.id]
     if type(entry) == "table" then
         if entry.blocked and not other then return nil, "the trainer " .. entry.blocked end
-        return { how = "trainer", at = Num(entry.rank) or 0, fee = Num(entry.cost), seen = true }
+        local fee = Num(entry.cost)
+        -- The list shows no fee for what you have learned already: the table's then.
+        if not fee and known and known.fee then
+            return { how = "trainer", at = Num(entry.rank) or 0, fee = known.fee, seen = true, table = true }
+        end
+        return { how = "trainer", at = Num(entry.rank) or 0, fee = fee, seen = true }
     end
-    if r.item then return { how = "item", item = r.item, at = r.rank or 0 } end
-    if not r.y then return nil, "not in the recipe table" end
-    if type(seen) == "table" and r.y <= (Num(seen.top) or 0) then
-        local mine = false
+    -- A list that was read past this skill and doesn't have the recipe.
+    local function Unlisted(at)
+        if not (type(seen) == "table" and at <= (Num(seen.top) or 0)) then return false end
         if other then
             local char = ns.Char()
             local prof = char and char.profs[line]
             for _, own in ipairs(prof and prof.recipes or {}) do
-                if own.id == r.id and own.known then mine = true end
+                if own.id == r.id and own.known then return false end
             end
         end
-        if not mine then return nil, "not on the trainer's list" end
+        return true
     end
+    if known and not Unlisted(known.at) then
+        return { how = "trainer", at = known.at, fee = known.fee, seen = false, table = true }
+    end
+    if r.item then return { how = "item", item = r.item, at = r.rank or 0 } end
+    if not r.y then return nil, "not in the recipe table" end
+    if known then return nil, "not on the trainer's list" end
+    if rows then return nil, "no trainer teaches it" end
+    if Unlisted(r.y) then return nil, "not on the trainer's list" end
     return { how = "trainer", at = r.y, seen = false }
+end
+
+-- The trainer table against what trainers showed: how many rows agree, and one line for each
+-- that doesn't (/skillpath debug). Fees can differ by a reputation discount alone.
+function R.TrainCheck()
+    local same, lines = 0, {}
+    for line, seen in pairs(ns.db and type(ns.db.trainer) == "table" and ns.db.trainer or {}) do
+        local rows = R.Train(line) or {}
+        local list = type(seen) == "table" and type(seen.list) == "table" and seen.list or {}
+        for id, entry in pairs(list) do
+            local row = rows[id]
+            local name = R.SpellName(id) or tostring(id)
+            if type(entry) ~= "table" then
+            elseif not row then
+                lines[#lines + 1] = ("%s (%d): a trainer teaches it at %s, the table doesn't have it"):format(
+                    name, id, tostring(entry.rank))
+            elseif Num(entry.rank) ~= row.at or (Num(entry.cost) and row.fee and Num(entry.cost) ~= row.fee) then
+                lines[#lines + 1] = ("%s (%d): trainer %s for %s, table %d for %s"):format(name, id,
+                    tostring(entry.rank), tostring(entry.cost), row.at, tostring(row.fee))
+            else
+                same = same + 1
+            end
+        end
+        for id, row in pairs(rows) do
+            if not list[id] and row.at <= (Num(type(seen) == "table" and seen.top) or 0) then
+                lines[#lines + 1] = ("%s (%d): the table has it at %d, the trainer's list read doesn't"):format(
+                    R.SpellName(id) or tostring(id), id, row.at)
+            end
+        end
+    end
+    table.sort(lines)
+    return same, lines
 end
 
 -- A recipe learned with the professions window closed (at the trainer, from a recipe item).

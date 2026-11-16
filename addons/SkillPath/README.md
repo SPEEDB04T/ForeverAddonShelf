@@ -8,7 +8,7 @@ The path is one numbered list, the same on both tabs and in chat:
 
 1. **Buy reagents.** What to buy and how many, after what you already hold.
 2. **Craft.** "35 x Bolt of Linen Cloth, skill 1 to 34", one step per recipe. "About" means some crafts may not give a point, so the count is the expected one.
-3. **Trainer** steps, where the path needs them: "Trainer at skill 97: learn Copper Modulator", with the fee, and the next rank where your cap is in the way. A recipe taught by a recipe item is a "buy and learn" step.
+3. **Trainer** steps, where the path needs them: "Trainer at skill 97: learn Copper Modulator", with the fee, and "train Journeyman (cap 150, 5s)" where your rank's cap is in the way. A recipe taught by a recipe item is a "buy and learn" step.
 4. **Sell what's left.** What the path makes and no later step uses, where each goes (auction house, vendor, or no sale and why) and what it brings.
 
 Every step shows what it costs.
@@ -19,18 +19,22 @@ A SkillPath tab sits with the profession tabs on the right edge. Open it for the
 
 - **A craft step** shows its reagents, how many you hold, and (if you leave it on) each skill point's chance and cost. "Show recipe" opens the recipe on the game's page with the number of crafts filled in.
 - **Buy** and **Sell** list every item with its price and where the price comes from. Shift-click an item to link it.
-- **A trainer step** lists what to learn, from which skill and for how much.
+- **A trainer step** lists what to learn, from which skill and for how much, and the rank to train with its fee and the level it asks for.
 - **Recipes worth learning** are recipes the path couldn't use (a recipe item with no price, something the trainer won't teach you yet) that would take it further or make it cheaper.
 - The top line is the cost, what the leftovers sell for and the net.
 - **Plan for someone**, **Copy guide** and **My path** are at the top: see "Plans for other players".
 
 ## The trainer
 
-The game doesn't say at which skill a trainer teaches a recipe until you stand at the trainer. Open each profession's trainer once: the addon reads the whole list (for a moment it switches on the recipes the window hides, then puts the filter back) and keeps each recipe's skill and fee.
+The game's files don't say at which skill a trainer teaches a recipe or what it costs; the game shows that only in the trainer's window. So the addon carries its own table for Forever: every recipe a profession trainer teaches (468), from which skill, the fee, and each rank (Journeyman, Expert, Artisan) with its fee, skill and level. Cooking, First Aid and Fishing get Expert from a book a vendor sells and Artisan from a quest; the path says that and counts the book's price.
 
-Until then, a recipe you don't know and no recipe item teaches is taken to be a trainer recipe, learnable at its yellow skill. That is the latest it can be, so the path is possible but may cost more than it has to, and fees aren't in the cost. The path says how many recipes that is. Where nothing known gives skill and only such a recipe could go on, the path stops there and names it, never guessing.
+A path has its trainer steps and fees from the start, for you and for anyone you plan for. Fees are the base ones, before a reputation discount.
 
-Rank training fees (Journeyman, Expert, Artisan) aren't in the cost.
+When you open a profession's trainer, the addon reads the list in the window (for a moment it switches on the recipes the window hides, then puts the filter back). What the trainer shows wins over the table: your own fee with its discount, and anything this server changed. A recipe the table has that a trainer's list doesn't show is left out of your path. `/skillpath debug` lists every row a trainer showed differently from the table.
+
+Where nothing you can learn gives skill, the path stops there and says so, never guessing.
+
+The table comes from the Forever recipe tables of the addon What's Training? by Sveng (MIT licence), kept only where the game client has that recipe on that profession, and compared row by row with a 1.12 trainer table. `tests/SkillPath/make_trainers.py` builds it and says where each column comes from.
 
 ## Plans for other players
 
@@ -43,7 +47,7 @@ Rank training fees (Journeyman, Expert, Artisan) aren't in the cost.
 
 ## At the auction house
 
-A SkillPath tab sits after the game's tabs. It shows step 1 (what to buy) and the sell step side by side. Click an item to search for it on the Buy tab. "Scan prices" reads every reagent's price now.
+A SkillPath tab sits after the game's tabs. It shows the whole path as the professions tab does: every step on the left, the picked step on the right, the buy step first. On the buy and sell steps, click an item to search for it on the Buy tab. "Scan prices" reads every reagent's price now.
 
 The addon also scans when you open the auction house: a few seconds later, one search at a time, only when the game allows the next search. When another addon (Slutmog Scout, Slutmog Shop) is searching, it waits until they have been quiet for a few seconds. Reagents a vendor sells, bound reagents and prices from the last half hour are skipped.
 
@@ -57,7 +61,8 @@ The addon also scans when you open the auction house: a few seconds later, one s
 - **No price:** a reagent with no price isn't in the cost, and the path says which and why.
 - **Made reagents:** a reagent the path can craft itself is crafted when that is cheaper than buying it, and the step says "Make first".
 - **Not on the auction house:** a recipe whose reagent has no price is used only where nothing priced gives the point, and listed reagents are used for as many crafts as there are.
-- **Spare reagents:** crafts that may give no point make the count an expected one. The shopping list adds the spare units that cover an unlucky run 9 times in 10, with their cost apart from the total.
+- **Spare reagents:** a craft that isn't orange can give no point, so every count past orange is an average, and with only the average bought a run often comes up short of something. The shopping list therefore adds spare units to each reagent, sized so that with all of them bought 99 runs in 100 need nothing more. Their cost is shown apart from the total. The size comes from the law of the crafts a point takes (its spread, skew and tail), not from a flat percentage: a few points on a nearly grey recipe need far more spare than many points on a yellow one. What you hold past the average counts as spare already. `tests/SkillPath/spare_check.py` compares the formula with the exact odds, and a test plays 20000 runs of a path against its shopping list.
+- **Trainer skills and fees** come from the addon's own table (see "The trainer"), then from each trainer's list once you have opened it.
 - **Recipes that come with a profession** are marked in the client's recipe table, so a plan for someone else knows what a beginner has.
 - **Selling what is left:** leftovers count at their vendor sell price, so the path can pick a recipe whose result sells back for more.
 - **Auction house resale (on unless you turn it off):** leftovers can count at the cheapest auction price after the 5% cut, but only as many as were seen to sell. The auction house shows listings, never sales, so the addon compares scans of the item: units listed at one scan and gone at the next were bought, cancelled or ran out, which is the most that can have sold. That rate per day, times "Days of sales to count" (3), is how many count at the auction price; the rest count at the vendor price. Until an item has 4 hours of scans behind it (kept for a week), it counts at the vendor price. With the option on, the scan also reads what your recipes make.

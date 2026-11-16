@@ -264,16 +264,23 @@ function UI.Steps(plan)
     if plan.view then return plan.view end
     local steps = {}
     if not plan.ok then return steps end
-    local buy, cost, unpriced, spare = {}, 0, 0, 0
+    -- spares: reagents the average run has enough of (your own, or made on the way), where only
+    -- the spare for bad luck is left to buy.
+    local buy, spares, cost, unpriced, spare, odds = {}, {}, 0, 0, 0, false
     for _, e in ipairs(plan.shopping or {}) do
         if e.buy > 0 then
             buy[#buy + 1] = e
             if e.cost then cost = cost + e.cost else unpriced, cost = unpriced + 1, cost + (e.costListed or 0) end
-            spare = spare + (e.spareCost or 0)
+        elseif e.spare then
+            spares[#spares + 1] = e
+        end
+        if e.spare then
+            spare, odds = spare + (e.spareCost or 0), true
         end
     end
-    if #buy > 0 then
-        steps[#steps + 1] = { kind = "buy", key = "buy", entries = buy, cost = cost, unpriced = unpriced, spare = spare }
+    if #buy > 0 or #spares > 0 then
+        steps[#steps + 1] = { kind = "buy", key = "buy", entries = buy, spares = spares, cost = cost,
+            unpriced = unpriced, spare = spare, odds = odds }
     end
     local sell = SellGroups(plan)
     local seen = {}
@@ -315,12 +322,46 @@ local function Names(list, name, limit)
     return table.concat(out, ", ")
 end
 
+-- Under a shopping list with spare on it: what the spare is for.
+local SPARE_NOTE = "The amounts are averages: a craft that isn't orange can give no point, so a run often needs more "
+    .. ("of something. With the spare bought as well, %s need nothing more."):format(ns.Planner.SPARE_ODDS)
+UI.SPARE_NOTE = SPARE_NOTE
+
 local function FeeText(train, M)
     M = M or ns.Money
-    if #train.learn == 0 then return nil end
-    if train.unknown >= #train.learn then return "fee not read" end
+    local n = #train.learn + #(train.ranks or {})
+    if n == 0 then return nil end
+    if train.unknown >= n then return "fee not read" end
     if train.unknown > 0 then return M(train.fee) .. " + fees not read" end
     return train.fee >= 0.5 and M(train.fee) or "free"
+end
+
+-- A profession rank by the cap it gives.
+local RANK_NAME = { [150] = "Journeyman", [225] = "Expert", [300] = "Artisan" }
+local function RankName(rank) return RANK_NAME[rank.cap] or "the next rank" end
+UI.RankName = RankName
+
+-- "needs level 20" when the rank asks for a level you (or someone else, unknown) may not have.
+local function RankNeed(rank, plan)
+    local level = rank.level or 0
+    if level <= 0 then return nil end
+    if not (plan and plan.forOther) and (tonumber(ns.Call(UnitLevel, "player")) or 0) >= level then return nil end
+    return ("needs level %d"):format(level)
+end
+
+local function RankFee(rank, M)
+    if not rank.fee then return "fee not read" end
+    return rank.fee >= 0.5 and (M or ns.Money)(rank.fee) or "free"
+end
+
+-- "train Expert", "buy and read Expert Cookbook for Expert", "do the quest for Artisan"
+local function RankDo(rank)
+    if rank.how == "book" then
+        return ("buy and read %s for %s"):format(ns.Prices.ItemName(rank.item), RankName(rank))
+    elseif rank.how == "quest" then
+        return ("do the quest for %s"):format(RankName(rank))
+    end
+    return "train " .. RankName(rank)
 end
 
 -- title, second line, icon, the title's colour, whether the second line is a problem, and the
@@ -330,6 +371,10 @@ function UI.StepText(s, plan, M)
     local r, g, b = Gold()
     if s.kind == "buy" then
         local n = #s.entries
+        if n == 0 then
+            return "Buy spare reagents", Names(s.spares, function(e) return ns.Prices.ItemName(e.item) end, 3),
+                ICON_BUY, r, g, b, false, M(s.spare), "grey"
+        end
         local sub = Names(s.entries, function(e) return ns.Prices.ItemName(e.item) end, 3)
         local money, color
         if s.unpriced == 0 then
@@ -352,10 +397,14 @@ function UI.StepText(s, plan, M)
         local t = s.train
         local n = #t.learn
         local title
-        if t.rank and n > 0 then
-            title = ("Trainer: next rank, %d %s"):format(n, Plural(n, "recipe", "recipes"))
-        elseif t.rank then
-            title = "Trainer: train the next rank"
+        local rank = t.ranks and t.ranks[#t.ranks]
+        if rank and rank.how ~= "trainer" then
+            title = RankDo(rank):gsub("^%l", string.upper)
+            if n > 0 then title = title .. (", trainer: %d %s"):format(n, Plural(n, "recipe", "recipes")) end
+        elseif rank and n > 0 then
+            title = ("Trainer: %s, %d %s"):format(RankDo(rank), n, Plural(n, "recipe", "recipes"))
+        elseif rank then
+            title = "Trainer: " .. RankDo(rank)
         elseif n == 1 then
             title = "Trainer: learn " .. t.learn[1].r.name
         else
@@ -363,6 +412,8 @@ function UI.StepText(s, plan, M)
         end
         local sub = ("At skill %d"):format(t.at)
         if t.rank then sub = sub .. (". Raises the cap to %d"):format(t.rank) end
+        local need = rank and RankNeed(rank, plan)
+        if need then sub = sub .. ". " .. need:gsub("^%l", string.upper) end
         if n > 1 or (n == 1 and t.rank) then
             sub = sub .. ". " .. Names(t.learn, function(l) return l.r.name end, 2)
         end
@@ -426,7 +477,7 @@ function UI.Guide(plan, brief)
                 if e.cost then
                     text = text .. M(e.cost) .. (e.from and (", " .. e.from) or "")
                     if e.spare then
-                        text = text .. ("; %d spare for an unlucky run%s"):format(e.spare,
+                        text = text .. ("; plus %d spare%s"):format(e.spare,
                             e.spareCost and (": +" .. M(e.spareCost)) or ": not that many listed")
                     end
                 elseif e.short then
@@ -434,8 +485,14 @@ function UI.Guide(plan, brief)
                 else
                     text = text .. "no price (" .. (e.missing or "not scanned yet") .. ")"
                 end
+                if e.spare and not e.cost then text = text .. ("; plus %d spare"):format(e.spare) end
                 L[#L + 1] = text
             end
+            for _, e in ipairs(s.spares) do
+                L[#L + 1] = ("  %s: the average run has enough; %d spare%s"):format(Name(e.item), e.spare,
+                    e.spareCost and (": +" .. M(e.spareCost)) or "")
+            end
+            if s.odds then L[#L + 1] = "  " .. SPARE_NOTE end
         end
     end
     L[#L + 1] = "STEPS"
@@ -469,11 +526,17 @@ function UI.Guide(plan, brief)
         elseif s.kind == "train" then
             local t = s.train
             local parts = {}
-            if t.rank then parts[#parts + 1] = ("train the next rank (cap %d)"):format(t.rank) end
+            local trainer = #t.learn > 0
+            for _, rank in ipairs(t.ranks or {}) do
+                local need = RankNeed(rank, plan)
+                parts[#parts + 1] = ("%s (cap %d, %s%s)"):format(RankDo(rank), rank.cap, RankFee(rank, M),
+                    need and (", " .. need) or "")
+                if rank.how == "trainer" then trainer = true end
+            end
             for _, l in ipairs(t.learn) do
                 parts[#parts + 1] = ("learn %s (%s)"):format(l.r.name, l.unknown and "fee not read" or CostText(l.fee, true, M))
             end
-            text = ("Trainer at skill %d: %s."):format(t.at, table.concat(parts, "; "))
+            text = ("%s skill %d: %s."):format(trainer and "Trainer at" or "At", t.at, table.concat(parts, "; "))
         elseif s.kind == "learn" then
             local l = s.learn
             text = ("At skill %d: learn %s from %s (%s)."):format(l.at, l.r.name, Name(l.item), CostText(l.cost, true, M))
@@ -529,8 +592,9 @@ local function ShopTip(tip, e, plan)
     if e.made > 0.05 then text = text .. (" Earlier steps make %d."):format(Units(e.made)) end
     tip:AddLine(text, wr, wg, wb, true)
     if e.spare then
-        tip:AddLine(("%d spare %s an unlucky run, 9 times in 10%s."):format(e.spare, Plural(e.spare, "covers", "cover"),
-            e.spareCost and (": " .. ns.Money(e.spareCost) .. " more") or ": not that many are listed"), wr, wg, wb, true)
+        tip:AddLine(("%d spare for bad luck%s. With every spare bought, %s need nothing more."):format(e.spare,
+            e.spareCost and (": " .. ns.Money(e.spareCost) .. " more") or e.cost and ": not that many are listed" or "",
+            ns.Planner.SPARE_ODDS), wr, wg, wb, true)
     end
     tip:AddLine(UI.SourceText(e.item, plan), gr, gg, gb, true)
 end
@@ -612,14 +676,18 @@ function UI.StepTip(tip, s, plan)
         tip:AddLine(("Pay %s."):format(money), wr, wg, wb, true)
         tip:AddLine("Everything the path takes from outside, in whole units. The \"uses\" amounts on the craft "
             .. "steps are part of this, not on top of it.", gr, gg, gb, true)
-        if s.spare >= 0.5 then
-            tip:AddLine(("Spare reagents for an unlucky run: %s more."):format(ns.Money(s.spare)), gr, gg, gb, true)
+        if s.odds then
+            tip:AddLine(("Spare for bad luck: %s more. With it, %s need nothing more."):format(ns.Money(s.spare),
+                ns.Planner.SPARE_ODDS), gr, gg, gb, true)
         end
     elseif s.kind == "craft" then
         tip:AddLine(("Reagents: %s."):format(money), wr, wg, wb, true)
         tip:AddLine("What the reagents this step takes are worth. They are on the shopping list already, so "
             .. "nothing is paid here.", gr, gg, gb, true)
     elseif s.kind == "train" then
+        for _, rank in ipairs(s.train.ranks or {}) do
+            tip:AddDoubleLine(RankName(rank) .. " rank", RankFee(rank), wr, wg, wb, wr, wg, wb)
+        end
         for _, l in ipairs(s.train.learn) do
             tip:AddDoubleLine(l.r.name, l.unknown and "fee not read" or CostText(l.fee, true), wr, wg, wb, wr, wg, wb)
         end
@@ -655,6 +723,14 @@ end
 -- click: what a click on the card does (nil: nothing); hint: the tooltip's last line saying so.
 function UI.ShopCard(e, click, hint, plan)
     local sub, bad, money, color
+    if e.buy == 0 and e.spare then
+        -- Only spare is left to buy.
+        return { kind = "card", icon = ns.Prices.ItemIcon(e.item), count = e.spare,
+            title = ("%d x %s"):format(e.spare, ns.Prices.ItemName(e.item)),
+            sub = "Spare only: the average run has enough" .. (e.from and (", " .. e.from) or ""),
+            money = e.spareCost and ns.Money(e.spareCost) or nil, moneyColor = "grey", link = ItemLink(e.item),
+            tip = function(tip) ShopTip(tip, e, plan) end, click = click, hint = hint, entry = e, what = "shop" }
+    end
     if e.cost then
         sub = e.from or ""
         if e.spare then sub = sub .. ("%s+%d spare"):format(sub ~= "" and ", " or "", e.spare) end
@@ -1378,6 +1454,41 @@ local function CoverRankBar(book, page)
     trade.rankCover = cover
 end
 
+-- The picked step's box on a page: icon, two lines, the rows under them, and in the professions
+-- window the button that opens a craft step's recipe.
+local function BuildDetail(right, scroll, button)
+    local d = {}
+    d.Icon = NewItemButton(right)
+    d.Icon:SetPoint("TOPLEFT", right, "TOPLEFT", 12, -12)
+    if button then
+        d.Button = CreateFrame("Button", nil, right, "UIPanelButtonTemplate")
+        d.Button:SetSize(110, 22)
+        d.Button:SetPoint("TOPRIGHT", right, "TOPRIGHT", -12, -12)
+        d.Button:SetText("Show recipe")
+        d.Button:SetScript("OnClick", function(self)
+            if self.step then UI.ShowRecipe(self.step) end
+        end)
+    end
+    d.Title = right:CreateFontString(nil, "ARTWORK", "GameFontNormalLarge")
+    d.Title:SetPoint("TOPLEFT", d.Icon, "TOPRIGHT", 10, -1)
+    if button then
+        d.Title:SetPoint("RIGHT", d.Button, "LEFT", -8, 0)
+    else
+        d.Title:SetPoint("RIGHT", right, "RIGHT", -12, 0)
+    end
+    d.Title:SetJustifyH("LEFT")
+    d.Title:SetWordWrap(false)
+    d.Sub = right:CreateFontString(nil, "ARTWORK", "GameFontHighlight")
+    d.Sub:SetPoint("TOPLEFT", d.Title, "BOTTOMLEFT", 0, -4)
+    d.Sub:SetPoint("RIGHT", right, "RIGHT", -12, 0)
+    d.Sub:SetJustifyH("LEFT")
+    d.Sub:SetWordWrap(false)
+    local holder = CreateFrame("Frame", nil, right)
+    holder:SetPoint("TOPLEFT", right, "TOPLEFT", 0, -58)
+    holder:SetPoint("BOTTOMRIGHT", right, "BOTTOMRIGHT", 0, 0)
+    return d, UI.NewList(holder, scroll)
+end
+
 local function BuildTradePage(book)
     local page = CreateFrame("Frame", "SkillPathTradePage", book)
     -- The box the game's own pages fill: inside the window's border, under its title bar.
@@ -1406,34 +1517,9 @@ local function BuildTradePage(book)
     right:SetPoint("TOPLEFT", left, "TOPRIGHT", 4, 0)
     right:SetPoint("BOTTOMRIGHT", page, "BOTTOMRIGHT", -4, 4)
 
-    -- The picked step: icon, two lines, and for a craft the button that opens its recipe.
-    local d = {}
-    d.Icon = NewItemButton(right)
-    d.Icon:SetPoint("TOPLEFT", right, "TOPLEFT", 12, -12)
-    d.Button = CreateFrame("Button", nil, right, "UIPanelButtonTemplate")
-    d.Button:SetSize(110, 22)
-    d.Button:SetPoint("TOPRIGHT", right, "TOPRIGHT", -12, -12)
-    d.Button:SetText("Show recipe")
-    d.Button:SetScript("OnClick", function(self)
-        if self.step then UI.ShowRecipe(self.step) end
-    end)
-    d.Title = right:CreateFontString(nil, "ARTWORK", "GameFontNormalLarge")
-    d.Title:SetPoint("TOPLEFT", d.Icon, "TOPRIGHT", 10, -1)
-    d.Title:SetPoint("RIGHT", d.Button, "LEFT", -8, 0)
-    d.Title:SetJustifyH("LEFT")
-    d.Title:SetWordWrap(false)
-    d.Sub = right:CreateFontString(nil, "ARTWORK", "GameFontHighlight")
-    d.Sub:SetPoint("TOPLEFT", d.Title, "BOTTOMLEFT", 0, -4)
-    d.Sub:SetPoint("RIGHT", right, "RIGHT", -12, 0)
-    d.Sub:SetJustifyH("LEFT")
-    d.Sub:SetWordWrap(false)
-    local holder = CreateFrame("Frame", nil, right)
-    holder:SetPoint("TOPLEFT", right, "TOPLEFT", 0, -58)
-    holder:SetPoint("BOTTOMRIGHT", right, "BOTTOMRIGHT", 0, 0)
-
-    trade.page, trade.detail = page, d
+    trade.page = page
     trade.list = UI.NewList(left, "SkillPathStepScroll")
-    trade.detailList = UI.NewList(holder, "SkillPathDetailScroll")
+    trade.detail, trade.detailList = BuildDetail(right, "SkillPathDetailScroll", true)
     page:SetScript("OnShow", function(self)
         self:SetFrameLevel(PageLevel(book))
         UI.Update()
@@ -1549,16 +1635,30 @@ local function TrainDetail(s, plan)
     local els = {}
     local _, _, _, _, _, _, _, money, color = UI.StepText(s, plan)
     if money then els[#els + 1] = { kind = "line", left = "Trainer fees", right = money, rightColor = color } end
-    if t.rank then
-        els[#els + 1] = { kind = "text", text = ("At skill %d the rank is full: train the next one at a %s "
-            .. "trainer. The cap goes to %d. What the rank itself costs isn't in the cost."):format(t.at, plan.name,
-            t.rank) }
+    for _, rank in ipairs(t.ranks or {}) do
+        local name, text = RankName(rank)
+        if rank.how == "book" then
+            text = ("At skill %d the rank is full. %s teaches %s (a vendor sells it): the cap goes to %d.")
+                :format(t.at, ns.Prices.ItemName(rank.item), name, rank.cap)
+        elseif rank.how == "quest" then
+            text = ("At skill %d the rank is full. %s comes from a quest: the cap goes to %d.")
+                :format(t.at, name, rank.cap)
+        else
+            text = ("At skill %d the rank is full. A %s trainer teaches %s: the cap goes to %d.")
+                :format(t.at, plan.name, name, rank.cap)
+        end
+        local need = RankNeed(rank, plan)
+        if need then text = text .. (" It %s."):format(need) end
+        els[#els + 1] = { kind = "text", text = text }
+        els[#els + 1] = { kind = "line", left = name .. " rank", right = RankFee(rank),
+            rightColor = not rank.fee and "red" or nil }
     end
     if #t.learn > 0 then
         els[#els + 1] = { kind = "head", text = t.rank and "Learn on the same visit" or "Learn" }
         for _, l in ipairs(t.learn) do
             els[#els + 1] = { kind = "card", icon = l.r.icon, title = l.r.name,
                 sub = l.info.seen and ("Trainer, from skill %d"):format(l.info.at)
+                    or l.info.table and ("Trainer, from skill %d (built-in table)"):format(l.info.at)
                     or ("Trainer, from skill %d (not read from a trainer yet)"):format(l.info.at),
                 money = l.unknown and "fee not read" or (l.fee >= 0.5 and ns.Money(l.fee) or "free"),
                 moneyColor = l.unknown and "red" or nil, link = RecipeLink(l.r.id), what = "learn" }
@@ -1577,17 +1677,25 @@ local function LearnDetail(s, plan)
     }
 end
 
-local function Detail(s, plan, top)
-    local d = trade.detail
-    d.Button:Hide()
-    d.Button.step = nil
+local SEARCH_HINT = "Click to search for it."
+
+-- The picked step of a page (view: the professions window's or the auction house's, where a
+-- click on an item searches for it).
+local function Detail(view, s, plan, top)
+    local d = view.detail
+    if d.Button then
+        d.Button:Hide()
+        d.Button.step = nil
+    end
     if not s then
         d.Icon:Hide()
         d.Title:SetText("")
         d.Sub:SetText("")
-        trade.detailList:Set({}, top)
+        view.detailList:Set({}, top)
         return
     end
+    local search = view.search and function(entry) UI.SearchAuction(entry.item) end or nil
+    local hint = search and SEARCH_HINT or nil
     local title, sub, icon, r, g, b, _, money, color = UI.StepText(s, plan)
     d.Icon:Show()
     SetIcon(d.Icon, icon, 0, false)
@@ -1598,14 +1706,22 @@ local function Detail(s, plan, top)
     if s.kind == "buy" then
         els[#els + 1] = { kind = "line", left = "Everything the path takes from outside", right = money,
             rightColor = color }
-        if s.spare >= 0.5 then
-            els[#els + 1] = { kind = "line", left = "Spare reagents for an unlucky run, on top",
-                right = ns.Money(s.spare), rightColor = "grey" }
+        if s.odds then
+            els[#els + 1] = { kind = "line", left = "Spare for bad luck, on top", right = ns.Money(s.spare),
+                rightColor = "grey" }
+            els[#els + 1] = { kind = "text", text = SPARE_NOTE }
         end
-        els[#els + 1] = { kind = "text", text = "At the auction house, the SkillPath tab searches for each." }
-        for _, e in ipairs(s.entries) do els[#els + 1] = UI.ShopCard(e, nil, nil, plan) end
+        if not search then
+            els[#els + 1] = { kind = "text", text = "At the auction house, the SkillPath tab searches for each." }
+        end
+        for _, e in ipairs(s.entries) do
+            els[#els + 1] = UI.ShopCard(e, search and function() search(e) end, hint, plan)
+        end
+        for _, e in ipairs(s.spares) do
+            els[#els + 1] = UI.ShopCard(e, search and function() search(e) end, hint, plan)
+        end
     elseif s.kind == "craft" then
-        if not plan.forOther and s.step.r.known then
+        if d.Button and not plan.forOther and s.step.r.known then
             d.Button.step = s.step
             d.Button:Show()
         end
@@ -1624,13 +1740,14 @@ local function Detail(s, plan, top)
         for _, card in ipairs(further) do els[#els + 1] = card end
     elseif s.kind == "sell" then
         els[#els + 1] = { kind = "line", left = "What selling the rest gives", right = money, rightColor = color }
-        for _, e in ipairs(UI.SellRows(s)) do els[#els + 1] = e end
+        for _, e in ipairs(UI.SellRows(s, search, hint)) do els[#els + 1] = e end
     end
-    trade.detailList:Set(els, top)
+    view.detailList:Set(els, top)
 end
 
-local function UpdateTrade()
-    local page = trade.page
+-- A page: every step in order on the left, the picked one on the right.
+local function UpdateView(view)
+    local page = view.page
     if not (page and page:IsVisible() and ns.db) then return end
     local plan = ns.Plan()
     UpdateHead(page, plan)
@@ -1638,15 +1755,15 @@ local function UpdateTrade()
     local steps = UI.Steps(plan)
     local sel
     for _, s in ipairs(steps) do
-        if StepKey(s) == trade.selected then
+        if StepKey(s) == view.selected then
             sel = s
             break
         end
     end
     sel = sel or steps[1]
     local key = sel and StepKey(sel) or nil
-    local moved = key ~= trade.shownKey
-    trade.selected, trade.shownKey = key, key
+    local moved = key ~= view.shownKey
+    view.selected, view.shownKey = key, key
 
     local els = {}
     for _, s in ipairs(steps) do
@@ -1655,7 +1772,7 @@ local function UpdateTrade()
             money = money, moneyColor = color, selected = s == sel, step = s, what = "step",
             tip = function(tip) UI.StepTip(tip, s, plan) end,
             click = function()
-                trade.selected = StepKey(s)
+                view.selected = StepKey(s)
                 UI.Update()
             end }
     end
@@ -1668,10 +1785,12 @@ local function UpdateTrade()
     AddNotes(els, plan)
     -- Another path: back to the top of the steps.
     local path = plan.ok and ("%s:%s:%s"):format(tostring(plan.line), tostring(plan.forOther), tostring(plan.to)) or "none"
-    trade.list:Set(els, path ~= trade.path)
-    trade.path = path
-    Detail(sel, plan, moved)
+    view.list:Set(els, path ~= view.path)
+    view.path = path
+    Detail(view, sel, plan, moved)
 end
+
+local function UpdateTrade() UpdateView(trade) end
 
 ----------------------------------------------------------------------
 -- Professions window: the side tab
@@ -1806,7 +1925,7 @@ end
 ----------------------------------------------------------------------
 -- Auction house: the page and its tab
 ----------------------------------------------------------------------
-local auction = {}
+local auction = { search = true }
 UI.auction = auction
 
 local function AuctionFrame()
@@ -1835,61 +1954,25 @@ local function BuildAuctionPage(ah)
 
     BuildHead(page, 4, true)
 
+    -- The same two boxes as the professions window: every step, and the picked one.
     local left = NewInset(page)
     left:SetPoint("TOPLEFT", page, "TOPLEFT", 0, -52)
     left:SetPoint("BOTTOMLEFT", page, "BOTTOMLEFT", 0, 0)
-    left:SetWidth(430)
+    left:SetWidth(390)
     local right = NewInset(page)
     right:SetPoint("TOPLEFT", left, "TOPRIGHT", 4, 0)
     right:SetPoint("BOTTOMRIGHT", page, "BOTTOMRIGHT", 0, 0)
 
     auction.page = page
-    auction.buy = UI.NewList(left, "SkillPathBuyScroll")
-    auction.sell = UI.NewList(right, "SkillPathSellScroll")
+    auction.list = UI.NewList(left, "SkillPathAuctionStepScroll")
+    auction.detail, auction.detailList = BuildDetail(right, "SkillPathAuctionDetailScroll", false)
     page:SetScript("OnShow", function() UI.Update() end)
     page:SetScript("OnHide", function()
         if UI.tooltipRow and OwnsTooltip(UI.tooltipRow) then GameTooltip:Hide() end
     end)
 end
 
-local SEARCH_HINT = "Click to search for it."
-
-local function UpdateAuction()
-    local page = auction.page
-    if not (page and page:IsVisible() and ns.db) then return end
-    local plan = ns.Plan()
-    UpdateHead(page, plan)
-
-    local buy, sell = {}, {}
-    local buyStep, sellStep
-    for _, s in ipairs(UI.Steps(plan)) do
-        if s.kind == "buy" then buyStep = s elseif s.kind == "sell" then sellStep = s end
-    end
-    -- The same numbers and names as the steps in the professions window.
-    if not plan.ok then
-        buy = EmptyRows(plan)
-    elseif buyStep then
-        local title, _, _, _, _, _, _, money = UI.StepText(buyStep, plan)
-        buy[#buy + 1] = { kind = "head", text = ("%d. %s: %s"):format(buyStep.n, title, money) }
-        for _, e in ipairs(buyStep.entries) do
-            buy[#buy + 1] = UI.ShopCard(e, function() UI.SearchAuction(e.item) end, SEARCH_HINT, plan)
-        end
-    else
-        buy[#buy + 1] = { kind = "text", text = "You have all the reagents." }
-    end
-    AddNotes(buy, plan)
-    if sellStep then
-        local title, _, _, _, _, _, _, money = UI.StepText(sellStep, plan)
-        sell[#sell + 1] = { kind = "head", text = ("%d. %s: %s"):format(sellStep.n, title, money) }
-        for _, e in ipairs(UI.SellRows(sellStep, function(entry) UI.SearchAuction(entry.item) end, SEARCH_HINT)) do
-            sell[#sell + 1] = e
-        end
-    elseif plan.ok then
-        sell[#sell + 1] = { kind = "text", text = "Nothing to sell." }
-    end
-    auction.buy:Set(buy)
-    auction.sell:Set(sell)
-end
+local function UpdateAuction() UpdateView(auction) end
 
 -- Without LibAHTab: the tab it would make, after the game's last one.
 local function OwnAuctionTab(ah)
@@ -1899,7 +1982,14 @@ local function OwnAuctionTab(ah)
     local tab = CreateFrame("Button", AH_TAB, root, "AuctionHouseFrameDisplayModeTabTemplate")
     tab:SetText(ns.NAME)
     tab:SetPoint("TOPLEFT", root, "TOPLEFT", 3, 0)
-    if PanelTemplates_TabResize then PanelTemplates_TabResize(tab, 20, nil, 70) end
+    -- The game sizes a tab's label when the tab shows. On the first opening that measure comes
+    -- out a little short and the label is cut ("SkillPa..."), so it is taken again a frame later.
+    local function Fit()
+        if PanelTemplates_TabResize then PanelTemplates_TabResize(tab, 20, nil, 70) end
+    end
+    Fit()
+    tab:HookScript("OnShow", function() ns.After(0, Fit) end)
+    ns.After(0, Fit)
     if PanelTemplates_DeselectTab then PanelTemplates_DeselectTab(tab) end
     tab:SetScript("OnClick", function() UI.SelectAuction() end)
     -- The game showing one of its own pages puts ours away.
