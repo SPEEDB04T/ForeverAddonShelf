@@ -1,5 +1,10 @@
 # Changelog
 
+## 1.5.0
+
+- Works wherever you dance, not only on a mailbox. No line says where you stand any more: "smiles down at Bob.", "gives the crowd below something to look at." and the like are reworded ("gives Bob a slow smile.", "gives the crowd something to look at."). Nothing else ever needed a mailbox.
+- Text can no longer run over the buttons. A long emote ("Blaize smirks at you from all the way across...") is cut short with "..." above the big button and in its row, and every text in the counter (the line above the big button, the rows, the hint under them, the status line, today's numbers) now has a fixed box: one line, or two for the hint and the status line, and nothing drawn outside it.
+
 ## 1.4.2
 
 - Less at one person. A tipper gets the thank-you and the whisper, and no "dances for Bob." after it.

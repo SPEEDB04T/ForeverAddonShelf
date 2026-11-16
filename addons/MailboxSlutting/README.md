@@ -1,6 +1,6 @@
 # Mailbox Slutting
 
-For dancing on top of a city mailbox for tips, classic WoW style. You dance; the addon emotes back at whoever looks at you, emotes at you or whispers you, keeps a tip jar going, takes tips with one click and thanks for them, and counts it all.
+For dancing for tips, classic WoW style: on top of a city mailbox, or anywhere else people walk by. You dance; the addon emotes back at whoever looks at you, emotes at you or whispers you, keeps a tip jar going, takes tips with one click and thanks for them, and counts it all.
 
 It is its own addon: nothing of Slutmog Shop is in its window (no ad, no wares), and neither needs the other.
 
@@ -27,14 +27,14 @@ The window that stays on screen while you stand at the mailbox, up from login:
 
 It gets out of the way in a fight and comes back after. Its close button puts it away and stops the dancing; `/mailslut counter` brings it back.
 
-## On the mailbox
+## Dancing
 
 **Start dancing** on the counter (or `/mailslut open`) starts you dancing and answering; **Stop dancing** stops it. Whoever is waiting for an answer is on the big button: it emotes at them (Wink at Bob, Smile at Bob...), and Other emote picks a different one.
 
 Replies go out in /e with the game's own words ("winks slyly at Bob."), because the game's emotes play an animation that stops your dance. If the game does not let a line out, the real emote goes instead.
 
 - **Emotes back by itself.** Somebody winks, whistles, kisses, flirts, dances or waves at you and the fitting emote goes back (a kiss gets a blush, a whistle a curtsey). Rude emotes get a sad one back (cry, pout, frown, sigh). Somebody who targets you gets one wink. At most one emote per person in two minutes and one in six seconds overall, then you go back to dancing.
-- **On top of the mailbox.** The lines are written for dancing on the mailbox. While people are around and nobody is emoting at you, whispering or tipping, one line at nobody every 10 to 30 seconds ("dances a little slower for whoever is watching."), from 22 that take turns. None of them claims a move you are not making: you are dancing, so they are looks, smiles and how the dance is danced, as a tease and never as asking for anything. They stop for 45 seconds whenever somebody does engage, so the answers are not buried. The game lets a line from an addon out only on your own key press or click, so each one waits for your next key press or click in the world (a step, a jump, turning the camera): while you do not touch the game, none go out. **Say a line** on the counter says the next one with a click, and lights up while one is waiting. A tipper gets "dances for Bob." after the thank-you. The common replies take turns between a few wordings.
+- **Lines at nobody.** The lines fit wherever you dance: on a mailbox, a fountain edge or the ground. None of them says where you stand. While people are around and nobody is emoting at you, whispering or tipping, one line at nobody every 10 to 30 seconds ("dances a little slower for whoever is watching."), from 22 that take turns. None of them claims a move you are not making: you are dancing, so they are looks, smiles and how the dance is danced, as a tease and never as asking for anything. They stop for 45 seconds whenever somebody does engage, so the answers are not buried. The game lets a line from an addon out only on your own key press or click, so each one waits for your next key press or click in the world (a step, a jump, turning the camera): while you do not touch the game, none go out. **Say a line** on the counter says the next one with a click, and lights up while one is waiting. A tipper gets "dances for Bob." after the thank-you. The common replies take turns between a few wordings.
 - **The list** shows who emoted at you, who whispered you (with what they said) and who has you targeted (this needs nameplates shown). Nothing is saved; the list is gone when you log out.
 - **One-click replies.** Each row has the emote as a button. Nothing is ever whispered or said without your click.
 - If the game refuses emotes from addons, the window says so and the emote buttons do the same with a click.

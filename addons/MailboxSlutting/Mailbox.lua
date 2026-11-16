@@ -84,7 +84,7 @@ M.LABEL = {
     CHUCKLE = "Chuckle", BLINK = "Blink", PURR = "Purr", BECKON = "Beckon", WELCOME = "Welcome", CUDDLE = "Cuddle",
     HELLO = "Say hello", CRY = "Cry", POUT = "Pout", FROWN = "Frown", SIGH = "Sigh",
     WELCOMEBACK = "Welcome back",
-    SPIN = "Spin", LASHES = "Bat eyelashes", FINGER = "Crook a finger", KISSDOWN = "Blow a kiss down",
+    SPIN = "Spin", LASHES = "Bat eyelashes", FINGER = "Crook a finger", KISSDOWN = "Blow a slow kiss",
 }
 -- The shop's own emotes, from on top of the mailbox (SuccuDev: "im dancing on TOP of the mailbox,
 -- classic WoW style, you have to design around that"; "more clever emotes, more enticing emotes").
@@ -103,7 +103,7 @@ M.SAY = {
     THANK = "thanks %s.", BOW = "bows before %s.", WELCOME = "welcomes %s.", HUG = "hugs %s.",
     CUDDLE = "cuddles up against %s.", GREET = "greets %s warmly.", HELLO = "greets %s with a hearty hello!",
     SPIN = "does a little spin for %s.", LASHES = "bats eyelashes at %s.", FINGER = "crooks a finger at %s.",
-    KISSDOWN = "blows a kiss down to %s.",
+    KISSDOWN = "blows %s a slow kiss.",
     CRY = "cries on %s's shoulder.", POUT = "pouts at %s.", FROWN = "frowns with disappointment at %s.", SIGH = "sighs at %s.",
 }
 
@@ -112,17 +112,17 @@ M.SAY = {
 -- different winks, smiles"). Same style: short, third person, nothing said out loud.
 M.VARIANTS = {
     WINK = { "winks at %s.", "gives %s a wink.", "gives %s a slow wink." },
-    SMILE = { "smiles down at %s.", "gives %s a little smile.", "smiles warmly at %s." },
-    WAVE = { "waves down at %s.", "gives %s a little wave." },
+    SMILE = { "gives %s a slow smile.", "gives %s a little smile.", "smiles warmly at %s." },
+    WAVE = { "gives %s a little wave." },
     GIGGLE = { "giggles behind a hand at %s." },
-    GRIN = { "grins at %s.", "grins down at %s." },
+    GRIN = { "grins at %s.", "gives %s a grin." },
     SMIRK = { "smirks at %s." },
-    NOD = { "nods down at %s.", "gives %s a little nod." },
+    NOD = { "gives %s a slow nod.", "gives %s a little nod." },
     BLUSH = { "blushes and looks away from %s.", "blushes a little at %s." },
     KISS = { "blows %s a kiss." },
     CURTSEY = { "curtseys for %s.", "does a little curtsey for %s." },
     SHY = { "gives %s a shy smile." },
-    POUT = { "pouts down at %s." },
+    POUT = { "gives %s a pout." },
 }
 local sayTurn = {}
 -- The line for a token this time: the game's wording first, then the others, in turn.
@@ -146,7 +146,10 @@ M.JAR = {
     "taps the tip jar with a toe, then looks away.",
     "leaves the tip jar where everybody can reach it.",
 }
--- Now and then while somebody is around, at nobody: something to look at. You stand on the mailbox.
+-- Now and then while somebody is around, at nobody: something to look at.
+-- The lines fit wherever you dance (SuccuDev, 2026-11-16: "make it compatible with non mailbox dancing
+-- too"): on a mailbox, a fountain edge or the ground. No line says where you stand or that the crowd is
+-- below you: no "down at", "below", "looks up", "on the mailbox".
 -- What people see is the dance, nonstop, by somebody half away from the keyboard (SuccuDev: "strikes a
 -- pose? im obviously semi-afk dancing on a mailbox"). So a line never claims a move the character is not
 -- making (a pose, a spin, a bow, a wave, a hop): only eyes, face, voice, and the dance going on.
@@ -154,16 +157,16 @@ M.IDLE = {
     "dances a little slower for whoever is watching.",
     "catches somebody staring and smiles.",
     "bites a lip and keeps dancing.",
-    "gives the crowd below something to look at.",
+    "gives the crowd something to look at.",
     "knows exactly who is watching.",
     "winks at whoever is staring.",
     "puts a little more hip into it.",
     "runs a slow look over the crowd.",
-    "moves a little slower every time somebody looks up.",
+    "moves a little slower every time somebody looks over.",
     "meets a stare and does not look away.",
     "dances just out of reach.",
     "lets the crowd look.",
-    "smiles at whoever is looking up.",
+    "smiles at whoever is looking.",
     "glances over a shoulder at the crowd.",
     "enjoys being watched.",
     "does not mind the staring at all.",
@@ -172,10 +175,10 @@ M.IDLE = {
     "pretends not to notice the staring.",
     "dances with eyes on somebody in the crowd.",
     "sways those hips a little slower.",
-    "looks down at the crowd, slow and smug.",
+    "looks the crowd over, slow and smug.",
 }
 -- Somebody who has kept you targeted this long gets one look at the tip jar, once an hour at most.
-M.NUDGE = "glances at the tip jar, then down at %s."
+M.NUDGE = "glances at the tip jar, then at %s."
 local NUDGE_HOLD, NUDGE_AGAIN = 30, 3600
 local IDLE_MIN, IDLE_MAX = 10, 30               -- seconds between two idle lines, picked at random
 local IDLE_FIRST_MIN, IDLE_FIRST_MAX = 10, 30   -- ... and before the first one
@@ -576,6 +579,17 @@ local function Ago(sec)
     return math.floor(sec / 60) .. "m"
 end
 
+-- And the text itself is cut to what its box holds, so a long emote ends in "..." whatever the client
+-- does with a box. Cuts between characters, never inside one.
+local function Clip(s, n)
+    if type(s) ~= "string" or #s <= n then return s end
+    local i = n - 3
+    while i > 0 and s:byte(i + 1) and s:byte(i + 1) >= 128 and s:byte(i + 1) < 192 do i = i - 1 end
+    return s:sub(1, i):gsub("%s+$", "") .. "..."
+end
+M.Clip = Clip
+local CTA_CHARS, WHAT_CHARS = 52, 40        -- what the line above the big button and a row hold
+
 local function What(v, now)
     if v.kind == "look" then
         return (v.seen and now - v.seen < 5) and "is looking at you" or "looked at you"
@@ -638,7 +652,7 @@ Sync = function()
         local row, v = frame.rows[r], visitors[r]
         if v then
             row.name:SetText(Short(v.name))
-            row.what:SetText(What(v, now))
+            row.what:SetText(Clip(What(v, now), WHAT_CHARS))
             row.age:SetText(Ago(now - v.at))
             if v.reply then
                 row.emote:SetText(Label(v) or "Emote")
@@ -664,7 +678,7 @@ Sync = function()
     local cta, v = frame.cta, on and Next(now) or nil
     if v then
         local who = Short(v.name)
-        cta.text:SetText(v.kind == "emote" and v.what or (who .. " " .. What(v, now)))
+        cta.text:SetText(Clip(v.kind == "emote" and v.what or (who .. " " .. What(v, now)), CTA_CHARS))
         cta.text:SetFontObject(GameFontNormalLarge or GameFontNormal)
         cta.again.visitor = v
         cta.again:Show()
@@ -1012,7 +1026,7 @@ local function AwayPrompt(away)
         Log("afk: nothing by itself")
         if type(FlashClientIcon) == "function" then pcall(FlashClientIcon) end
         if type(RaidNotice_AddMessage) == "function" and RaidWarningFrame then
-            pcall(RaidNotice_AddMessage, RaidWarningFrame, "You are AFK. The mailbox emotes are paused.",
+            pcall(RaidNotice_AddMessage, RaidWarningFrame, "You are AFK. Your emotes are paused.",
                 (ChatTypeInfo and ChatTypeInfo.RAID_WARNING) or { r = 1, g = 0.28, b = 0 })
         end
         if ns.db and ns.db.sound ~= false and ns.AlertSound then
@@ -1078,13 +1092,23 @@ local function ReplyButton(parent, label, w, h)
     return b
 end
 
-local function Text(parent, font)
+-- ui-style rule 16, "text never runs over anything" (SuccuDev, 2026-11-16: "blaize smirks went over
+-- buttons at the bottom, UI system shouldnt be alloweing overlaps like this"). Every text gets a box it
+-- cannot leave: a fixed height for its lines on top of the width its anchors give it, no wrapping for
+-- one line and a line cap for more. The game draws nothing outside a box with both sizes set.
+local LINE_H = { GameFontNormalLarge = 18, GameFontNormal = 14, GameFontDisable = 14 }
+local function Text(parent, font, lines)
     local fs = parent:CreateFontString(nil, "ARTWORK", font)
     if fs.SetFontObject and _G[font] then pcall(fs.SetFontObject, fs, _G[font]) end
+    lines = lines or 1
     fs:SetJustifyH("LEFT")
-    if fs.SetWordWrap then fs:SetWordWrap(false) end
+    if fs.SetJustifyV then fs:SetJustifyV(lines > 1 and "TOP" or "MIDDLE") end
+    if fs.SetWordWrap then fs:SetWordWrap(lines > 1) end
+    if fs.SetMaxLines then fs:SetMaxLines(lines) end
+    fs:SetHeight(lines * (LINE_H[font] or 12))
     return fs
 end
+M.Text = Text
 
 local function ReplyTip(self)
     local v = self.visitor
@@ -1121,7 +1145,7 @@ local function Build(host)
         f:RegisterForDrag("LeftButton")
         f:SetScript("OnDragStart", function(self) self:StartMoving() end)
         f:SetScript("OnDragStop", function(self) self:StopMovingOrSizing() end)
-        if type(f.TitleText) == "table" then f.TitleText:SetText("On the mailbox") end
+        if type(f.TitleText) == "table" then f.TitleText:SetText("Dancing for tips") end
         if type(f.CloseButton) ~= "table" then
             local okc, close = pcall(CreateFrame, "Button", nil, f, "UIPanelCloseButton")
             if okc and close then
@@ -1211,15 +1235,14 @@ local function Build(host)
         row:Hide()
         f.rows[r] = row
     end
-    f.empty = Text(f, "GameFontDisable")
+    f.empty = Text(f, "GameFontDisable", 2)
     f.empty:SetPoint("TOPLEFT", f, "TOPLEFT", 16, -TOP + DY - 6)
     f.empty:SetPoint("RIGHT", f, "RIGHT", -16, 0)
-    if f.empty.SetWordWrap then f.empty:SetWordWrap(true) end
     f.empty:SetText("Whoever emotes at you, whispers you or targets you shows up here.")
-    f.status = Text(f, "GameFontHighlightSmall")
+    f.status = Text(f, "GameFontHighlightSmall", 2)        -- two lines, kept under the last row
+    if f.status.SetJustifyV then f.status:SetJustifyV("BOTTOM") end
     f.status:SetPoint("BOTTOMLEFT", f, "BOTTOMLEFT", 14, embedded and 10 or 16)
     f.status:SetPoint("RIGHT", f, "RIGHT", -170, 0)
-    if f.status.SetWordWrap then f.status:SetWordWrap(true) end
     f.dance = Button(f, "Dance", 72)
     f.dance:SetPoint("BOTTOMRIGHT", f, "BOTTOMRIGHT", -12, embedded and 6 or 12)
     f.dance:SetScript("OnClick", function() Emote("DANCE", nil, "click") end)

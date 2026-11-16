@@ -12,7 +12,7 @@
 -- from the shop is what you had saved there (tips, tippers, numbers), copied once.
 local ADDON, ns = ...
 
-ns.VERSION = "1.4.2"
+ns.VERSION = "1.5.0"
 ns.TITLE = "Mailbox Slutting"
 ns.ICON = "Interface\\Icons\\INV_Letter_15"
 
@@ -238,7 +238,7 @@ SlashCmdList.MAILBOXSLUTTING = function(msg) Slash(msg or "") end
 
 BINDING_HEADER_MAILBOXSLUTTING = "Mailbox Slutting"
 BINDING_NAME_MAILBOXSLUTTING_ACCEPTTIP = "Accept a tip (a trade where only they give gold)"
-BINDING_NAME_MAILBOXSLUTTING_TOGGLE = "Start or stop dancing on the mailbox"
+BINDING_NAME_MAILBOXSLUTTING_TOGGLE = "Start or stop dancing for tips"
 function MailboxSlutting_Toggle() if ns.Mailbox and db then ns.Mailbox.Toggle() end end
 
 -- For a look from /dump, and so Slutmog Shop's old /slutshop mailbox can still find it.
