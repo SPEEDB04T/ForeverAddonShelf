@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.2.0
+
+- Much louder when the crowd does nothing: while people are around and nobody is emoting at you, whispering or tipping, a line at nobody goes out every 10 to 30 seconds (it was every 7 to 13 minutes), and a tip jar line every 2 to 3 minutes (it was every 20 to 30).
+- 24 lines at nobody instead of 5, and 12 tip jar lines instead of 7, so they do not come round too soon.
+- When somebody does emote at you, whisper or tip, these lines wait 45 seconds, so the answer to them is what people read.
+
 ## 1.1.0
 
 - Nothing of Slutmog Shop is in the window any more, with or without the shop installed: no ad row, no Post ad or Reroll, no Wares or Options button, no Whisper price, and its name on top is Mailbox Slutting. The shop reminds you of its ads in its own window again.

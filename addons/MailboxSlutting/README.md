@@ -34,7 +34,7 @@ It gets out of the way in a fight and comes back after. Its close button puts it
 Replies go out in /e with the game's own words ("winks slyly at Bob."), because the game's emotes play an animation that stops your dance. If the game does not let a line out, the real emote goes instead.
 
 - **Emotes back by itself.** Somebody winks, whistles, kisses, flirts, dances or waves at you and the fitting emote goes back (a kiss gets a blush, a whistle a curtsey). Rude emotes get a sad one back (cry, pout, frown, sigh). Somebody who targets you gets one wink. At most one emote per person in two minutes and one in six seconds overall, then you go back to dancing.
-- **On top of the mailbox.** The lines are written for dancing on the mailbox. Every 7 to 13 minutes, while people are around, one line at nobody ("does a little spin on the mailbox."). Somebody who keeps you targeted for half a minute gets one "glances at the tip jar, then down at Bob.". A tipper gets "dances for Bob." after the thank-you. The common replies take turns between a few wordings.
+- **On top of the mailbox.** The lines are written for dancing on the mailbox. While people are around and nobody is emoting at you, whispering or tipping, one line at nobody every 10 to 30 seconds ("does a little spin on the mailbox."), from 24 that take turns. They stop for 45 seconds whenever somebody does engage, so the answers are not buried. Somebody who keeps you targeted for half a minute gets one "glances at the tip jar, then down at Bob.". A tipper gets "dances for Bob." after the thank-you. The common replies take turns between a few wordings.
 - **The list** shows who emoted at you, who whispered you (with what they said) and who has you targeted (this needs nameplates shown). Nothing is saved; the list is gone when you log out.
 - **One-click replies.** Each row has the emote as a button. Nothing is ever whispered or said without your click.
 - If the game refuses emotes from addons, the window says so and the emote buttons do the same with a click.
@@ -46,6 +46,6 @@ When somebody opens a trade and gives you gold while you give nothing, an "Accep
 
 ## The tip jar, welcome backs and AFK
 
-- **The tip jar.** Every 20 to 30 minutes, while people are around, one line about the tip jar ("jingles the tip jar."), and the Tip jar button says one with a click. Every third one counts the jar out loud.
+- **The tip jar.** Every 2 to 3 minutes, while people are around and nobody is engaging, one line about the tip jar ("jingles the tip jar."), and the Tip jar button says one with a click. Every third one counts the jar out loud.
 - **Welcome back.** Somebody who tipped you before and comes by again gets one "welcomes Bob back.".
 - **AFK.** When the game marks you AFK a warning with a sound comes up, so the dance does not end unnoticed.

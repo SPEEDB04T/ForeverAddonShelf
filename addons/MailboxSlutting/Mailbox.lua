@@ -31,8 +31,12 @@ local ALERT_GAP = 3             -- seconds between two alert sounds
 local TICK = 1                  -- seconds between two looks at the nameplates
 local HOLD = 3                  -- seconds somebody must keep you targeted before the shop winks by itself
                                 -- (SuccuDev: "lets only wink at players that keep me targeted for at least 3 seconds")
-local JAR_MIN, JAR_MAX = 1200, 1800     -- seconds between two tip jar lines, picked at random
-local JAR_FIRST_MIN, JAR_FIRST_MAX = 60, 300    -- ... and before the first one
+local JAR_MIN, JAR_MAX = 120, 180       -- seconds between two tip jar lines, picked at random
+local JAR_FIRST_MIN, JAR_FIRST_MAX = 60, 90     -- ... and before the first one
+-- The lines by itself (idle and tip jar) are for a crowd that does nothing (SuccuDev: "we can be a lot
+-- more intrusive when people arent engaging, like every 10-30s"). Once somebody emotes at you, whispers
+-- or tips, the answers do the talking, and these wait this long after the last of it.
+local ENGAGE_HOLD = 45
 local BACK_AGAIN = 2 * 3600     -- seconds before a tipper is welcomed back again
 
 -- Their emote, by a word in its text: the game's emote that goes back by itself, and which lines
@@ -141,6 +145,11 @@ M.JAR = {
     "nudges the tip jar toward the edge of the mailbox with a toe.",
     "counts the coins in the tip jar and pouts.",
     "holds out the tip jar.",
+    "rattles the tip jar at the crowd.",
+    "peeks into the tip jar.",
+    "polishes the tip jar.",
+    "points a toe at the tip jar.",
+    "sets the tip jar down where everybody can see it.",
 }
 -- Now and then while somebody is around, at nobody: something to look at. You stand on the mailbox.
 M.IDLE = {
@@ -149,12 +158,31 @@ M.IDLE = {
     "blows a kiss to the crowd below.",
     "looks down from the mailbox and waves.",
     "balances on tiptoe on the mailbox.",
+    "sways slowly on top of the mailbox.",
+    "twirls once and curtsies to the crowd.",
+    "beckons the crowd closer to the mailbox.",
+    "winks at nobody in particular.",
+    "taps a heel on the mailbox lid.",
+    "looks around for an audience.",
+    "dances a slow circle around the top of the mailbox.",
+    "waves at everybody passing by.",
+    "leans down from the mailbox and smiles at the crowd.",
+    "claps along to the dance.",
+    "bows to the crowd from the mailbox.",
+    "stretches, then goes back to dancing.",
+    "hops to the edge of the mailbox and back.",
+    "peers down at the people checking their mail.",
+    "spins twice and blows a kiss.",
+    "gives the crowd a slow wave.",
+    "dips low, then rises back up on the mailbox.",
+    "shimmies on top of the mailbox.",
+    "smiles down at whoever is watching.",
 }
 -- Somebody who has kept you targeted this long gets one look at the tip jar, once an hour at most.
 M.NUDGE = "glances at the tip jar, then down at %s."
 local NUDGE_HOLD, NUDGE_AGAIN = 30, 3600
-local IDLE_MIN, IDLE_MAX = 420, 780             -- seconds between two idle lines, picked at random
-local IDLE_FIRST_MIN, IDLE_FIRST_MAX = 120, 300 -- ... and before the first one
+local IDLE_MIN, IDLE_MAX = 10, 30               -- seconds between two idle lines, picked at random
+local IDLE_FIRST_MIN, IDLE_FIRST_MAX = 10, 30   -- ... and before the first one
 -- A tipper gets a dance to their name a few seconds after the thank-you, where everybody sees it.
 M.DANCE_FOR = "dances for %s."
 -- Somebody who tipped you before comes by again: one of these, in /e (SuccuDev: "just a welcome back emote").
@@ -173,6 +201,7 @@ local frame, events
 --                 pitchedAt, emotedAt (by itself), doneAt (answered: a click, or the game showed the emote going at them) }
 local visitors = {}
 local lastAuto = -1e9
+local lastEngage = -1e9         -- somebody last emoted at you, whispered or tipped
 local lastAlert = -1e9
 local manual = false            -- the game refused an emote from the addon: buttons only
 local Sync
@@ -506,6 +535,7 @@ local function Visit(name, kind, what, reply, pitch)
         Stat("visitors")
     end
     v.kind, v.what, v.at = kind, what, Now()
+    if kind == "emote" or kind == "whisper" then lastEngage = v.at end
     if reply ~= nil then v.reply = reply or nil end
     if v.reply and (not v.token or reply) then v.token = Pick(v, v.token) end
     table.insert(visitors, 1, v)
@@ -885,6 +915,7 @@ function M.NextIdle(t) if t then nextIdle = t end return nextIdle end
 
 -- For a tip: a dance to their name, a few seconds after the thank-you. Only while the shop is open.
 function M.DanceFor(name)
+    lastEngage = Now()
     if not (on and name) or Away() or not (C_Timer and C_Timer.After) then return false end
     C_Timer.After(M.Random(4, 7), function()
         if on and not Away() then
@@ -938,13 +969,14 @@ local function Tick()
     local near = Look()
     local now = Now()
     nextJar = nextJar or (now + M.Random(JAR_FIRST_MIN, JAR_FIRST_MAX))
-    if now >= nextJar and near > 0 and not away and not jarOwed and now - lastAuto >= GLOBAL_GAP then
+    local quiet = now - lastEngage >= ENGAGE_HOLD
+    if now >= nextJar and near > 0 and not away and quiet and not jarOwed and now - lastAuto >= GLOBAL_GAP then
         nextJar = now + M.Random(JAR_MIN, JAR_MAX)
         lastAuto = now
         M.Jar("timer")
     end
     nextIdle = nextIdle or (now + M.Random(IDLE_FIRST_MIN, IDLE_FIRST_MAX))
-    if now >= nextIdle and near > 0 and not away and now - lastAuto >= GLOBAL_GAP then
+    if now >= nextIdle and near > 0 and not away and quiet and now - lastAuto >= GLOBAL_GAP then
         nextIdle = now + M.Random(IDLE_MIN, IDLE_MAX)
         lastAuto = now
         M.Idle("timer")
@@ -1142,7 +1174,7 @@ function M.Start()
         pcall(events.RegisterEvent, events, e)
     end
     on, manual, misses, pend, dancing, due = true, false, 0, nil, false, nil
-    nextJar, nextIdle, wasAway = nil, nil, false
+    nextJar, nextIdle, wasAway, lastEngage = nil, nil, false, -1e9
     frame:Show()
     Emote("DANCE", nil, "start")
     Tick()
