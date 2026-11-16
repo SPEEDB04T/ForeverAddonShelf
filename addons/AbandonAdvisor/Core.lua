@@ -2,7 +2,7 @@
 local ADDON, ns = ...
 
 ns.ADDON = ADDON
-ns.VERSION = "1.6.0"
+ns.VERSION = "1.6.1"
 
 local defaults = {
     point = nil,
@@ -653,7 +653,8 @@ end
 SLASH_ABANDONADVISOR1 = "/abandon"
 SLASH_ABANDONADVISOR2 = "/aa"
 SLASH_ABANDONADVISOR3 = "/abandonadvisor"
-SlashCmdList = SlashCmdList or {}
+-- Only add our key: assigning the SlashCmdList global itself (even to the same table) taints it,
+-- and the game then forbids /tm, /invite and other protected slash commands in our name.
 SlashCmdList["ABANDONADVISOR"] = Slash
 
 -- The addon's line in the list of addons next to the minimap: left-click the window,

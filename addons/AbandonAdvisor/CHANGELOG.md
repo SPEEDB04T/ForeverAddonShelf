@@ -1,3 +1,6 @@
+## 1.6.1
+- Raid markers and invites work again. Abandon Advisor no longer blocks `/tm` (skull and the other markers, from a macro or typed) or `/invite` with an "AbandonAdvisor tried to call the protected function" error. Loading it re-set the game's list of slash commands, which made the game treat every slash command as the addon's.
+
 ## 1.6.0
 - Better advice when your log has room. The summary no longer just says there is no need to drop anything: it names the quests not worth keeping anyway (marked Abandon), or when none are, the weakest ones, now marked Maybe in the list. Their tooltips say so, and `/abandon list` names the weakest three when nothing is worth abandoning.
 - Two new reasons to drop a quest: it is one level from going grey for you, or it is on another continent.
