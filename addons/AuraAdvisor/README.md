@@ -13,17 +13,19 @@ For WoW Forever (Interface 16001).
 | Concentration | Your casts, or your party's, are pushed back by hits. |
 | Fire / Frost / Shadow Resistance | Hits of that school land on you and your party; an enemy is casting a spell of that school; an enemy Mage, Warlock or Priest is in the fight. |
 
-Hits on you count more than hits on your party. Everything fades over a few seconds, so the advice follows the fight. A switch costs a global cooldown, so another aura has to be clearly ahead before it is suggested, and one stray Fire hit changes nothing.
+Hits on you count more than hits on your party. A party member's hits on themselves (a warlock's own Hellfire, Life Tap) don't count. Everything fades over a few seconds, so the advice follows the fight. A switch costs a global cooldown, so another aura has to be clearly ahead before it is suggested, and one stray Fire hit changes nothing.
 
-If another paladin in your party already has an aura up (seen on your buffs, or when they cast one), that aura is never suggested: two of the same aura give nothing extra. Its tooltip line says who has it up.
+If another paladin in your party already has an aura up (seen on your buffs, or when they cast one), that aura is never suggested: two of the same aura give nothing extra. Its tooltip says "Already up"; /aura says who has it.
 
 The play style comes from your group role, or Righteous Fury (tank), or is damage otherwise. You can set it yourself.
 
 ## On your bars
 
 - **The aura to switch to glows** with the game's own proc glow, on its button on the stance bar and on any action bar button that holds it (a macro that casts it counts too). In a fight the glow stays until you switch, another aura takes over or the fight ends; a pause in the hits doesn't take it down.
-- **Hover an aura** on the stance bar or an action bar: under the game's own tooltip, a line says why to switch to it, or what speaks for or against it.
-- In a fight a sound plays and a line appears in the middle of the screen when a switch is suggested, with the reason. Each can be turned off, and so can the glow.
+- **Hover an aura** on the stance bar or an action bar: under the game's own tooltip, two words at most. "Switch now" on the aura to switch to, that aura's name on the one you have on, "Already up" on one another paladin has.
+- In a fight a sound plays and the aura's name appears in the middle of the screen when a switch is suggested. Each can be turned off, and so can the glow.
+- **Why?** `/aura` prints the reasons in chat, and the options window shows them too.
+
 ## Setup
 
 1. Copy the `AuraAdvisor` folder into `World of Warcraft\_forever_\Interface\AddOns`, so that the file ends up at `AddOns\AuraAdvisor\AuraAdvisor.toc`.

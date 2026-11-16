@@ -27,8 +27,10 @@ local HARD = { elite = true, worldboss = true, rareelite = true }
 
 S.log = {}
 S.enemies = { engaged = 0, hard = false, hints = {}, hintClass = {} }
+S.selfHarm = {}             -- unit -> { school, untilT }: that unit is hurting itself (Hellfire, Life Tap)
 S.stats = { combat = 0, hits = 0, hiddenSchool = 0, hiddenEvent = 0, pushes = 0,
-            enemyCasts = 0, namedCasts = 0, schoolCasts = 0 }
+            enemyCasts = 0, namedCasts = 0, schoolCasts = 0, selfHarm = 0 }
+local SelfInflicted         -- below
 
 -- A hidden value may not even be compared, so ask before anything else.
 local function Secret(v)
@@ -49,6 +51,7 @@ end
 function S.Reset()
     S.log = {}
     S.enemies = { engaged = 0, hard = false, hints = {}, hintClass = {} }
+    S.selfHarm = {}
     S.lastScan = nil
 end
 
@@ -95,6 +98,11 @@ function S.OnUnitCombat(unit, action, flag, amount, mask)
     local school
     if Plain(mask) ~= nil then school = Data.SchoolOfMask(mask) end
     local mine, now = MINE[unit], Now()
+    -- a hit from the unit's own spell (a party warlock's Hellfire) is no enemy's
+    if action ~= "BLOCK" and not AVOIDED[action] and SelfInflicted(unit, school or "unknown", now) then
+        S.stats.selfHarm = S.stats.selfHarm + 1
+        return
+    end
 
     if action == "WOUND" then
         if not school then
@@ -130,6 +138,83 @@ local function SpellName(id)
         local ok, name = pcall(GetSpellInfo, id)
         if ok then return Plain(name) end
     end
+end
+
+----------------------------------------------------------------------
+-- Hits a unit deals itself. Told apart by what it is casting, because the game doesn't say
+-- who dealt a hit: by the cast events, and by asking the game what it is channelling right
+-- now (that also works after a /reload in the middle of a Hellfire).
+----------------------------------------------------------------------
+local harmNames
+local function HarmByName(name)
+    if not harmNames then
+        harmNames = {}
+        for _, s in ipairs(Data.SELF_HARM) do
+            harmNames[s.english:lower()] = s
+            local localName = SpellName(s.ids[1])
+            if type(localName) == "string" then harmNames[localName:lower()] = s end
+        end
+    end
+    return harmNames[name:lower()]
+end
+
+local function SelfHarmOf(spellID, name)
+    spellID = Plain(spellID)
+    if type(spellID) == "number" then
+        if Data.SELF_HARM_BY_ID[spellID] then return Data.SELF_HARM_BY_ID[spellID] end
+        if type(name) ~= "string" then name = SpellName(spellID) end
+    end
+    if type(name) == "string" then return HarmByName(name) end
+end
+
+local function IsWarlock(unit)
+    if not UnitClass then return false end
+    local ok, _, class = pcall(UnitClass, unit)
+    return ok and Plain(class) == "WARLOCK"
+end
+
+-- What the unit is channelling: a SELF_HARM entry, "hidden" when the game won't say, or nil.
+local function Channel(unit)
+    if not UnitChannelInfo then return nil end
+    local ok, name, _, _, _, _, _, _, spellID = pcall(UnitChannelInfo, unit)
+    if not ok then return nil end
+    if Secret(name) or Secret(spellID) then return "hidden" end
+    if name == nil and spellID == nil then return nil end
+    return SelfHarmOf(spellID, name)
+end
+
+local function Covers(school, hitSchool)
+    return hitSchool == school or hitSchool == "unknown"
+end
+
+SelfInflicted = function(unit, school, now)
+    local rec = S.selfHarm[unit]
+    if rec and now <= rec.untilT and Covers(rec.school, school) then return true end
+    local live = Channel(unit)
+    if type(live) == "table" then return Covers(live.school, school) end
+    -- the game hides what a warlock is channelling: their own Fire hits are most likely Hellfire
+    if live == "hidden" and IsWarlock(unit) then return Covers("fire", school) end
+    return false
+end
+
+-- UNIT_SPELLCAST_CHANNEL_START / UNIT_SPELLCAST_SUCCEEDED from you or your party
+function S.OnFriendlyCast(unit, spellID, channel)
+    unit = Plain(unit)
+    if type(unit) ~= "string" or MINE[unit] == nil then return end
+    local harm = SelfHarmOf(spellID)
+    if not harm and channel and Plain(spellID) == nil and IsWarlock(unit) then
+        harm = Data.SELF_HARM[1]        -- a warlock channelling something hidden: maybe Hellfire
+    end
+    if not harm then return end
+    -- a channel lasts until it stops (Hellfire: 15 s at most); an instant hurts once, now
+    S.selfHarm[unit] = { school = harm.school, untilT = Now() + ((channel and harm.channel) and 20 or 0.6) }
+end
+
+-- UNIT_SPELLCAST_CHANNEL_STOP: the last tick can land a moment after the channel ends
+function S.OnChannelStop(unit)
+    unit = Plain(unit)
+    local rec = type(unit) == "string" and S.selfHarm[unit]
+    if rec then rec.untilT = math.min(rec.untilT, Now() + 1.5) end
 end
 
 local function HasPlate(unit)

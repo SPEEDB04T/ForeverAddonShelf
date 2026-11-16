@@ -1,5 +1,10 @@
 # Changelog
 
+## 1.2.3 (2026-11-15)
+
+- A warlock's own Hellfire no longer counts as Fire damage, so it doesn't suggest Fire Resistance Aura. The burn a party warlock takes from their own Hellfire, and the health Life Tap costs, are left out. Fire and Shadow hits from enemies, on them or anyone else, still count.
+- Less wordy: the line on screen, the chat line and the tooltip line are two words at most, such as "Fire Resistance", "Switch now" or "Already up". The reasons are still in /aura and the options window.
+
 ## 1.2.2 (2026-11-15)
 
 - Quiet while you're dead or a ghost: no glow, sound, line on screen, chat line or tooltip line. Your aura is gone and nothing can be cast, so it waits until you're back on your feet; then it quietly suggests an aura to put back on (with a sound only if you're back in a fight). The hits from the fight you died in are forgotten.

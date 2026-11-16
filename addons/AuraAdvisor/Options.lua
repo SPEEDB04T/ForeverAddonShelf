@@ -18,7 +18,7 @@ local function Rows()
         { kind = "header", text = "Advice" },
         { kind = "check", label = "Glow the aura to switch to",
           tip = "The game's spell-alert glow on that aura's stance bar button, and on any action bar button with it. "
-              .. "In a fight it stays until you switch, the advice changes or the fight ends. The aura's tooltip says why. "
+              .. "In a fight it stays until you switch, the advice changes or the fight ends. /aura says why. "
               .. "Same as /aura glow.",
           get = Get("glow"), set = Set("glow") },
         { kind = "choice", label = "Play style",
@@ -54,7 +54,7 @@ local function Rows()
         { kind = "header", text = "Alerts in a fight" },
         { kind = "check", label = "Play a sound", get = Get("sound"), set = Set("sound") },
         { kind = "check", label = "Show a line on screen",
-          tip = "A line in the middle of the screen, with the reason, when a switch is suggested in a fight. Same as /aura banner.",
+          tip = "The aura's name in the middle of the screen when a switch is suggested in a fight. Same as /aura banner.",
           get = Get("banner"), set = Set("banner") },
         { kind = "check", label = "Write a line in chat", get = Get("chat"), set = Set("chat") },
 

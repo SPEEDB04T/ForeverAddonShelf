@@ -281,16 +281,26 @@ end
 local pending = { key = nil, since = 0 }
 local lastAlert = {}
 
+-- An aura in at most two words, for what shows during play: its own name when that is two
+-- words ("Devotion Aura"), else the short one ("Fire Resistance").
+function ns.TwoWords(key)
+    local info, def = ns.known[key], Data.AURAS[key]
+    local name = info and info.name
+    if type(name) == "string" and select(2, name:gsub("%S+", "")) <= 2 then return name end
+    return def and def.short or tostring(name)
+end
+
 local function Alert(res, now)
     local info = ns.known[res.shown]
     if not info then return end
     if lastAlert[res.shown] and now - lastAlert[res.shown] < REALERT then return end
     lastAlert[res.shown] = now
-    local text = ("switch to %s (%s)"):format(info.name, res.reason or "it fits better")
+    -- Two words, the aura and nothing else; the reason is in /aura.
+    local text = ns.TwoWords(res.shown)
     if ns.db.banner and UIErrorsFrame and UIErrorsFrame.AddMessage then
-        UIErrorsFrame:AddMessage("Aura Advisor: " .. text, 1, 0.82, 0.2)
+        UIErrorsFrame:AddMessage(text, 1, 0.82, 0.2)
     end
-    if ns.db.chat then ns.Print(text) end
+    if ns.db.chat then DEFAULT_CHAT_FRAME:AddMessage("|cfff58cba" .. text .. "|r") end
     if ns.db.sound and PlaySound then
         pcall(PlaySound, (SOUNDKIT and SOUNDKIT.RAID_WARNING) or 8959, "Master")
     end
@@ -396,6 +406,9 @@ local function OnEvent(_, event, a1, a2, a3, a4, a5)
         Signals.OnUnitCombat(a1, a2, a3, a4, a5)
     elseif event == "UNIT_SPELLCAST_START" or event == "UNIT_SPELLCAST_CHANNEL_START" then
         Signals.OnCastStart(a1, a3)
+        if event == "UNIT_SPELLCAST_CHANNEL_START" then Signals.OnFriendlyCast(a1, a3, true) end
+    elseif event == "UNIT_SPELLCAST_CHANNEL_STOP" then
+        Signals.OnChannelStop(a1)
     elseif event == "UNIT_SPELLCAST_DELAYED" then
         Signals.OnCastDelayed(a1)
     elseif event == "UNIT_SPELLCAST_SUCCEEDED" then
@@ -408,6 +421,7 @@ local function OnEvent(_, event, a1, a2, a3, a4, a5)
             end
         elseif unit and PARTY[unit] then
             PartyAuraCast(unit, a3)
+            Signals.OnFriendlyCast(unit, a3, false)
         end
     elseif event == "UNIT_AURA" then
         if Plain(a1) == "player" then buffDirty = true end
@@ -442,7 +456,8 @@ local function OnEvent(_, event, a1, a2, a3, a4, a5)
 end
 
 local EVENTS = {
-    "UNIT_COMBAT", "UNIT_SPELLCAST_START", "UNIT_SPELLCAST_CHANNEL_START", "UNIT_SPELLCAST_DELAYED",
+    "UNIT_COMBAT", "UNIT_SPELLCAST_START", "UNIT_SPELLCAST_CHANNEL_START", "UNIT_SPELLCAST_CHANNEL_STOP",
+    "UNIT_SPELLCAST_DELAYED",
     "UNIT_SPELLCAST_SUCCEEDED", "UNIT_AURA", "PLAYER_REGEN_DISABLED", "PLAYER_REGEN_ENABLED", "PLAYER_DEAD",
     "PLAYER_ALIVE", "PLAYER_UNGHOST",
     "UPDATE_SHAPESHIFT_FORM", "UPDATE_SHAPESHIFT_FORMS", "UPDATE_SHAPESHIFT_USABLE", "GROUP_ROSTER_UPDATE",
@@ -527,6 +542,7 @@ function ns.PrintDebug()
         tostring(ns.formsReadable), tostring(ns.CurrentAura() or "none")))
     ns.Print(("hits seen on you and your party: %d (of %d events; school hidden: %d, event hidden: %d)"):format(
         st.hits, st.combat, st.hiddenSchool, st.hiddenEvent))
+    ns.Print(("hits a party member dealt themselves (Hellfire, Life Tap), not counted: %d"):format(st.selfHarm or 0))
     ns.Print(("casts pushed back: %d. Enemy casts seen: %d (name readable: %d, school known: %d)"):format(
         st.pushes, st.enemyCasts, st.namedCasts, st.schoolCasts))
     local e = Signals.enemies

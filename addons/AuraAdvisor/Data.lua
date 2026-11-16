@@ -137,3 +137,18 @@ Data.CLASS_HINT = {
     SHAMAN = { frost = 0.2 },
 }
 Data.CLASS_NAME = { MAGE = "Mage", WARLOCK = "Warlock", PRIEST = "Priest", SHAMAN = "Shaman" }
+
+----------------------------------------------------------------------
+-- Spells that hurt the one casting them. A party warlock's own Hellfire burns them every
+-- second it is channelled, and Life Tap costs health: those hits are not an enemy's, so they
+-- must not count. The game doesn't tell an addon who dealt a hit (no combat log), so these
+-- are told apart by what the one who was hit is casting.
+----------------------------------------------------------------------
+Data.SELF_HARM = {
+    { english = "Hellfire", school = "fire", channel = true, ids = { 1949, 11683, 11684, 27213 } },
+    { english = "Life Tap", school = "shadow", ids = { 1454, 1455, 1456, 11687, 11688, 11689, 27222 } },
+}
+Data.SELF_HARM_BY_ID = {}
+for _, s in ipairs(Data.SELF_HARM) do
+    for _, id in ipairs(s.ids) do Data.SELF_HARM_BY_ID[id] = s end
+end

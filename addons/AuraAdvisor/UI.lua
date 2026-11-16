@@ -3,7 +3,7 @@
 -- * The aura to switch to gets the game's spell-alert glow (ActionButtonSpellAlertTemplate,
 --   Blizzard_ActionBar/Shared/ActionButtonSpellAlerts.xml) on its button on the game's stance
 --   bar, and on any action bar button that holds that aura, the way the game marks a proc.
--- * An aura's tooltip (stance bar, action bar, spell) gets the advice under it.
+-- * An aura's tooltip (stance bar, action bar, spell) gets a two-word line under it.
 --
 -- The glow frames are our own, made and run the way ActionButtonSpellAlertManager makes and
 -- runs its own (1.4 x the button, centred), but not through the manager: none of the game's
@@ -188,16 +188,14 @@ end
 local function AddAdvice(tt, key)
     local res = ns.result
     if not (key and res and ns.enabled and ns.known[key]) or res.dead then return end
+    -- Two words at most; the reasons are in /aura.
     local text, color
     if key == res.shown then
-        text, color = "Aura Advisor: switch to this (" .. tostring(res.reason or "it fits better") .. ")", "GREEN_FONT_COLOR"
-    elseif key == res.current then
-        text, color = "Aura Advisor: on, and right for now", "NORMAL_FONT_COLOR"
-        local better = res.shown and ns.known[res.shown]
-        if better then text = "Aura Advisor: on, but " .. better.name .. " fits better" end
-    elseif res.why[key] then
-        text = "Aura Advisor: " .. res.why[key]
-        color = ns.OtherAuras()[key] and "RED_FONT_COLOR" or "HIGHLIGHT_FONT_COLOR"
+        text, color = "Switch now", "GREEN_FONT_COLOR"
+    elseif key == res.current and res.shown and ns.known[res.shown] then
+        text, color = ns.TwoWords(res.shown), "GREEN_FONT_COLOR"    -- the one to switch to
+    elseif ns.OtherAuras()[key] then
+        text, color = "Already up", "RED_FONT_COLOR"                -- another paladin has it
     end
     if not text then return end
     local r, g, b = RGB(color)
