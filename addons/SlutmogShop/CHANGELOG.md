@@ -1,5 +1,9 @@
 # Changelog
 
+## 1.12.6
+
+- More quiet game emotes to answer with, so it does not repeat itself: grin, smirk, act bashful, nod, tease, bow and greet, next to wink, smile and giggle. Somebody who only looks at you still gets only the slight ones.
+
 ## 1.12.5
 
 - The thank-you goes out with your Accept click when they have accepted first (the game takes chat lines from an addon most surely on a click). If the game drops the thank-you or the whisper, a "Thank Bob" button shows where the trade was, and one click sends what is missing.
