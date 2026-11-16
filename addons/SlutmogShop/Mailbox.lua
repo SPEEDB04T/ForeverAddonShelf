@@ -301,11 +301,12 @@ local function Waiting(v, now)
 end
 M.Waiting = function(v) return Waiting(v, Now()) end
 
+-- No sound for emotes (SuccuDev: "im getting audio spammed for emotes rather than trades"): only a
+-- tip makes a sound. The taskbar icon still flashes.
 local function Alert()
     local now = Now()
     if now - lastAlert < ALERT_GAP then return end
     lastAlert = now
-    ns.AlertSound(SOUNDKIT and SOUNDKIT.TELL_MESSAGE, 3081)
     if type(FlashClientIcon) == "function" then pcall(FlashClientIcon) end
 end
 

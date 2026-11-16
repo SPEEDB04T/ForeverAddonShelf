@@ -1,5 +1,9 @@
 # Changelog
 
+## 1.12.2
+
+- Emotes at you no longer make a sound, only the taskbar icon flashes. Tips still play the coin sound.
+
 ## 1.12.1
 
 - Fixed: the shop no longer gets your /tm raid marking and /invite blocked. It used to set the game's whole slash command list on load, which made the game treat every slash command as touched by an addon; now it only adds its own commands.
