@@ -1,5 +1,18 @@
 # Changelog
 
+## 1.20.0
+
+- **Undercut on each Sell row.** A bag piece that others list has an Undercut button beside its
+  Post button, the same as the one in the sell box: it posts 1 silver under the lowest other
+  listing.
+- **More same-look warnings.** The list missed 88 items that share a look with a listed piece
+  (Season of Discovery and PvP items), e.g. Electromantic Chainmail for Lambent Scale Breastplate.
+  62 pieces carry the warning now, 32 before. An item new in Forever that the data can't name is
+  counted ("1 other item").
+- **Old prices look old.** Once your last scan is over 3 hours old, prices are grey, the tooltip
+  says their age, and nothing is marked new or cheaper.
+- The item tooltip calls the worth an estimate. The Models view shows the same-look mark.
+
 ## 1.19.0
 
 - **Undercut button on the Sell tab.** While others list the piece in the sell box, an Undercut

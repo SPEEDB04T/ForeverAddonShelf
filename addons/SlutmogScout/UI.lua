@@ -264,9 +264,15 @@ function ns.FillItemTooltip(tip, id)
   tip:AddLine(" ")
   if info.low then
     local qty, usual = ns.Stock(id)
-    pair("Lowest now", ns.Money(info.low))
-    pair("Listed now", tostring(qty or info.qty or 0) .. (usual and Grey((" (usually %d)"):format(math.floor(usual + 0.5))) or ""))
-    local kind, was = ns.Fresh(id)
+    -- an old scan's price is not "now": grey, with its age
+    local stale, age = ns.PricesStale()
+    pair(stale and ("Lowest " .. ns.AgeText(age)) or "Lowest now", ns.Money(info.low, stale))
+    pair(stale and "Listed then" or "Listed now",
+      tostring(qty or info.qty or 0) .. (usual and Grey((" (usually %d)"):format(math.floor(usual + 0.5))) or ""))
+    local kind, was
+    if not stale then
+      kind, was = ns.Fresh(id)
+    end
     if kind == "new" then
       tip:AddLine("New since the scan before.", 0.25, 1, 0.25)
     elseif kind == "cheaper" then
@@ -585,10 +591,12 @@ end
 -- always sort to the bottom, whichever way the column is sorted.
 local function MarketData()
   local rows = {}
+  -- once the last scan is old its prices are greyed and nothing counts as new or cheaper
+  local stale = ns.PricesStale()
   for id, it in pairs(ns.Items()) do
     local info = ArmorFilter(it) and ns.Price(id)
     if info and ns.Shown(it, info) then
-      local fresh = info.low and ns.Fresh(id) or nil
+      local fresh = info.low and not stale and ns.Fresh(id) or nil
       if (not state.listedOnly or info.low) and (not state.freshOnly or fresh) then
         local lo, hi = ns.MobRange(it)
         local look, lookFrom = ns.LookScore(id, it)
@@ -596,7 +604,7 @@ local function MarketData()
         local _, usual = ns.Stock(id)
         local hours = type(it.drop) == "table" and tonumber(it.drop.hours) or nil
         rows[#rows + 1] = {
-          rating = rated and look or -1, ratingFrom = lookFrom, fresh = fresh, usual = usual, hours = hours,
+          rating = rated and look or -1, ratingFrom = lookFrom, fresh = fresh, stale = stale, usual = usual, hours = hours,
           id = id, it = it, info = info, lo = lo, hi = hi,
           name = it.name or "", type = TypeLabel(it),
           low = info.low or -1, qty = (info.qty and info.qty > 0) and info.qty or -1, value = info.value or -1,
@@ -723,7 +731,7 @@ local function RefreshMarket()
         c.rating:SetText(("|cff%s%d/10|r"):format(d.rating >= 7 and "40ff40" or d.rating >= ns.RATING_KEEP and "ffd100" or "ff4040", d.rating))
       end
       if d.info.low then
-        c.low:SetText(ns.Money(d.info.low))
+        c.low:SetText(ns.Money(d.info.low, d.stale))
       elseif d.info.qty then
         c.low:SetText(Grey("none"))
       else
@@ -1228,7 +1236,8 @@ RefreshMarketGrid = function(data, nFresh, ahOpen)
     tile:SetShown(d ~= nil)
     if d then
       tile.entry = { id = d.id, src = d.it, cam = "market" }
-      tile.name:SetText(ItemName(d.id, d.it))
+      local _, sameWarn = ns.SameLook(d.it)
+      tile.name:SetText(ItemName(d.id, d.it) .. (sameWarn and (" " .. SAME_ICON) or ""))
       tile.tag:SetText(d.fresh and FRESH_TEXT[d.fresh] or "")
       tile.tag:SetShown(d.fresh ~= nil)
       if d.rating < 0 then
@@ -1239,7 +1248,7 @@ RefreshMarketGrid = function(data, nFresh, ahOpen)
         tile.rating:SetText(("|cff%s%d/10|r"):format(d.rating >= 7 and "40ff40" or d.rating >= ns.RATING_KEEP and "ffd100" or "ff4040", d.rating))
       end
       local listed = d.info.low ~= nil
-      tile.price:SetText(listed and ns.Money(d.info.low) or Grey(d.info.qty and "not listed" or "?"))
+      tile.price:SetText(listed and ns.Money(d.info.low, d.stale) or Grey(d.info.qty and "not listed" or "?"))
       tile.worth:SetText(d.info.value and ("worth %s"):format(ns.Money(d.info.value)) or "")
       -- the price is never given a width, so it is never cut short: it sits
       -- left of Buy, or in the middle when there is no Buy
@@ -1443,7 +1452,7 @@ local SELL_COLS = {
   { key = "others", label = "Others", width = 64, padL = 10, align = "RIGHT" },
   { key = "left", label = "Time left", width = 96, padL = 10, align = "RIGHT" },
   { key = "status", label = "Status", width = 84, padL = 10, align = "LEFT" },
-  { key = "act", label = "", width = 84, padL = 6, padR = 6, align = "LEFT" },
+  { key = "act", label = "", width = 150, padL = 6, padR = 6, align = "LEFT" }, -- Undercut, then Post or Cancel
 }
 do
   local fixed = 0
@@ -1531,6 +1540,37 @@ local function SellPostRow(r)
   ns.SellPost(r.entry, price)
 end
 
+-- Undercut: posts the piece 1 silver under the lowest other listing, whatever
+-- the price box says (SuccuDev, 2026-11-16: "need an undercut button next to
+-- post button when theres competitors", then "add undercut button to each row
+-- too"). For the piece in the sell box, the price box shows what was posted.
+local function SellUndercutRow(r)
+  local price = r and ns.UndercutPrice(r.market)
+  if not price then
+    return
+  end
+  if sellView and state.sellBoxId == r.id then
+    MoneySet(price)
+    state.sellBoxSet = price
+  end
+  ns.SellPost(r.entry, price)
+end
+
+local function UndercutTooltip(owner, r)
+  local price = r and ns.UndercutPrice(r.market)
+  if not price then
+    return
+  end
+  GameTooltip:SetOwner(owner, "ANCHOR_TOP")
+  GameTooltip:AddLine("Undercut")
+  GameTooltip:AddLine(("Posts for %s, 1s under the lowest (%s)."):format(ns.Money(price), ns.Money(r.market.low)), 1, 1, 1, true)
+  local vendor = ns.Price(r.id).vendor
+  if vendor and price <= vendor then
+    GameTooltip:AddLine(("A vendor pays %s."):format(ns.Money(vendor)), 1, 0.25, 0.25, true)
+  end
+  GameTooltip:Show()
+end
+
 local function SellInfoLine(r)
   local parts = {}
   local m = r.market
@@ -1613,6 +1653,7 @@ local function RefreshSell()
     SetStripe(row, i)
     local c = row.cells
     row.act:Hide()
+    row.under:Hide()
     row.selected:SetShown(d.kind == "bag" and d.id == state.sellBoxId)
     if d.section then
       row.sectionText:SetText(d.section)
@@ -1639,6 +1680,10 @@ local function RefreshSell()
           row.act:SetText("Post")
           row.act:SetEnabled(not busy)
           row.act:Show()
+          if ns.UndercutPrice(d.market) then
+            row.under:SetEnabled(not busy)
+            row.under:Show()
+          end
         end
       else
         c.name:SetText(d.link or ItemName(d.id))
@@ -2808,9 +2853,27 @@ local function BuildSellRow(parent)
     end
     row.cells[col.key] = fs
     if col.key == "act" then
+      -- Undercut on the left, Post or Cancel always in the same place on the right
+      local underW = 72
+      local u = CreateFrame("Button", nil, row, "UIPanelButtonTemplate")
+      u:SetSize(underW, 18)
+      u:SetPoint("LEFT", col.x + padL, 0)
+      u:SetText("Undercut")
+      u:SetScript("OnClick", function(self)
+        local d = self:GetParent().data
+        if d and d.kind == "bag" then
+          SellUndercutRow(d)
+        end
+      end)
+      u:SetScript("OnEnter", function(self)
+        UndercutTooltip(self, self:GetParent().data or nil)
+      end)
+      u:SetScript("OnLeave", GameTooltip_Hide)
+      u:Hide()
+      row.under = u
       local b = CreateFrame("Button", nil, row, "UIPanelButtonTemplate")
-      b:SetSize(col.width - padL - padR, 18)
-      b:SetPoint("LEFT", col.x + padL, 0)
+      b:SetSize(col.width - padL - padR - underW - 4, 18)
+      b:SetPoint("LEFT", col.x + padL + underW + 4, 0)
       b:SetScript("OnClick", function(self)
         local d = self:GetParent().data
         if not d then
@@ -2885,18 +2948,8 @@ local function PostFromBox()
   SellPostRow(SellSelectedNow())
 end
 
--- Undercut: posts the piece in the box 1 silver under the lowest other listing,
--- whatever the price box says (SuccuDev, 2026-11-16: "need an undercut button
--- next to post button when theres competitors"). The price box shows what was posted.
 local function UndercutFromBox()
-  local r = SellSelectedNow()
-  local price = r and ns.UndercutPrice(r.market)
-  if not price then
-    return
-  end
-  MoneySet(price)
-  state.sellBoxSet = price
-  ns.SellPost(r.entry, price)
+  SellUndercutRow(SellSelectedNow())
 end
 
 local function CreateSellView()
@@ -2935,19 +2988,7 @@ local function CreateSellView()
   local undercut = MakeButton(box, "Undercut", 100, UndercutFromBox)
   undercut:SetPoint("RIGHT", post, "LEFT", -4, 0)
   undercut:SetScript("OnEnter", function(self)
-    local r = SellSelectedNow()
-    local price = r and ns.UndercutPrice(r.market)
-    if not price then
-      return
-    end
-    GameTooltip:SetOwner(self, "ANCHOR_TOP")
-    GameTooltip:AddLine("Undercut")
-    GameTooltip:AddLine(("Posts for %s, 1s under the lowest (%s)."):format(ns.Money(price), ns.Money(r.market.low)), 1, 1, 1, true)
-    local vendor = ns.Price(r.id).vendor
-    if vendor and price <= vendor then
-      GameTooltip:AddLine(("A vendor pays %s."):format(ns.Money(vendor)), 1, 0.25, 0.25, true)
-    end
-    GameTooltip:Show()
+    UndercutTooltip(self, SellSelectedNow())
   end)
   undercut:SetScript("OnLeave", GameTooltip_Hide)
   undercut:Hide()

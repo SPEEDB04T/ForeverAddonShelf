@@ -756,7 +756,8 @@ function ns.SameLook(it)
     return out, false
   end
   local made, plain, bop, boe = Num(alt.made) or 0, Num(alt.plain) or 0, Num(alt.bop) or 0, Num(alt.boe) or 0
-  local total = made + plain + bop + boe
+  -- unk: items new in Forever that the list cannot name; how they are had is not known
+  local total = made + plain + bop + boe + (Num(alt.unk) or 0)
   if type(it.same) == "table" then
     for _, s in ipairs(it.same) do
       if type(s) == "table" and type(s.name) == "string" then
@@ -867,6 +868,13 @@ ns.SCAN_FRESH, ns.SCAN_STALE = 30 * 60, 3 * 3600
 function ns.ScanAge()
   local last = db and Num(db.lastScan)
   return last and math.max(0, time() - last) or nil
+end
+
+-- true, and the scan's age in seconds, once the last scan is too old for its
+-- prices to count as current: the window greys them and says their age.
+function ns.PricesStale()
+  local age = ns.ScanAge()
+  return age ~= nil and age >= ns.SCAN_STALE, age
 end
 
 local function AgeText(secs)
@@ -3543,7 +3551,9 @@ local function OnTooltipItem(tooltip, data)
     1, 1, 1, true)
   local info = ns.Price(id)
   if info.low then
-    tooltip:AddDoubleLine("Lowest in your last scan", ns.Money(info.low) .. (" |c%s(%d listed in all)|r"):format(GreyHex(), info.qty or 0))
+    local stale, age = ns.PricesStale()
+    tooltip:AddDoubleLine("Lowest in your last scan" .. (stale and (" (" .. AgeText(age) .. ")") or ""),
+      ns.Money(info.low, stale) .. (" |c%s(%d listed in all)|r"):format(GreyHex(), info.qty or 0))
     local b = ns.Buy(id, info)
     if b and b.cheaper and items[b.cheaper.id] then
       tooltip:AddDoubleLine("Same look, cheaper: " .. items[b.cheaper.id].name, ns.Money(b.cheaper.low))
@@ -3553,7 +3563,7 @@ local function OnTooltipItem(tooltip, data)
   end
   ns.AddSameLook(tooltip, it)
   if info.fair then
-    tooltip:AddDoubleLine("Slutmog worth", ns.Money(info.fair))
+    tooltip:AddDoubleLine("Slutmog worth (estimate)", ns.Money(info.fair))
     tooltip:AddLine(("%.1f times its vendor price (%s): %s."):format(info.times or 0, ns.Money(info.vendor or 0),
       table.concat(info.worthWhy or {}, ", ")), 0.6, 0.6, 0.6, true)
   end
