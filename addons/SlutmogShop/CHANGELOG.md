@@ -1,5 +1,9 @@
 # Changelog
 
+## 1.13.0
+
+- Undercuts are found by the shop itself: each time you open the auction house it looks up the other listings of every piece you have up, one at a time when the auction house is free, and leaves out of the ads any piece somebody else sells for less. Before, it only had Slutmog Scout's Sell tab to go by, and that reading could be from before your auctions went up. The newest reading counts, from either; one older than 6 hours says nothing.
+
 ## 1.12.9
 
 - Whole names always as "First Last", with a space, the way chat spells them here: 1.12.8 could still make "First-Last" of them.

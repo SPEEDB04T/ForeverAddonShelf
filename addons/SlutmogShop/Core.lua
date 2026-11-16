@@ -15,7 +15,7 @@
 -- works too). A reminder in your own chat says when it is time for the next one.
 local ADDON, ns = ...
 
-ns.VERSION = "1.12.9"
+ns.VERSION = "1.13.0"
 ns.TITLE = "Slutmog Shop"
 ns.ICON = "Interface\\Icons\\INV_Misc_Coin_02"
 ns.ACCENT = { 0.96, 0.55, 0.78 }
@@ -418,15 +418,38 @@ function ns.Where(w)
 end
 
 -- Undercut: someone else sells the piece for less than your buyout, so an ad would only send
--- buyers to them. The shop does not search the auction house itself; Slutmog Scout does (its Sell
--- tab) and tells other addons the lowest price it saw. Without Scout nothing counts as undercut.
+-- buyers to them. Each time the auction house opens, the shop looks up the other listings of
+-- every piece you have up (ns.MarketStep below); Slutmog Scout's Sell tab tells the lowest price
+-- too. The newest reading counts (SuccuDev: "its failing to detect auctions being undercut": the
+-- only reading was Scout's, from before the auctions went up, and it said nobody else sold them).
+-- A reading older than MARKET_LIFE says nothing.
+local MARKET_LIFE = 6 * 3600
+
+-- The lowest price of other sellers and when it was read, newest first; low = false: nobody else.
+function ns.MarketLow(id)
+    local low, at
+    local m = db and type(db.market) == "table" and db.market[id]
+    if type(m) == "table" and type(m.t) == "number" then low, at = m.low, m.t end
+    local api = SlutmogScoutAPI
+    if type(api) == "table" and type(api.MarketLow) == "function" then
+        local ok, l, t = pcall(api.MarketLow, id)
+        local clear = function(v) return v == nil or Readable(v) end
+        if ok and clear(l) and clear(t) then
+            if type(l) == "number" or type(t) == "number" then
+                t = type(t) == "number" and t or time()
+                if not at or t > at then low, at = type(l) == "number" and l or false, t end
+            end
+        end
+    end
+    return low, at
+end
+
 function ns.Undercut(id)
     local a = ns.OnAH(id)
     if not a or type(a.price) ~= "number" or a.price <= 0 then return false end
-    local api = SlutmogScoutAPI
-    if type(api) ~= "table" or type(api.MarketLow) ~= "function" then return false end
-    local ok, low = pcall(api.MarketLow, id)
-    return ok and Readable(low) and type(low) == "number" and low > 0 and low < a.price
+    local low, at = ns.MarketLow(id)
+    if not at or time() - at > MARKET_LIFE then return false end
+    return type(low) == "number" and low > 0 and low < a.price
 end
 
 local function InStock(w)
@@ -671,7 +694,7 @@ local function OwnedAuctions()
                 if Readable(id) and type(id) == "number" then
                     local link, buyout, count, status = a.itemLink, a.buyoutAmount, a.quantity, a.status
                     rows[#rows + 1] = {
-                        id = id,
+                        id = id, key = key,
                         link = Readable(link) and type(link) == "string" and link or nil,
                         buyout = Readable(buyout) and type(buyout) == "number" and buyout or 0,
                         count = Readable(count) and type(count) == "number" and count > 0 and count or 1,
@@ -726,6 +749,11 @@ function ns.ScanAuctions()
         end
     end
     db.ah = found
+    local keys = {}
+    for _, r in ipairs(rows) do
+        if not r.sold and r.key and found[r.id] then keys[r.id] = r.key end
+    end
+    if ns.QueueMarket then ns.QueueMarket(keys) end
     if #added > 0 then
         Print(("found %s among your auctions and put %s on the shelf at the buyout price."):format(
             table.concat(added, ", "), #added == 1 and "it" or "them"))
@@ -745,6 +773,92 @@ function ns.AskAuctions()
     end
     local order = type(Enum) == "table" and type(Enum.AuctionHouseSortOrder) == "table" and Enum.AuctionHouseSortOrder.Price or 4
     return (pcall(AH.QueryOwnedAuctions, { { sortOrder = order, reverseSort = false } }))
+end
+
+-- The other listings of your auctioned pieces, one search at a time, when the auction house is
+-- not busy. db.market[id] = { low = lowest unit buyout of somebody else (false: nobody), t = time() }.
+local MARKET_FRESH = 120        -- seconds a reading counts as current: not looked up again
+local MARKET_WAIT = 10          -- seconds to wait for an answer
+local market = { queue = {}, open = false }
+ns.MarketState = market
+
+function ns.QueueMarket(keys)
+    if type(C_AuctionHouse) ~= "table" or type(C_AuctionHouse.SendSearchQuery) ~= "function" then return 0 end
+    db.market = type(db.market) == "table" and db.market or {}
+    local now, n = time(), 0
+    for id, key in pairs(keys) do
+        local m = db.market[id]
+        local queued = market.searching and market.searching.id == id
+        for _, j in ipairs(market.queue) do queued = queued or j.id == id end
+        if not queued and not (type(m) == "table" and type(m.t) == "number" and now - m.t < MARKET_FRESH) then
+            market.queue[#market.queue + 1] = { id = id, key = key }
+            n = n + 1
+        end
+    end
+    ns.MarketStep()
+    return n
+end
+
+local function Tick()
+    if C_Timer and C_Timer.After and (market.searching or #market.queue > 0) and not market.ticking then
+        market.ticking = true
+        C_Timer.After(1, function()
+            market.ticking = false
+            ns.MarketStep()
+        end)
+    end
+end
+
+function ns.MarketStep()
+    local AH = C_AuctionHouse
+    if type(AH) ~= "table" or not market.open then return false end
+    if market.searching then
+        if GetTime() - market.sentAt <= MARKET_WAIT then Tick() return false end
+        market.searching = nil      -- no answer: left as it was
+    end
+    if #market.queue == 0 then return false end
+    if type(AH.IsThrottledMessageSystemReady) == "function" then
+        local ok, ready = pcall(AH.IsThrottledMessageSystemReady)
+        if not ok or not Readable(ready) or ready == false then Tick() return false end
+    end
+    local job = table.remove(market.queue, 1)
+    local order = type(Enum) == "table" and type(Enum.AuctionHouseSortOrder) == "table" and Enum.AuctionHouseSortOrder.Price or 0
+    if pcall(AH.SendSearchQuery, job.key, { { sortOrder = order, reverseSort = false } }, false) then
+        market.searching, market.sentAt = job, GetTime()
+    end
+    Tick()
+    return true
+end
+
+-- The answer for the piece being looked up: the cheapest one of somebody else's, for one.
+function ns.MarketRead(itemKey)
+    local job = market.searching
+    local AH = C_AuctionHouse
+    if not (job and type(AH) == "table" and type(itemKey) == "table") then return false end
+    local id = itemKey.itemID
+    if not (Readable(id) and id == job.id) then return false end
+    if type(AH.GetNumItemSearchResults) ~= "function" or type(AH.GetItemSearchResultInfo) ~= "function" then return false end
+    local ok, n = pcall(AH.GetNumItemSearchResults, job.key)
+    if not ok or not Readable(n) or type(n) ~= "number" then return false end
+    local low = false
+    for i = 1, n do
+        local iok, r = pcall(AH.GetItemSearchResultInfo, job.key, i)
+        if iok and type(r) == "table" then
+            local own = (Readable(r.containsOwnerItem) and r.containsOwnerItem) or (Readable(r.containsAccountItem) and r.containsAccountItem)
+            local buy, qty = r.buyoutAmount, r.quantity
+            if not own and Readable(buy) and type(buy) == "number" and buy > 0 then
+                qty = Readable(qty) and type(qty) == "number" and qty > 0 and qty or 1
+                local each = math.floor(buy / qty)
+                if low == false or each < low then low = each end
+            end
+        end
+    end
+    db.market = type(db.market) == "table" and db.market or {}
+    db.market[job.id] = { low = low, t = time() }
+    market.searching = nil
+    Changed()
+    ns.MarketStep()
+    return true
 end
 
 function ns.Unpriced()
@@ -1819,6 +1933,7 @@ ns.events = events
 -- One event this client does not know must not stop the rest from registering.
 for _, ev in ipairs({ "ADDON_LOADED", "PLAYER_LOGIN", "GET_ITEM_INFO_RECEIVED", "BAG_UPDATE_DELAYED", "AUCTION_OWNED_LIST_UPDATE",
                       "OWNED_AUCTIONS_UPDATED", "AUCTION_HOUSE_SHOW", "AUCTION_HOUSE_AUCTION_CREATED",
+                      "AUCTION_HOUSE_CLOSED", "ITEM_SEARCH_RESULTS_UPDATED", "AUCTION_HOUSE_THROTTLED_SYSTEM_READY",
                       "CHANNEL_UI_UPDATE", "CHAT_MSG_CHANNEL", "CHAT_MSG_SAY", "CHAT_MSG_YELL", "CHAT_MSG_GUILD" }) do
     pcall(events.RegisterEvent, events, ev)
 end
@@ -1856,7 +1971,14 @@ events:SetScript("OnEvent", function(_, event, ...)
         ns.ScanAuctions()
         stockSeen = StockKey()
     elseif event == "AUCTION_HOUSE_SHOW" or event == "AUCTION_HOUSE_AUCTION_CREATED" then
+        ns.MarketState.open = true
         ns.AskAuctions()
+    elseif event == "AUCTION_HOUSE_CLOSED" then
+        ns.MarketState.open, ns.MarketState.searching, ns.MarketState.queue = false, nil, {}
+    elseif event == "ITEM_SEARCH_RESULTS_UPDATED" then
+        ns.MarketRead((...))
+    elseif event == "AUCTION_HOUSE_THROTTLED_SYSTEM_READY" then
+        ns.MarketStep()
     elseif event == "CHANNEL_UI_UPDATE" then
         Changed()
     else

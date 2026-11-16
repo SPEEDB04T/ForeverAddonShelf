@@ -6,7 +6,7 @@ Advertise your slutmog wares with one click. Each ad names your shop and the nex
 
 ## Ready-made ads
 
-Every piece on the slutmog list (the 148 items Slutmog Scout lists) comes with about 85 ready-made ads that wink at the player who wants their character to look hot. A ware in your bags and a ware on the auction house get different endings: open the auction house once and the shop knows which of your wares are up for sale, and at what buyout. With Slutmog Scout installed, a ware you have been undercut on is left out until you are the cheapest again. Suggestive, never explicit. For example:
+Every piece on the slutmog list (the 148 items Slutmog Scout lists) comes with about 85 ready-made ads that wink at the player who wants their character to look hot. A ware in your bags and a ware on the auction house get different endings: open the auction house once and the shop knows which of your wares are up for sale, and at what buyout. Each time you open the auction house the shop also looks up who else sells your pieces there, and a ware you have been undercut on is left out until you are the cheapest again (Slutmog Scout's Sell tab readings count too). Suggestive, never explicit. For example:
 
 > Keep getting ganked, never getting camped? Give them a reason to stay. [Tyrant's Legplates], 10 gold pieces at Smuttanie's Necessities.
 
