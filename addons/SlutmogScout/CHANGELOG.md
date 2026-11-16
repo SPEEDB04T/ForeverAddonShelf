@@ -1,5 +1,18 @@
 # Changelog
 
+## 1.21.0
+
+- **Looks you can get elsewhere are off the Market list.** A piece is left out when another item
+  of its slot and armor type has its look and is crafted, white or grey, a dungeon drop, or a
+  quest reward for your side: 24 of 148 pieces on Alliance, 22 on Horde (Saltstone Surcoat,
+  Mercurial Breastplate, Martyr's Chain). Filter > Show looks had elsewhere or `/smog easy` shows
+  them. A look whose other source is a raid, PvP, or an item new in Forever stays, with the icon.
+- **Rarity is the look's, not the item's.** Where several BoE items share a look, their drops are
+  added up for "common", Farm is the fastest of them, and Listed and Seen count every piece with
+  the look. The tooltip says how many of the look are listed.
+- **Same-look fixes.** A belt no longer counts as the twin of a leg piece. An item of another armor
+  type is named with its armor and no longer warns. Quest rewards are named as such.
+
 ## 1.20.0
 
 - **Undercut on each Sell row.** A bag piece that others list has an Undercut button beside its

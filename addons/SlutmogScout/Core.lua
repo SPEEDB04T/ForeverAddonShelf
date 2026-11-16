@@ -331,6 +331,12 @@ function ns.AddCustom(text)
       ns.Fire("ITEMS")
       return
     end
+    local easy = not ns.ShowEasyLook() and ns.EasyLook(builtin)
+    if easy then
+      ns.Print(("%s is a built-in piece left off the list, %s: |cffffff00/smog easy|r or Filter > Show looks had elsewhere shows it."):format(builtin.name, easy))
+      ns.Fire("ITEMS")
+      return
+    end
     local common = not ns.ShowCommon() and ns.Common(builtin)
     if common then
       ns.Print(("%s is a built-in piece hidden as easy, common gear (%s): |cffffff00/smog common|r or Filter > Show easy, common pieces shows it."):format(builtin.name, common))
@@ -748,7 +754,10 @@ end
 -- (SuccuDev, 2026-11-16: "you failed to warn me saltstone surcoat has a dungeon
 -- item with the same model"). Second return: true when one of them is had
 -- without the auction house (crafted, a white or grey item, bind on pickup).
+-- Only items of the piece's slot are in the list; one of another armor type
+-- (s.armor) is named with it and never warns: the piece's wearers cannot wear it.
 local SAME_HOW = { made = "crafted", plain = "white or grey item", bop = "bind on pickup", boe = "BoE" }
+local SIDE_NAME = { A = "Alliance ", H = "Horde " }
 function ns.SameLook(it)
   local out = {}
   local alt = type(it) == "table" and type(it.alt) == "table" and it.alt or nil
@@ -757,13 +766,18 @@ function ns.SameLook(it)
   end
   local made, plain, bop, boe = Num(alt.made) or 0, Num(alt.plain) or 0, Num(alt.bop) or 0, Num(alt.boe) or 0
   -- unk: items new in Forever that the list cannot name; how they are had is not known
-  local total = made + plain + bop + boe + (Num(alt.unk) or 0)
+  local total = made + plain + bop + boe + (Num(alt.unk) or 0) + (Num(alt.xarm) or 0)
   if type(it.same) == "table" then
     for _, s in ipairs(it.same) do
       if type(s) == "table" and type(s.name) == "string" then
         local how = SAME_HOW[s.how]
         if type(s.inst) == "string" then
           how = (s.how == "bop" or not how) and ("drops in " .. s.inst) or (how .. ", drops in " .. s.inst)
+        elseif s.how == "bop" and type(s.quest) == "string" then
+          how = (SIDE_NAME[s.quest] or "") .. "quest reward"
+        end
+        if type(s.armor) == "string" then
+          how = how and (s.armor .. ", " .. how) or s.armor
         end
         out[#out + 1] = how and ("%s (%s)"):format(s.name, how) or s.name
       end
@@ -927,16 +941,18 @@ function ns.Rarity(id, info)
   if it.inst then
     add("drops only in " .. it.inst, true)
   end
-  if info.seenPct and (info.scans or 0) >= 3 and info.seenPct <= RARE_SEEN then
-    add(("listed in only %d%% of your scans"):format(math.floor(info.seenPct * 100 + 0.5)), true)
+  -- the look, not the item: another piece with it counts as stock too
+  local m = ns.Model(id)
+  if m.seenPct and (m.scans or 0) >= 3 and m.seenPct <= RARE_SEEN then
+    add(("listed in only %d%% of your scans"):format(math.floor(m.seenPct * 100 + 0.5)), true)
   end
   if it.shared == 1 then
     -- a common green below level 21 is easy to farm: a look of its own is not
     -- enough to call it rare
     add("no other item in the game has its look", (it.q or 2) >= 3 or (it.req or 0) > 20)
   end
-  if info.low and info.qty and info.qty <= 2 then
-    add(info.qty == 1 and "only one listed now" or "only two listed now", false)
+  if info.low and m.qty and m.qty <= 2 then
+    add(m.qty == 1 and "only one listed now" or "only two listed now", false)
   end
   return why, strong
 end
@@ -1013,7 +1029,58 @@ function ns.ShowCommon()
   return db and db.opts and db.opts.showCommon == true or false
 end
 
--- How much of the list counts as common: the most common N percent of pieces by
+-- A look had easily without the auction house (SuccuDev, 2026-11-16: "easily
+-- accessible BOPs or crafted models shouldnt be on the buy list"): another item
+-- of the piece's slot and armor type wears it and is crafted, white or grey
+-- (often sold by a vendor), a dungeon drop, or a quest reward of the player's
+-- side. Such a piece stays out of the Market list unless the player asks.
+-- Raid, PvP and reputation items do not count (not easy), nor items new in
+-- Forever whose source the list does not know: those only warn.
+function ns.ShowEasyLook()
+  return db and db.opts and db.opts.showEasy == true or false
+end
+
+local function PlayerSide()
+  local side = UnitFactionGroup and UnitFactionGroup("player")
+  return side == "Alliance" and "A" or side == "Horde" and "H" or nil
+end
+
+-- Why the piece's look is easily had elsewhere, or nil when it is not.
+function ns.EasyLook(it)
+  local alt = type(it) == "table" and not it.custom and type(it.alt) == "table" and it.alt or nil
+  if not alt then
+    return nil
+  end
+  local same = type(it.same) == "table" and it.same or {}
+  local function named(how, test)
+    for _, s in ipairs(same) do
+      if type(s) == "table" and s.how == how and not s.armor and (not test or test(s)) then
+        return s
+      end
+    end
+    return nil
+  end
+  local function with(text, s)
+    return text .. (s and type(s.name) == "string" and (" (" .. s.name .. ")") or "")
+  end
+  if (Num(alt.made) or 0) > 0 then
+    return with("its look is crafted", named("made"))
+  elseif (Num(alt.plain) or 0) > 0 then
+    return with("a white or grey item has its look", named("plain"))
+  end
+  local s = named("bop", function(x) return type(x.inst) == "string" end)
+  if s then
+    return with("its look drops in " .. s.inst, s)
+  end
+  local side = PlayerSide()
+  s = named("bop", function(x) return x.quest == "any" or (x.quest ~= nil and (side == nil or x.quest == side)) end)
+  if s then
+    return with("its look is a quest reward", s)
+  end
+  return nil
+end
+
+-- How much of the list counts as common: the most common N percent of looks by
 -- drop data (it.common, 0 the rarest to 100 the most common).
 ns.COMMON_CUT_DEFAULT = 25
 ns.COMMON_CUT_MAX = 60
@@ -1050,8 +1117,9 @@ function ns.Common(it, info)
   if c then
     if cut > 0 and c >= 100 - cut then
       local d = it.drop
-      return ("one of the most common %d%% of pieces%s"):format(cut,
-        d and d.hours and (": about " .. ns.Hours(d.hours) .. " a copy farming " .. (d.mob or "it")) or "")
+      local hours, via = ns.LookHours(it)
+      return ("one of the most common %d%% of looks%s"):format(cut,
+        hours and (": about " .. ns.Hours(hours) .. " a copy " .. (via and ("as " .. via) or ("farming " .. (d and d.mob or "it")))) or "")
     end
     return nil
   end
@@ -1059,6 +1127,17 @@ function ns.Common(it, info)
     return ("a green world drop of level %d: players levelling there loot them by the dozen"):format(it.req or 0)
   end
   return nil
+end
+
+-- Farm time of one copy of the look: of the BoE item with it that drops fastest
+-- for one farmer. Second return: that item's name when it is not this piece.
+function ns.LookHours(it)
+  local m = type(it) == "table" and type(it.model) == "table" and it.model or nil
+  if m and tonumber(m.hours) then
+    return tonumber(m.hours), m.via
+  end
+  local d = type(it) == "table" and type(it.drop) == "table" and it.drop or nil
+  return d and tonumber(d.hours) or nil
 end
 
 -- "40 minutes", "1 hour", "87 hours"
@@ -1105,12 +1184,16 @@ end
 ns.DROP_SOURCE = "estimate from the CMaNGOS Classic loot tables and an assumed kill rate"
 
 -- false for a cropped piece while cropped pieces are hidden (unless a rating
--- or yes keeps it), and for an easy, common piece while those are hidden.
+-- or yes keeps it), for a look easily had elsewhere, and for an easy, common
+-- piece while those are hidden.
 function ns.Shown(it, info)
   if it == nil or not ns.InLevelRange(it) then
     return false
   end
   if it.grade == "cropped" and not it.reviewYes and not ns.ShowCropped() then
+    return false
+  end
+  if not ns.ShowEasyLook() and ns.EasyLook(it) then
     return false
   end
   return ns.ShowCommon() or not ns.Common(it, info)
@@ -1326,6 +1409,67 @@ function ns.Stock(id)
   return Num(p.qty), EarlierQty(p)
 end
 
+-- The look rather than the item (SuccuDev, 2026-11-16: "we need to think model
+-- rarity rather than item rarity"): this piece and the other pieces on the list
+-- that wear its look in its slot and armor type, taken together.
+--   items       how many pieces on the list wear it (1: only this one)
+--   qty, usual  copies listed in the last scan, and in the scans before
+--   low, lowId  the cheapest listed copy and which piece it is
+--   seenPct     the share of your scans that listed any of them; scans
+--   hours, via  ns.LookHours
+function ns.Model(id)
+  local it = items[id]
+  local m = { items = 0 }
+  if not it then
+    return m
+  end
+  local stamps, nStamps, bestPct = {}, 0, nil
+  local function add(pid)
+    m.items = m.items + 1
+    local p = db.prices[pid]
+    if type(p) ~= "table" then
+      return
+    end
+    local qty = Num(p.qty)
+    if qty then
+      m.qty = (m.qty or 0) + qty
+      local low = qty > 0 and Num(p.min) or nil
+      if low and (not m.low or low < m.low) then
+        m.low, m.lowId = low, pid
+      end
+    end
+    local usual = EarlierQty(p)
+    if usual then
+      m.usual = (m.usual or 0) + usual
+    end
+    local scans = Num(p.scans) or 0
+    if scans > 0 then
+      m.scans = math.max(m.scans or 0, scans)
+      bestPct = math.max(bestPct or 0, (Num(p.seen) or 0) / scans)
+      for _, h in ipairs(type(p.hist) == "table" and p.hist or {}) do
+        local t = type(h) == "table" and h[1]
+        if t and not stamps[t] then
+          stamps[t], nStamps = true, nStamps + 1
+        end
+      end
+    end
+  end
+  add(id)
+  for _, pid in ipairs(it.display and byDisplay[it.display] or {}) do
+    local o = items[pid]
+    if pid ~= id and o and o.armor == it.armor and o.slot == it.slot then
+      add(pid)
+    end
+  end
+  if m.scans then
+    -- scans that listed any of them, counted from the price history while it
+    -- still holds every scan; after that the best single piece (a lower bound)
+    m.seenPct = math.max(bestPct, m.scans <= HISTORY_MAX and math.min(1, nStamps / m.scans) or 0)
+  end
+  m.hours, m.via = ns.LookHours(it)
+  return m
+end
+
 -- The prices of the other single copies, cheapest first, read after the last
 -- scan (only for pieces with two or more listed). nil when not read.
 function ns.NextListings(id)
@@ -1341,11 +1485,11 @@ local function FarmHardness(id, it)
     return 0.6, 0, 0
   end
   local h
-  local d = it.drop
-  if type(d) == "table" and tonumber(d.hours) and tonumber(it.common) then
-    -- from the loot tables: hours a copy for one farmer (1 hour 0, 1000 hours 1), and
-    -- how much of it the whole realm loots against the other pieces
-    h = 0.65 * Clamp(math.log10(math.max(1, d.hours)) / 3, 0, 1) + 0.35 * (1 - Clamp(it.common / 100, 0, 1))
+  local hours = ns.LookHours(it)
+  if hours and tonumber(it.common) then
+    -- from the loot tables: hours a copy of the look for one farmer (1 hour 0, 1000 hours 1),
+    -- and how much of it the whole realm loots against the other looks
+    h = 0.65 * Clamp(math.log10(math.max(1, hours)) / 3, 0, 1) + 0.35 * (1 - Clamp(it.common / 100, 0, 1))
   else
     local lvl = Clamp(((it.req or 1) - 5) / 50, 0, 1)
     h = 0.35 * lvl + ((it.q or 2) >= 3 and 0.2 or 0) + 0.25 * Clamp((it.pool or 200) / 400, 0, 1)
@@ -3757,6 +3901,12 @@ function ns.SetShowCommon(on)
   ns.Fire("ITEMS")
 end
 
+function ns.SetShowEasyLook(on)
+  db.opts.showEasy = on and true or nil
+  PricesChanged()
+  ns.Fire("ITEMS")
+end
+
 function ns.WipePrices()
   wipe(db.prices)
   db.lastScan = nil
@@ -3813,6 +3963,10 @@ SlashCmdList.SLUTMOGSCOUT = function(input)
     ns.SetShowCropped(not ns.ShowCropped())
     ns.Print("Cropped pieces (tops that cover the bust, shorts that cover most of the thigh): "
       .. (ns.ShowCropped() and "shown" or "hidden"))
+  elseif cmd == "easy" then
+    ns.SetShowEasyLook(not ns.ShowEasyLook())
+    ns.Print("Pieces whose look is crafted, sold by a vendor, a dungeon drop or a quest reward: "
+      .. (ns.ShowEasyLook() and "shown" or "hidden"))
   elseif cmd == "grade" then
     ns.SetGrade(rest)
   elseif cmd == "buy" then
@@ -3832,7 +3986,7 @@ SlashCmdList.SLUTMOGSCOUT = function(input)
     else
       ns.SetShowCommon(not ns.ShowCommon())
     end
-    ns.Print(("The most common %d%% of pieces (by how often they drop): %s. |cffffff00/smog common 40|r sets the share."):format(
+    ns.Print(("The most common %d%% of looks (by how often they drop): %s. |cffffff00/smog common 40|r sets the share."):format(
       ns.CommonCut(), ns.ShowCommon() and "shown" or "hidden"))
   elseif cmd == "config" or cmd == "options" or cmd == "opt" then
     if HasKit() then
@@ -3876,6 +4030,7 @@ SlashCmdList.SLUTMOGSCOUT = function(input)
     print("  |cffffff00/smog remove <item link or id>|r  take a piece off the list")
     print("  |cffffff00/smog restore|r  bring back removed built-in pieces")
     print("  |cffffff00/smog cropped|r  show or hide cropped pieces")
+    print("  |cffffff00/smog easy|r  show or hide pieces whose look is crafted, sold by a vendor, a dungeon drop or a quest reward")
     print("  |cffffff00/smog buy|r <item>  find the cheapest copy listed and ask to buy it")
     print("  |cffffff00/smog sell|r  the Sell tab: your list pieces in the bags and your auctions")
     print("  |cffffff00/smog grade|r <item> <bikini, skimpy, cropped or auto>  set a piece's grade yourself")

@@ -314,6 +314,12 @@ function ns.FillItemTooltip(tip, id)
   if b and b.cheaper and ns.Items()[b.cheaper.id] then
     pair("Same look, cheaper", ns.Items()[b.cheaper.id].name .. " " .. ns.Money(b.cheaper.low))
   end
+  -- the look's stock, where another piece on the list wears it
+  local model = ns.Model(id)
+  if model.items > 1 and model.qty then
+    pair("This look", ("%d listed across %d pieces"):format(model.qty, model.items)
+      .. (model.seenPct and Grey((", in %d%% of your scans"):format(Pct(model.seenPct))) or ""))
+  end
   ns.AddSameLook(tip, it)
 
   -- where it comes from
@@ -334,6 +340,9 @@ function ns.FillItemTooltip(tip, id)
       end
       tip:AddLine(("World drop, mobs level %d-%d%s."):format(mlo, mhi,
         #names > 0 and (", e.g. " .. table.concat(names, "; ")) or ""), w1, w2, w3, true)
+    end
+    if model.via then
+      note(("Its look drops faster as %s: about %s a copy."):format(model.via, ns.Hours(model.hours)))
     end
   end
   local drops = ns.Drops(id)
@@ -601,15 +610,16 @@ local function MarketData()
         local lo, hi = ns.MobRange(it)
         local look, lookFrom = ns.LookScore(id, it)
         local rated = lookFrom == "rating" or lookFrom == "estimate"
-        local _, usual = ns.Stock(id)
-        local hours = type(it.drop) == "table" and tonumber(it.drop.hours) or nil
+        -- stock, scans and farm time are the look's: another piece with it counts too
+        local m = ns.Model(id)
         rows[#rows + 1] = {
-          rating = rated and look or -1, ratingFrom = lookFrom, fresh = fresh, stale = stale, usual = usual, hours = hours,
+          rating = rated and look or -1, ratingFrom = lookFrom, fresh = fresh, stale = stale, model = m,
+          usual = m.usual, hours = m.hours,
           id = id, it = it, info = info, lo = lo, hi = hi,
           name = it.name or "", type = TypeLabel(it),
-          low = info.low or -1, qty = (info.qty and info.qty > 0) and info.qty or -1, value = info.value or -1,
+          low = info.low or -1, qty = (m.qty and m.qty > 0) and m.qty or -1, value = info.value or -1,
           vendor = (info.low and info.vendor and info.vendor > 0) and info.low / info.vendor or -1,
-          seen = info.seenPct or -1, farm = hours or -1,
+          seen = m.seenPct or -1, farm = m.hours or -1,
         }
       end
     end
@@ -737,8 +747,11 @@ local function RefreshMarket()
       else
         c.low:SetText(Grey("?"))
       end
-      if d.info.qty and d.info.qty > 0 then
-        c.qty:SetText(d.info.qty .. (d.usual and (" " .. Grey(("(%s)"):format(math.floor(d.usual + 0.5)))) or ""))
+      if d.qty > 0 and d.info.low then
+        c.qty:SetText(d.qty .. (d.usual and (" " .. Grey(("(%s)"):format(math.floor(d.usual + 0.5)))) or ""))
+      elseif d.qty > 0 then
+        -- grey: none of this piece, only another piece with its look
+        c.qty:SetText(Grey(tostring(d.qty)))
       else
         c.qty:SetText("")
       end
@@ -746,7 +759,7 @@ local function RefreshMarket()
       row.buyButton:SetShown(d.info.low ~= nil and ahOpen)
       -- grey: a remembered price for a piece that is not listed right now
       c.value:SetText(ns.Money(d.info.value, d.info.value ~= nil and not d.info.low))
-      c.seen:SetText(d.info.seenPct and ("%d%%"):format(Pct(d.info.seenPct)) or "")
+      c.seen:SetText(d.seen >= 0 and ("%d%%"):format(Pct(d.seen)) or "")
       if d.hours then
         c.farm:SetText(ShortHours(d.hours))
       elseif d.it.src == "fishing" then
@@ -995,6 +1008,9 @@ local function ListStatus(p)
   end
   if it.grade == "cropped" and not it.reviewYes and not ns.ShowCropped() then
     return "on the list, hidden as cropped"
+  end
+  if not ns.ShowEasyLook() and ns.EasyLook(it) then
+    return "on the list, hidden: its look is had elsewhere"
   end
   if not ns.ShowCommon() and ns.Common(it) then
     return "on the list, hidden as easy, common gear"
@@ -1819,6 +1835,9 @@ Refresh = function()
     commonCheck:SetShown(lookUseful)
     commonText:SetShown(lookUseful)
     commonCheck:SetChecked(ns.ShowCommon())
+    commonCheck.easy:SetShown(lookUseful)
+    commonCheck.easyText:SetShown(lookUseful)
+    commonCheck.easy:SetChecked(ns.ShowEasyLook())
   end
   marketView:SetShown(state.tab == "market")
   farmView:SetShown(state.tab == "farm")
@@ -1927,7 +1946,7 @@ end
 
 local function FilterIsDefault()
   return state.armor == "all" and state.listedOnly and not state.freshOnly and not ns.ShowCropped() and not ns.ShowCommon()
-    and state.reviewShow == "todo"
+    and not ns.ShowEasyLook() and state.reviewShow == "todo"
 end
 
 -- The filter: the game's filter dropdown, as the auction house's search bar
@@ -2045,6 +2064,10 @@ local function CreateFilterDropdown()
     root:CreateCheckbox("Show easy, common pieces", ns.ShowCommon, function()
       ns.SetShowCommon(not ns.ShowCommon())
     end)
+    -- looks had without the auction house: crafted, vendor, dungeon drop, quest reward
+    root:CreateCheckbox("Show looks had elsewhere", ns.ShowEasyLook, function()
+      ns.SetShowEasyLook(not ns.ShowEasyLook())
+    end)
   end)
   if not ok then
     dd:Hide()
@@ -2057,6 +2080,9 @@ local function CreateFilterDropdown()
     end
     if ns.ShowCommon() then
       ns.SetShowCommon(false)
+    end
+    if ns.ShowEasyLook() then
+      ns.SetShowEasyLook(false)
     end
     Refresh()
   end) then
@@ -2120,6 +2146,17 @@ local function CreateFilterButtons(startX)
   commonCheck:SetScript("OnClick", function(self)
     ns.SetShowCommon(self:GetChecked() and true or false)
   end)
+  local easyCheck = CreateFrame("CheckButton", nil, win, "UICheckButtonTemplate")
+  easyCheck:SetSize(24, 24)
+  easyCheck:SetPoint("LEFT", commonCheck, "RIGHT", 100, 0)
+  easyCheck:SetHitRectInsets(0, -100, 0, 0)
+  local easyText = win:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+  easyText:SetPoint("LEFT", easyCheck, "RIGHT", 2, 0)
+  easyText:SetText("Show easy looks")
+  easyCheck:SetScript("OnClick", function(self)
+    ns.SetShowEasyLook(self:GetChecked() and true or false)
+  end)
+  commonCheck.easy, commonCheck.easyText = easyCheck, easyText
 end
 
 -- Level range: the classic auction house's two level boxes (InputBoxTemplate,
