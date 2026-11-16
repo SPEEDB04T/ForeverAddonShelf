@@ -1,0 +1,8 @@
+<Bindings>
+	<Binding name="MAILBOXSLUTTING_ACCEPTTIP" header="MAILBOXSLUTTING" category="ADDONS">
+		MailboxSlutting_AcceptTip()
+	</Binding>
+	<Binding name="MAILBOXSLUTTING_TOGGLE" category="ADDONS">
+		MailboxSlutting_Toggle()
+	</Binding>
+</Bindings>
