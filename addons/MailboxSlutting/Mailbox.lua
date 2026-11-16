@@ -249,6 +249,7 @@ end
 M.Fit = Fit
 
 local CTA_W = 430 - 28          -- the row of big buttons, inside the window
+local SAY_SMALL, SAY_BIG = 96, 190      -- Say a line: small beside a reply, big when nobody is waiting
 
 -- The full name of a unit ("Name Surname", or "Name-Realm"), or nil.
 local function NameOf(unit)
@@ -622,6 +623,9 @@ local function Fade()
     if b:IsShown() and b.visitor and pulse then b:LockHighlight() else b:UnlockHighlight() end
     -- and the tip jar button, while its line did not go out
     if jarOwed and pulse then frame.jar:LockHighlight() else frame.jar:UnlockHighlight() end
+    -- and Say a line, while a line waits for a key or click
+    local say = frame.cta.say
+    if say:IsShown() and M.Queued() > 0 and pulse then say:LockHighlight() else say:UnlockHighlight() end
 end
 
 Sync = function()
@@ -662,7 +666,8 @@ Sync = function()
         cta.again.visitor = v
         cta.again:Show()
         -- the row of big buttons must fit the window: the send button gets what is left
-        local room = CTA_W - Fit(cta.again, 100) - 6
+        cta.say.place(false)
+        local room = CTA_W - Fit(cta.again, 100) - 6 - SAY_SMALL - 6
         local label = Label(v) or "Emote"
         cta.emote:SetText(label .. " at " .. who)
         local _, fits = Fit(cta.emote, 150, room)
@@ -680,7 +685,9 @@ Sync = function()
         cta.emote:Hide()
         cta.again.visitor = nil
         cta.again:Hide()
+        cta.say.place(true)
     end
+    cta.say:SetShown(on)
     if Away() then
         frame.status:SetText("You are AFK: nothing goes out by itself until you are back.")
     else
@@ -964,6 +971,17 @@ function M.Idle(from)
 end
 function M.NextIdle(t) if t then nextIdle = t end return nextIdle end
 
+-- The Say a line button: the line that was waiting for a key goes out now; with none waiting, the
+-- next line at nobody. A click is always allowed to speak.
+function M.SayLine()
+    if not on then return false end
+    local now = Now()
+    lastAuto = now
+    if queue[1] then return Flush("click") end
+    nextIdle = now + M.Random(IDLE_MIN, IDLE_MAX)
+    return M.Idle("click")
+end
+
 -- For a tip: a dance to their name, a few seconds after the thank-you. Only while the shop is open.
 function M.DanceFor(name)
     lastEngage = Now()
@@ -1133,6 +1151,30 @@ local function Build(host)
     cta.again:SetScript("OnClick", function(self) M.Another(self.visitor) end)
     cta.again:Hide()
     cta.emote:Hide()
+    cta.say = Button(f, "Say a line", SAY_BIG, 30)
+    cta.say.place = function(big)
+        if cta.say.big == big then return end
+        cta.say.big = big
+        cta.say:ClearAllPoints()
+        if big then
+            cta.say:SetPoint("TOPLEFT", f, "TOPLEFT", 14, -58 + DY)
+        else
+            cta.say:SetPoint("TOPRIGHT", f, "TOPRIGHT", -14, -58 + DY)
+        end
+        cta.say:SetWidth(big and SAY_BIG or SAY_SMALL)
+    end
+    cta.say.place(true)
+    cta.say:SetScript("OnClick", function() M.SayLine() end)
+    cta.say:SetScript("OnEnter", function(self)
+        if not GameTooltip then return end
+        GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
+        GameTooltip:SetText("Say a line")
+        GameTooltip:AddLine("Says the next line at nobody in /e, right now. The game lets a line out only on your own "
+            .. "key press or click, so lines by itself wait for one: the button lights up while a line is waiting.", 1, 0.82, 0, true)
+        GameTooltip:Show()
+    end)
+    cta.say:SetScript("OnLeave", HideTip)
+    cta.say:Hide()
 
     f.rows = {}
     for r = 1, ROWS do
@@ -1181,8 +1223,8 @@ local function Build(host)
         if not GameTooltip then return end
         GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
         GameTooltip:SetText("Tip jar")
-        GameTooltip:AddLine("Says a short line about your tip jar in /e. It goes out by itself every 20 to 30 minutes "
-            .. "while somebody is around; the button lights up when the game did not let it.", 1, 0.82, 0, true)
+        GameTooltip:AddLine("Says a short line about your tip jar in /e. One is due every 2 to 3 minutes "
+            .. "while somebody is around and goes out on your next key press or click.", 1, 0.82, 0, true)
         GameTooltip:Show()
     end)
     f.jar:SetScript("OnLeave", HideTip)

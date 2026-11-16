@@ -1,5 +1,9 @@
 # Changelog
 
+## 1.3.0
+
+- New big button **Say a line**: one click says the next line at nobody, right away. It is the big button while nobody is waiting for an answer, and sits small at the right of the row when somebody is. It lights up while a line is waiting for your key press or click.
+
 ## 1.2.2
 
 - The game lets a /e line from an addon out only on your own key press or click, and says "action failed because of an addon" otherwise. So the lines by itself (at nobody, the tip jar, the glance at the tip jar, the dance for a tipper) now wait for your next key press or click in the world and go out on that. Any key counts: a step, a jump, a modifier.
