@@ -184,8 +184,12 @@ M.IDLE = {
 -- Somebody who has kept you targeted this long gets one look at the tip jar, once an hour at most.
 M.NUDGE = "glances at the tip jar, then at %s."
 local NUDGE_HOLD, NUDGE_AGAIN = 30, 3600
-local IDLE_MIN, IDLE_MAX = 10, 30               -- seconds between two idle lines, picked at random
-local IDLE_FIRST_MIN, IDLE_FIRST_MAX = 10, 30   -- ... and before the first one
+-- SuccuDev, 2026-11-16: "emotes get too spammy sometimes". A line at nobody every 10 to 30 seconds was
+-- too many, and one could land right behind an answer or a click. Now every 30 to 60 seconds, and never
+-- within LINE_GAP of any other emote of yours.
+local IDLE_MIN, IDLE_MAX = 30, 60               -- seconds between two idle lines, picked at random
+local IDLE_FIRST_MIN, IDLE_FIRST_MAX = 20, 40   -- ... and before the first one
+local LINE_GAP = 30                             -- seconds after any emote of yours before a line at nobody
 -- A tipper gets a dance to their name a few seconds after the thank-you, where everybody sees it.
 M.DANCE_FOR = "dances for %s."
 -- Somebody who tipped you before comes by again: one of these, in /e (SuccuDev: "just a welcome back emote").
@@ -204,6 +208,7 @@ local frame, events, keys
 --                 pitchedAt, emotedAt (by itself), doneAt (answered: a click, or the game showed the emote going at them) }
 local visitors = {}
 local lastAuto = -1e9
+local lastOwn = -1e9            -- the game last showed an emote of yours
 local lastEngage = -1e9         -- somebody last emoted at you, whispered or tipped
 local Queue, Flush
 -- The game lets a chat line from an addon out only while it handles the player's own key press or
@@ -812,6 +817,7 @@ local function OnEmote(text, sender, guid)
     if not (Readable(text) and Readable(sender) and type(text) == "string" and type(sender) == "string") then return end
     if sender == "" then return end
     if Mine(text, sender, guid) then
+        lastOwn = Now()
         Echo(text)
         -- your own emote, as the game showed it: whoever it names has their answer ("You wink at Bob.")
         local hit = false
@@ -851,8 +857,9 @@ local function Welcome(name, now)
     t.welcomed = time()
     lastAuto = now
     welcomeTurn = welcomeTurn % #M.WELCOMES + 1
-    local first = Short(name):match("^(%S+)") or Short(name)
-    local line = (M.WELCOMES[welcomeTurn]:gsub("{name}", first))
+    -- the whole name, as the game's own emotes show it (SuccuDev, 2026-11-16: "welcome back isnt giving
+    -- the full name only first name")
+    local line = (M.WELCOMES[welcomeTurn]:gsub("{name}", function() return Short(name) end))
     Say(line, "back", function()
         local v = Visit(name, "back", "is back. Tipped you before", BACK_REPLY, true)
         v.token, v.say = "WELCOMEBACK", line
@@ -920,13 +927,15 @@ Flush = function(from)
     Purge()
     if not (on and queue[1]) or Away() then return false end
     if from == "key" and now - lastFlush < FLUSH_GAP then return false end
+    -- a line at nobody does not go out right behind another emote of yours: it waits for a later key
+    if from == "key" and queue[1].soft and now - lastOwn < LINE_GAP then return false end
     lastFlush = now
     local q = table.remove(queue, 1)
     q.fn(from)
     return true
 end
-Queue = function(fn, old)
-    queue[#queue + 1] = { fn = fn, at = Now(), old = old }
+Queue = function(fn, old, soft)
+    queue[#queue + 1] = { fn = fn, at = Now(), old = old, soft = soft }
     while #queue > QUEUE_KEEP do table.remove(queue, 1) end
     if not M.HARDWARE_ONLY then Flush() end
 end
@@ -992,10 +1001,10 @@ function M.Idle(from)
     local function send(f)
         Say(line, f or "timer", function()
             tries = tries + 1
-            if tries < 2 and M.HARDWARE_ONLY then Queue(send) end     -- once more, on the next key or click
+            if tries < 2 and M.HARDWARE_ONLY then Queue(send, nil, true) end     -- once more, on the next key or click
         end, done)
     end
-    Queue(send)
+    Queue(send, nil, true)
     return true
 end
 function M.NextIdle(t) if t then nextIdle = t end return nextIdle end
@@ -1065,10 +1074,11 @@ local function Tick()
     nextJar = nextJar or (now + M.Random(JAR_FIRST_MIN, JAR_FIRST_MAX))
     local quiet = now - lastEngage >= ENGAGE_HOLD
     Purge()
+    quiet = quiet and now - lastOwn >= LINE_GAP
     if now >= nextJar and near > 0 and not away and quiet and not queue[1] and now - lastAuto >= GLOBAL_GAP then
         nextJar = now + M.Random(JAR_MIN, JAR_MAX)
         lastAuto = now
-        Queue(function(from) M.Jar(from or "timer") end)
+        Queue(function(from) M.Jar(from or "timer") end, nil, true)
     end
     nextIdle = nextIdle or (now + M.Random(IDLE_FIRST_MIN, IDLE_FIRST_MAX))
     if now >= nextIdle and near > 0 and not away and quiet and not queue[1] and now - lastAuto >= GLOBAL_GAP then
@@ -1291,7 +1301,7 @@ function M.Start()
             elseif event == "CHAT_MSG_WHISPER" then OnWhisper(text, sender)
             elseif event == "CHAT_MSG_EMOTE" then
                 if Readable(text) and type(text) == "string" and Readable(sender) and type(sender) == "string"
-                    and Mine(text, sender, (select(10, ...))) then SaidEcho(text) end
+                    and Mine(text, sender, (select(10, ...))) then lastOwn = Now() SaidEcho(text) end
             elseif event == "PLAYER_FLAGS_CHANGED" then AwayPrompt(Away()) end
             M.Redance(event)
         end)
@@ -1301,7 +1311,7 @@ function M.Start()
         pcall(events.RegisterEvent, events, e)
     end
     on, manual, misses, pend, dancing, due = true, false, 0, nil, false, nil
-    nextJar, nextIdle, wasAway, lastEngage = nil, nil, false, -1e9
+    nextJar, nextIdle, wasAway, lastEngage, lastOwn = nil, nil, false, -1e9, -1e9
     for i = #queue, 1, -1 do queue[i] = nil end
     -- every key press and every click in the world, passed on untouched: the moment a waiting line may go out
     if not keys and type(CreateFrame) == "function" then

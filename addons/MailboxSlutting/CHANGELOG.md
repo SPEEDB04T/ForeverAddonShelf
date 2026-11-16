@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.5.3
+
+- Fewer lines at nobody: one every 30 to 60 seconds, where it was one every 10 to 30. The first comes 20 to 40 seconds after you start.
+- A line at nobody never goes out within 30 seconds of another emote of yours (an answer, a thank-you, a welcome back, one you typed). One that is waiting for a key press waits a little longer.
+- The welcome back uses the whole name: "welcomes Googi Baba back.", where it said "welcomes Googi back."
+
 ## 1.5.2
 
 - The lines at nobody are plainer, the way players type an emote. Gone: "licks a lip and looks over the crowd.", "bites a lip and keeps dancing.", "sways those hips a little slower.", "runs a slow look over the crowd.", "takes the next step slow, for the view." and the like. In: "winks at the crowd.", "enjoys the attention.", "grins at the ones staring.", "eyes somebody in the crowd."
