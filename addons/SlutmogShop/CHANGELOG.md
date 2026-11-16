@@ -1,5 +1,10 @@
 # Changelog
 
+## 1.12.1
+
+- Fixed: the shop no longer gets your /tm raid marking and /invite blocked. It used to set the game's whole slash command list on load, which made the game treat every slash command as touched by an addon; now it only adds its own commands.
+- The shop's alerts (somebody at the mailbox, a tip, the ad reminder) play on the Master channel and reach you with the game in the background: the first one turns on Sound in Background if it was off, and says so. Tips also flash the game's taskbar icon.
+
 ## 1.12.0
 
 - Tips: when somebody opens a trade and puts in gold while you put in nothing, an "Accept tip" button shows under the trade window, with a coin sound. One click takes it; it lights up once they have accepted. There is also an "Accept a tip" key binding (Key Bindings, AddOns).

@@ -71,9 +71,8 @@ end
 function SlutmogShop_AcceptTip() T.Accept() end
 
 local function Sound()
-    if type(PlaySound) == "function" then
-        pcall(PlaySound, (SOUNDKIT and SOUNDKIT.LOOT_WINDOW_COIN_SOUND) or 120)
-    end
+    ns.AlertSound(SOUNDKIT and SOUNDKIT.LOOT_WINDOW_COIN_SOUND, 120)
+    if type(FlashClientIcon) == "function" then pcall(FlashClientIcon) end
 end
 
 local function Tip(self)

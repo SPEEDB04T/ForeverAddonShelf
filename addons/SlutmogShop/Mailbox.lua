@@ -305,7 +305,7 @@ local function Alert()
     local now = Now()
     if now - lastAlert < ALERT_GAP then return end
     lastAlert = now
-    if type(PlaySound) == "function" then pcall(PlaySound, (SOUNDKIT and SOUNDKIT.TELL_MESSAGE) or 3081) end
+    ns.AlertSound(SOUNDKIT and SOUNDKIT.TELL_MESSAGE, 3081)
     if type(FlashClientIcon) == "function" then pcall(FlashClientIcon) end
 end
 

@@ -15,7 +15,7 @@
 -- works too). A reminder in your own chat says when it is time for the next one.
 local ADDON, ns = ...
 
-ns.VERSION = "1.12.0"
+ns.VERSION = "1.12.1"
 ns.TITLE = "Slutmog Shop"
 ns.ICON = "Interface\\Icons\\INV_Misc_Coin_02"
 ns.ACCENT = { 0.96, 0.55, 0.78 }
@@ -1332,10 +1332,28 @@ function ns.Wait()
     return max(0, db.gap - (Now() - ns.lastPostAt))
 end
 
-local function Sound(kit, fallback)
-    if type(PlaySound) ~= "function" then return end
-    pcall(PlaySound, kit or fallback)
+-- The shop's alerts are heard with the game in the background too (SuccuDev: "can you make sure the
+-- sound is system wide"): they play on the Master channel, so the effects slider and its mute don't
+-- hide them, and the first one turns on the game's "Sound in Background" if it is off.
+local bgChecked = false
+local function Background()
+    if bgChecked then return end
+    bgChecked = true
+    local get = (C_CVar and C_CVar.GetCVar) or GetCVar
+    local set = (C_CVar and C_CVar.SetCVar) or SetCVar
+    if type(get) ~= "function" or type(set) ~= "function" then return end
+    local ok, v = pcall(get, "Sound_EnableSoundWhenGameIsInBG")
+    if ok and ns.Readable(v) and tostring(v) == "0" and pcall(set, "Sound_EnableSoundWhenGameIsInBG", "1") then
+        ns.Print("turned on Sound in Background (System, Sound), so the shop's alerts reach you with the game in the background.")
+    end
 end
+
+function ns.AlertSound(kit, fallback)
+    if type(PlaySound) ~= "function" then return end
+    Background()
+    if not pcall(PlaySound, kit or fallback, "Master") then pcall(PlaySound, kit or fallback) end
+end
+local function Sound(kit, fallback) ns.AlertSound(kit, fallback) end
 
 -- The prompt waits for the end of a fight: a window in the middle of the screen has no place in one.
 local function ShowPrompt(token)
@@ -1730,7 +1748,7 @@ ns.Slash = Slash
 SLASH_SLUTMOGSHOP1 = "/slutshop"
 SLASH_SLUTMOGSHOP2 = "/mogshop"
 SLASH_SLUTMOGSHOP3 = "/smogshop"
-SlashCmdList = SlashCmdList or {}
+-- Only a key of SlashCmdList: assigning the global itself taints every slash command (/tm, /invite).
 SlashCmdList.SLUTMOGSHOP = function(msg) Slash(msg or "") end
 
 -- /smog is Slutmog Scout's command, and it is what people type for anything slutmog (SuccuDev,
