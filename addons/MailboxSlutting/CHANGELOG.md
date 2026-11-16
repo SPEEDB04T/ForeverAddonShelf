@@ -1,5 +1,10 @@
 # Changelog
 
+## 1.4.0
+
+- The lines at nobody are rewritten to tease instead of wait: somebody who knows they are being watched ("dances a little slower for whoever is watching.", "catches somebody staring and smiles.", "makes checking the mail take longer than it should."). Gone are the flat ones (keeps dancing, hums a tune) and the needy ones (looks around for an audience).
+- Far less about the tip jar: a line every 8 to 12 minutes instead of every 2 to 3, the first after 3 to 5 minutes, and the four that are left do not look at the jar or hope for anything.
+
 ## 1.3.3
 
 - Somebody who only targets you gets the game's wink by itself again, as before 1.3.2.

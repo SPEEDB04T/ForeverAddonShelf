@@ -1,7 +1,7 @@
 ## Interface: 16001, 16002
 ## Title: Mailbox Slutting
 ## Notes: Dance on a city mailbox for tips: emotes back at whoever looks, emotes or whispers, tip jar lines, an Accept tip button with a thank-you that grows with the tip, and a counter with your numbers. /mailslut to open.
-## Version: 1.3.3
+## Version: 1.4.0
 ## Category-enUS: Chat
 ## SavedVariables: MailboxSluttingDB
 ## OptionalDeps: SlutmogShop

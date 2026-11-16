@@ -31,8 +31,8 @@ local ALERT_GAP = 3             -- seconds between two alert sounds
 local TICK = 1                  -- seconds between two looks at the nameplates
 local HOLD = 3                  -- seconds somebody must keep you targeted before the shop winks by itself
                                 -- (SuccuDev: "lets only wink at players that keep me targeted for at least 3 seconds")
-local JAR_MIN, JAR_MAX = 120, 180       -- seconds between two tip jar lines, picked at random
-local JAR_FIRST_MIN, JAR_FIRST_MAX = 60, 90     -- ... and before the first one
+local JAR_MIN, JAR_MAX = 480, 720       -- seconds between two tip jar lines, picked at random
+local JAR_FIRST_MIN, JAR_FIRST_MAX = 180, 300   -- ... and before the first one
 -- The lines by itself (idle and tip jar) are for a crowd that does nothing (SuccuDev: "we can be a lot
 -- more intrusive when people arent engaging, like every 10-30s"). Once somebody emotes at you, whispers
 -- or tips, the answers do the talking, and these wait this long after the last of it.
@@ -137,45 +137,43 @@ end
 
 -- The tip jar: now and then, while somebody is around, one line in /e, so people know you take tips
 -- (SuccuDev picked this to get more tips). Short and quiet, in the shop owner's voice.
--- The same for the jar: a look, a nod, a toe. No hands (holding it out, counting coins, polishing).
+-- The same for the jar: no hands (holding it out, counting coins, polishing).
+-- And the tone (SuccuDev, 2026-11-16: "the passive emotes are really unsexy and beggar like"): the lines
+-- are a tease from somebody who knows they are being watched, never somebody waiting, hoping or asking.
+-- No looking for an audience, no eyeing the jar. The jar is mentioned seldom and never asked for.
 M.JAR = {
-    "glances at the tip jar.",
-    "taps the tip jar with a toe.",
-    "nods at the tip jar.",
-    "nudges the tip jar toward the edge of the mailbox with a toe.",
-    "eyes the tip jar, then the crowd.",
-    "looks at the tip jar, then at the crowd again.",
-    "dances a step closer to the tip jar.",
-    "peeks into the tip jar without missing a step.",
-    "jingles the tip jar with a toe.",
+    "dances a little slower beside the tip jar.",
+    "lets the tip jar speak for itself.",
+    "taps the tip jar with a toe, then looks away.",
+    "leaves the tip jar where everybody can reach it.",
 }
 -- Now and then while somebody is around, at nobody: something to look at. You stand on the mailbox.
 -- What people see is the dance, nonstop, by somebody half away from the keyboard (SuccuDev: "strikes a
 -- pose? im obviously semi-afk dancing on a mailbox"). So a line never claims a move the character is not
 -- making (a pose, a spin, a bow, a wave, a hop): only eyes, face, voice, and the dance going on.
 M.IDLE = {
-    "keeps dancing on the mailbox.",
-    "smiles down at whoever is watching.",
-    "winks at nobody in particular.",
-    "looks over the crowd without missing a step.",
-    "hums along to the dance.",
-    "glances down at the people checking their mail.",
-    "dances on.",
-    "catches somebody's eye and smiles.",
-    "looks around for an audience.",
-    "grins at the crowd below.",
-    "is still dancing up here.",
-    "watches the crowd go by.",
-    "dances for whoever is looking.",
-    "raises an eyebrow at the crowd.",
-    "hums a tune.",
-    "looks down from the mailbox and smiles.",
-    "glances around without missing a step.",
-    "smirks at the passers-by.",
-    "has not stopped dancing yet.",
-    "peeks at who is watching.",
-    "gives the crowd a look.",
-    "sighs happily and keeps dancing.",
+    "dances a little slower for whoever is watching.",
+    "catches somebody staring and smiles.",
+    "bites a lip and keeps dancing.",
+    "gives the crowd below something to look at.",
+    "knows exactly who is watching.",
+    "winks at whoever is staring.",
+    "puts a little more hip into it.",
+    "smirks at somebody who forgot their mail.",
+    "moves a little slower every time somebody looks up.",
+    "meets a stare and does not look away.",
+    "dances just out of reach.",
+    "lets the crowd look.",
+    "makes checking the mail take longer than it should.",
+    "glances over a shoulder at the crowd.",
+    "enjoys being watched.",
+    "does not mind the staring at all.",
+    "licks a lip and looks over the crowd.",
+    "takes the next step slow, for the view.",
+    "pretends not to notice the staring.",
+    "notices how many people are pretending to check their mail.",
+    "sways those hips a little slower.",
+    "looks down at the crowd, slow and smug.",
 }
 -- Somebody who has kept you targeted this long gets one look at the tip jar, once an hour at most.
 M.NUDGE = "glances at the tip jar, then down at %s."
@@ -1239,7 +1237,7 @@ local function Build(host)
         if not GameTooltip then return end
         GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
         GameTooltip:SetText("Tip jar")
-        GameTooltip:AddLine("Says a short line about your tip jar in /e. One is due every 2 to 3 minutes "
+        GameTooltip:AddLine("Says a short line about your tip jar in /e. One is due every 8 to 12 minutes "
             .. "while somebody is around and goes out on your next key press or click.", 1, 0.82, 0, true)
         GameTooltip:Show()
     end)
