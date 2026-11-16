@@ -15,7 +15,7 @@
 -- works too). A reminder in your own chat says when it is time for the next one.
 local ADDON, ns = ...
 
-ns.VERSION = "1.12.8"
+ns.VERSION = "1.12.9"
 ns.TITLE = "Slutmog Shop"
 ns.ICON = "Interface\\Icons\\INV_Misc_Coin_02"
 ns.ACCENT = { 0.96, 0.55, 0.78 }
@@ -250,13 +250,11 @@ function ns.FullName(unit)
     local ok, name, second = pcall(UnitName, unit)
     if not (ok and ns.Readable(name) and type(name) == "string" and name ~= "") then return nil end
     if not (ns.Readable(second) and type(second) == "string" and second ~= "") then return name end
-    local regional = type(RegionalUniqueNamesEnabled) == "function" and select(2, pcall(RegionalUniqueNamesEnabled))
-    if regional == true then
-        local c = Constants and Constants.CharacterNameSeparatorConsts
-        local sep = c and c.CHARACTERNAME_SURNAME_SEPARATOR
-        return name .. (type(sep) == "string" and sep or " ") .. second
-    end
-    return name .. "-" .. second
+    -- whether the second one is a surname or a realm is not told; chat and whispers spell people
+    -- "First Last" here (.agents/memory/pitfalls.md, "Names on this client"), so it goes after a space
+    local c = Constants and Constants.CharacterNameSeparatorConsts
+    local sep = c and c.CHARACTERNAME_SURNAME_SEPARATOR
+    return name .. (type(sep) == "string" and sep ~= "" and sep or " ") .. second
 end
 
 function ns.MoneyText(copper)

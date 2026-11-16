@@ -1,5 +1,9 @@
 # Changelog
 
+## 1.12.9
+
+- Whole names always as "First Last", with a space, the way chat spells them here: 1.12.8 could still make "First-Last" of them.
+
 ## 1.12.8
 
 - Names with a surname work: the tip thank-you, its whisper and the mailbox use the whole name ("Googi Baba"), not only the first one, which the game could not find.
