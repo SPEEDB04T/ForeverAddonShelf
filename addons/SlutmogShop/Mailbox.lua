@@ -48,22 +48,24 @@ M.EMOTES = {
     -- More of the same kind, short and quiet (SuccuDev: "similar emotes to the basic ones like wink,
     -- short and sweet, doesnt stand out"). All of them are in the game's own emote list
     -- (ChatEmoteConstants.lua, Gethe/wow-ui-source branch forever) and old enough for this client.
-    look = { "WINK", "SMILE", "GIGGLE", "SHY", "WAVE", "GRIN", "SMIRK", "BASHFUL", "NOD" },   -- only targeted you: slight
-    kiss = { "BLUSH", "KISS", "BASHFUL" },
-    wink = { "WINK", "SMIRK" },
-    flirt = { "GIGGLE", "FLIRT", "TEASE", "SMIRK" },
-    show = { "CURTSEY", "THANK", "BOW" },
-    hug = { "HUG", "BLUSH", "BASHFUL" },
-    wave = { "WAVE", "GREET", "NOD" },
+    look = { "WINK", "SMILE", "GIGGLE", "SHY", "WAVE", "GRIN", "SMIRK", "BASHFUL", "NOD", "CHUCKLE", "BLINK" },   -- only targeted you: slight
+    kiss = { "BLUSH", "KISS", "BASHFUL", "PURR" },
+    wink = { "WINK", "SMIRK", "GRIN", "CHUCKLE" },
+    flirt = { "GIGGLE", "FLIRT", "TEASE", "SMIRK", "PURR", "BECKON" },
+    show = { "CURTSEY", "THANK", "BOW", "WELCOME" },
+    hug = { "HUG", "BLUSH", "BASHFUL", "CUDDLE" },
+    wave = { "WAVE", "GREET", "NOD", "HELLO", "WELCOME" },
     dance = { "DANCE" },
     whisper = { },
-    any = { "WINK", "SMILE", "GIGGLE", "GRIN", "NOD" },
+    any = { "WINK", "SMILE", "GIGGLE", "GRIN", "NOD", "CHUCKLE" },
 }
 -- What the buttons call them.
 M.LABEL = {
     WINK = "Wink", SMILE = "Smile", GIGGLE = "Giggle", SHY = "Shy", WAVE = "Wave", BLUSH = "Blush",
     KISS = "Blow a kiss", FLIRT = "Flirt", CURTSEY = "Curtsey", THANK = "Thank", HUG = "Hug", DANCE = "Dance",
     GRIN = "Grin", SMIRK = "Smirk", BASHFUL = "Act bashful", NOD = "Nod", TEASE = "Tease", BOW = "Bow", GREET = "Greet",
+    CHUCKLE = "Chuckle", BLINK = "Blink", PURR = "Purr", BECKON = "Beckon", WELCOME = "Welcome", CUDDLE = "Cuddle",
+    HELLO = "Say hello",
 }
 
 -- The pitch, in the shop owner's voice. {item} and {price} are the ware whose turn it is.
