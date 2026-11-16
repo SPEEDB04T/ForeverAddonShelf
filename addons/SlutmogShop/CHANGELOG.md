@@ -1,5 +1,10 @@
 # Changelog
 
+## 1.15.2
+
+- A rude emote (spit, slap, rude, mock...) now gets a sad one back: cry, pout, frown or sigh, in the game's own words ("cries on Bob's shoulder."). No pitch for them.
+- Tip thank-yous and welcome-backs read like the game's own emotes, with nothing said in your voice: "blows Bob a kiss for the tip of 5 gold pieces.", "welcomes Googi back.".
+
 ## 1.15.1
 
 - The thank-you for a tip grows with the tip: a plain thanks under 5 gold, a kiss or a hug from 5 gold, a big hug or a bow from 20, and from 100 gold the shop is speechless. Every line still names them and the amount.

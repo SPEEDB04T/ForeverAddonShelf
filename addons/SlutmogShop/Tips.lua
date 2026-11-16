@@ -162,26 +162,28 @@ T.Update = Update
 -- The thank-you grows with the tip (SuccuDev: "need to scale thanks on tips based on amount"). Each
 -- step: from how much copper, and its lines, in /e after your name ("Smuttanie hugs Bob for the tip
 -- of 5 gold pieces."). Every line names them and the amount, so people around see what tipping gets.
+-- Worded like the game's own emotes, nothing said in Smuttanie's voice (SuccuDev: "dont add text as if
+-- smuttanie's writing in emotes. it has to be clean, minimalistic, feel similar to ingame emotes").
 T.THANKS = {
     { 0, {                                  -- under a gold
         "thanks {who} for the tip of {amount}.",
-        "drops {who}'s {amount} in the tip jar. Thank you!",
+        "drops {who}'s {amount} in the tip jar.",
     } },
     { 10000, {                              -- a gold or more
         "thanks {who} for the tip of {amount}.",
-        "curtseys to {who}. Thank you for the {amount}.",
+        "curtseys before {who} for the tip of {amount}.",
     } },
     { 50000, {                              -- 5 gold or more
-        "blows {who} a kiss. Thank you for the {amount}.",
+        "blows {who} a kiss for the tip of {amount}.",
         "hugs {who} for the tip of {amount}.",
     } },
     { 200000, {                             -- 20 gold or more
-        "gives {who} a big hug. Thank you for the {amount}!",
-        "bows to {who}. Thank you for the {amount}!",
+        "gives {who} a big hug for the tip of {amount}.",
+        "bows before {who} for the tip of {amount}.",
     } },
     { 1000000, {                            -- 100 gold or more
-        "is speechless. {who} just tipped {amount}. Thank you!",
-        "bows deeply to {who}. Thank you so much for the {amount}!",
+        "is speechless at {who}'s tip of {amount}.",
+        "bows deeply before {who} for the tip of {amount}.",
     } },
 }
 T.Random = function(n) return math.random(n) end

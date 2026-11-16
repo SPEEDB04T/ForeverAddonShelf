@@ -46,8 +46,9 @@ local REPLIES = {
     { "clap", "CURTSEY", "show" }, { "love", "BLUSH", "kiss" }, { "sexy", "WINK", "flirt" },
     { "purr", "WINK", "flirt" }, { "stare", "WINK", "look" }, { "gaze", "WINK", "look" },
 }
--- Nothing goes back to these.
+-- These get a sad emote back (SuccuDev: "cry or feel sad when people do bad emotes at me"), and no pitch.
 local RUDE = { "spit", "rude", "slap", "insult", "mock", "taunt", "pity", "puke", "fart", "disgust", "threaten", "angry", "bonk" }
+local SAD_REPLY = { nil, "CRY", "sad" }
 local DEFAULT_REPLY = { nil, "WINK", "any" }
 local LOOK_REPLY = { nil, "WINK", "look" }
 local BACK_REPLY = { nil, nil, "hug" }
@@ -68,6 +69,7 @@ M.EMOTES = {
     wave = { "WAVE", "GREET", "NOD", "HELLO", "WELCOME" },
     dance = { "DANCE" },
     whisper = { },
+    sad = { "CRY", "POUT", "FROWN", "SIGH" },                 -- after a rude emote, and nothing from "any"
     any = { "WINK", "SMILE", "GIGGLE", "GRIN", "NOD", "CHUCKLE" },
 }
 -- What the buttons call them.
@@ -76,7 +78,7 @@ M.LABEL = {
     KISS = "Blow a kiss", FLIRT = "Flirt", CURTSEY = "Curtsey", THANK = "Thank", HUG = "Hug", DANCE = "Dance",
     GRIN = "Grin", SMIRK = "Smirk", BASHFUL = "Act bashful", NOD = "Nod", TEASE = "Tease", BOW = "Bow", GREET = "Greet",
     CHUCKLE = "Chuckle", BLINK = "Blink", PURR = "Purr", BECKON = "Beckon", WELCOME = "Welcome", CUDDLE = "Cuddle",
-    HELLO = "Say hello",
+    HELLO = "Say hello", CRY = "Cry", POUT = "Pout", FROWN = "Frown", SIGH = "Sigh",
     WELCOMEBACK = "Welcome back",
 }
 
@@ -90,13 +92,14 @@ M.SAY = {
     FLIRT = "flirts with %s.", TEASE = "teases %s.", BECKON = "beckons %s over.", CURTSEY = "curtseys before %s.",
     THANK = "thanks %s.", BOW = "bows before %s.", WELCOME = "welcomes %s.", HUG = "hugs %s.",
     CUDDLE = "cuddles up against %s.", GREET = "greets %s warmly.", HELLO = "greets %s with a hearty hello!",
+    CRY = "cries on %s's shoulder.", POUT = "pouts at %s.", FROWN = "frowns with disappointment at %s.", SIGH = "sighs at %s.",
 }
 
 -- The tip jar: now and then, while somebody is around, one line in /e, so people know you take tips
 -- (SuccuDev picked this to get more tips). Short and quiet, in the shop owner's voice.
 M.JAR = {
     "jingles the little tip jar on the mailbox.",
-    "polishes the tip jar, very slowly.",
+    "polishes the tip jar.",
     "drops a coin in the tip jar to get it started.",
     "gives the tip jar a little shake.",
     "nudges the tip jar a bit closer to the edge of the mailbox.",
@@ -104,11 +107,13 @@ M.JAR = {
     "sets the tip jar down where everybody can see it.",
 }
 -- Somebody who tipped you before comes by again: one of these, in /e (SuccuDev: "just a welcome back emote").
+-- Worded like the game's own emotes, nothing said in Smuttanie's voice (SuccuDev: "dont add text as if
+-- smuttanie's writing in emotes. it has to be clean, minimalistic, feel similar to ingame emotes").
 M.WELCOMES = {
-    "smiles at {name}. Welcome back, sweetie.",
-    "waves at {name}. Look who's back.",
-    "beams at {name}. Welcome back!",
-    "blows {name} a kiss. Missed you.",
+    "welcomes {name} back.",
+    "waves at {name} again.",
+    "smiles at {name} again.",
+    "greets {name} warmly.",
 }
 
 -- The pitch, in the shop owner's voice. {item} and {price} are the ware whose turn it is.
@@ -406,7 +411,7 @@ local function Pick(v, skip)
         end
     end
     add(M.EMOTES[group])
-    if group ~= "any" and group ~= "look" then add(M.EMOTES.any) end
+    if group ~= "any" and group ~= "look" and group ~= "sad" then add(M.EMOTES.any) end
     if #pool == 0 then return nil end
     for _ = 1, #pool do
         turn[group] = (turn[group] or 0) % #pool + 1
@@ -684,7 +689,7 @@ end
 local function ReplyFor(text)
     local l = text:lower()
     for _, word in ipairs(RUDE) do
-        if l:find(word, 1, true) then return false end
+        if l:find(word, 1, true) then return SAD_REPLY end
     end
     for _, r in ipairs(REPLIES) do
         if l:find(r[1], 1, true) then return r end
@@ -724,7 +729,7 @@ local function OnEmote(text, sender, guid)
     end
     if not text:lower():find("%f[%a]you%f[%A]") then return end        -- only what is aimed at you
     local reply = ReplyFor(text)
-    local v = Visit(sender, "emote", text, reply, true)
+    local v = Visit(sender, "emote", text, reply, reply ~= SAD_REPLY)
     if reply then Auto(v, PERSON_GAP) end
     Sync()
 end
