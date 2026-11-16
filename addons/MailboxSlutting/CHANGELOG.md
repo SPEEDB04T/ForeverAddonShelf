@@ -1,5 +1,10 @@
 # Changelog
 
+## 1.3.3
+
+- Somebody who only targets you gets the game's wink by itself again, as before 1.3.2.
+- The dance resumes right away after any emote by itself: about a second later instead of 3 to 7, and if it does not take it is tried again every 2.5 seconds, up to 8 times. The 15 seconds that used to be kept between two dances no longer hold the comeback back.
+
 ## 1.3.2
 
 - The dance holds better. Somebody who only targets you no longer gets the game's own wink, which stopped your dance each time: the wink goes in /e on your next key press or click (the dance goes on), and is dropped after 10 seconds without one.

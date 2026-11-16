@@ -295,13 +295,15 @@ end
 -- from a timer has never been seen to work on this client, one from a chat event has.
 -- Never in quick succession, and never at the same beat twice, so it does not look like a bot
 -- (SuccuDev: "make sure dance emote doesnt get spammed, add a cooldown to make things feel less bot-like").
-local REDANCE_MIN, REDANCE_MAX = 3, 7   -- seconds after a wink or a smile before dancing again, picked at random
+-- SuccuDev, 2026-11-16: "just make it resume immediately": the dance comes back about a second after
+-- any emote by itself, lookers' winks included, and is tried again until the game shows it.
+local REDANCE_MIN, REDANCE_MAX = 1, 1.5 -- seconds after a wink or a smile before dancing again, picked at random
 local DANCE_GAP = 15             -- seconds at least between two dances the shop does by itself
 -- The first dance after a wink often does not take (in the saved log the try 4 to 6 seconds after it
 -- has no echo every time, and the next one, which used to come 15 seconds later, does). A try that does
 -- not take shows nothing, so the next one comes soon (SuccuDev: "fails to maintain dance too much").
-local RETRY_GAP = 4              -- seconds between two tries at the same comeback
-local TRIES = 6                  -- dances it tries for one comeback, at most
+local RETRY_GAP = 2.5            -- seconds between two tries at the same comeback (the echo is waited for 2)
+local TRIES = 8                  -- dances it tries for one comeback, at most
 local GIVE_UP = 45               -- seconds after which it stops trying
 local dancing = false            -- you are dancing, as far as the shop knows
 local due                        -- when the dance should be back, until its echo
@@ -427,7 +429,7 @@ Game = function(token, name, from)
         dancing, lastDance = true, Now()
     elseif dancing then
         due, tries = Now() + M.Random(REDANCE_MIN, REDANCE_MAX), 0
-        local wait = math.max(due, lastDance + RETRY_GAP, lastOk + DANCE_GAP) - Now()
+        local wait = math.max(due, lastDance + RETRY_GAP) - Now()
         if C_Timer and C_Timer.After then
             C_Timer.After(wait + 0.05, function() M.Redance("timer") end)
         end
@@ -450,7 +452,7 @@ end
 function M.Redance(from)
     if not (on and dancing and due) or Away() then return false end
     local now = Now()
-    local ready = math.max(due, lastDance + RETRY_GAP, lastOk + DANCE_GAP)
+    local ready = math.max(due, lastDance + RETRY_GAP)
     if now < ready then return false end
     if now - ready > GIVE_UP or tries >= TRIES then
         due = nil
@@ -756,14 +758,6 @@ local function Auto(v, gap, soft)
     if manual or not v.reply or Away() then return false end
     local now = Now()
     if now - lastAuto < GLOBAL_GAP or (v.emotedAt and now - v.emotedAt < gap) then return false end
-    -- Somebody who only looked: the game's own wink would stop the dance, and that is not worth it for
-    -- a look. The wink goes in /e (the dance goes on) on your next key or click, or not at all.
-    if soft and M.HARDWARE_ONLY and v.reply[2] ~= "DANCE" then
-        local token, name = v.reply[2], v.name
-        Queue(function(from) Emote(token, name, from or "click") end, LOOK_OLD)
-        lastAuto, v.emotedAt = now, now
-        return true
-    end
     -- a dance back only if you are not dancing already, and not right after the last one
     if v.reply[2] == "DANCE" and (dancing or now - lastDance < DANCE_GAP) then return false end
     if not Emote(v.reply[2], v.name, "event") then
