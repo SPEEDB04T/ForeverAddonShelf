@@ -1,5 +1,10 @@
 # Changelog
 
+## 1.19.1
+
+- The split from Mailbox Slutting is complete: the shop no longer puts its ad, Post button, Wares or Options into the Mailbox Slutting window, and Whisper price is gone. When an ad is due the shop's own reminder window comes up again, whether the counter is up or not.
+- `/slutshop mailbox`, `/slutshop counter`, `/smog mailbox` and the old Accept tip key still lead to Mailbox Slutting when it is installed.
+
 ## 1.19.0
 
 - Mailbox mode, tips, the counter window and the numbers moved to their own addon, **Mailbox Slutting** (on the same addon page). Install it to keep them: with both installed everything looks and works as before, and your tips, tippers and numbers are copied over.

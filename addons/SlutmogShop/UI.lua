@@ -1122,10 +1122,6 @@ function UI.ListLooks()
         frames = {
             { label = "shop window", frame = function() return frame and frame:IsShown() and frame or nil end },
             { label = "ad prompt", frame = function() return prompt and prompt:IsShown() and prompt or nil end },
-            { label = "mailbox window", frame = function()
-                local m = ns.Mailbox and ns.Mailbox.Frame()
-                return m and m:IsShown() and m or nil
-            end },
         },
     }
 end

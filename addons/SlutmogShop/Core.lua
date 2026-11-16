@@ -16,19 +16,16 @@
 local ADDON, ns = ...
 
 -- Mailbox mode, tips, the counter and the numbers are their own addon since 1.19.0, Mailbox Slutting
--- (SuccuDev: "can we split off mailbox slutting to its own addon"). When it is installed the shop
--- reaches its parts under the old names: ns.Mailbox, ns.Tips, ns.Counter, ns.Stat and ns.Stats are
--- looked up there, and are nil without it. It reaches the shop through the global SlutmogShopAPI.
-local MAIL = { Mailbox = true, Tips = true, Counter = true, Stat = true, Stats = true }
-setmetatable(ns, { __index = function(_, k)
-    if not MAIL[k] then return nil end
+-- (SuccuDev: "can we split off mailbox slutting to its own addon"), and since 1.19.1 the two share
+-- nothing (SuccuDev: "I still see shop stuff in the mailslut window"). Only the old commands
+-- (/slutshop mailbox, /slutshop counter, /smog mailbox) and the old Accept tip key still lead there.
+local function Mail()
     local m = rawget(_G, "MailboxSlutting")
-    if type(m) == "table" then return m[k] end
-end })
-SlutmogShopAPI = ns
+    return type(m) == "table" and m or nil
+end
 local MAIL_MISSING = "that is the Mailbox Slutting addon now, and it is not installed (or turned off). It is on the same addon page."
 
-ns.VERSION = "1.19.0"
+ns.VERSION = "1.19.1"
 ns.TITLE = "Slutmog Shop"
 ns.ICON = "Interface\\Icons\\INV_Misc_Coin_02"
 ns.ACCENT = { 0.96, 0.55, 0.78 }
@@ -1193,15 +1190,6 @@ local function PriceAt(w, where)
     return a and a.price > 0 and a.price or w.price
 end
 
--- The ware whose turn it is, for a line that is not an ad (the mailbox pitch): link, price, where.
-function ns.WareOffer()
-    local p = ns.Next()
-    local w = p and p.ware and db.wares[p.ware]
-    if not (w and w.link) or w.unpriced then return nil end
-    local where = ns.Where(w)
-    return { item = w.link, price = ns.PriceText(PriceAt(w, where)), where = where, shop = ns.ShopName() }
-end
-
 -- One ad for a top and its bottom, when both can be had in the same place: both linked, one price.
 local function ComposeSetAd(wi, j, shop)
     local w, w2 = db.wares[wi], db.wares[j]
@@ -1537,11 +1525,6 @@ local function Sound(kit, fallback) ns.AlertSound(kit, fallback) end
 -- The prompt waits for the end of a fight: a window in the middle of the screen has no place in one.
 local function ShowPrompt(token)
     if token ~= remindToken then return end
-    -- the counter is up: its Post button lights up instead of a window in the middle of the screen
-    if ns.Counter and ns.Counter.IsShown and ns.Counter.IsShown() then
-        pcall(ns.Counter.Remind)
-        return
-    end
     if not db.prompt then return end
     if type(InCombatLockdown) == "function" and InCombatLockdown() then
         C_Timer.After(3, function() ShowPrompt(token) end)
@@ -1616,8 +1599,6 @@ function ns.Post()
     ns.lastPostAt = Now()
     if db.channel == "TURNS" then db.turn = chatType == "YELL" and 1 or 2 end      -- the other one next
     db.posts = (db.posts or 0) + 1
-    if ns.Stat then ns.Stat("ads") end      -- the counter's numbers (Mailbox Slutting)
-    if ns.Counter and ns.Counter.Posted then pcall(ns.Counter.Posted) end
     if p.src then db.sent[p.src] = (tonumber(db.sent[p.src]) or 0) + 1 end
     sent.entry = Log(label, p.text, awaiting == sent and "sent" or "seen")
     Commit(p)
@@ -1832,9 +1813,11 @@ local function Slash(msg)
             Print("shift-click a ware that is part of a set into the command: /slutshop unset [item]")
         end
     elseif cmd == "mailbox" then
-        if ns.Mailbox then ns.Mailbox.Toggle() else Print(MAIL_MISSING) end
+        local m = Mail()
+        if m and m.Mailbox then m.Mailbox.Toggle() else Print(MAIL_MISSING) end
     elseif cmd == "counter" then
-        if ns.Counter then ns.Counter.Toggle() else Print(MAIL_MISSING) end
+        local m = Mail()
+        if m and m.Counter then m.Counter.Toggle() else Print(MAIL_MISSING) end
     elseif cmd == "prompt" then
         if not (ns.UI and ns.UI.ShowPrompt and ns.UI.ShowPrompt(true)) then
             Print("nothing to post: " .. tostring(select(2, ns.Next())))
@@ -1967,7 +1950,8 @@ BINDING_NAME_SLUTMOGSHOP_TOGGLE = "Open or close the shop window"
 -- The tips went to Mailbox Slutting; the key you bound here keeps working.
 BINDING_NAME_SLUTMOGSHOP_ACCEPTTIP = "Accept a tip (Mailbox Slutting does it)"
 function SlutmogShop_AcceptTip()
-    if ns.Tips and ns.Tips.Accept then ns.Tips.Accept() end
+    local m = Mail()
+    if m and m.Tips and m.Tips.Accept then m.Tips.Accept() end
 end
 
 function SlutmogShop_Post() ns.Post() end

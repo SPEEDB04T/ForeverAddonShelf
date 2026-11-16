@@ -76,4 +76,4 @@ Shortest gap between ads (60 seconds), the reminder and its sound, which ads (re
 
 ## Mailbox Slutting
 
-Dancing on the mailbox, the emotes back, the tip jar, the Accept tip button and the counter window were part of this addon until 1.18.0. They are their own addon now, **Mailbox Slutting**, on the same addon page. Install both and nothing changes: the counter still shows the next ad with its Post button, Wares and Options, and Whisper price still whispers your ware. Your tips, tippers, numbers and the counter's place are copied over the first time. Without it the shop still posts ads, with the reminder window in the middle of the screen.
+Dancing on the mailbox, the emotes back, the tip jar, the Accept tip button and the counter window were part of this addon until 1.18.0. They are their own addon now, **Mailbox Slutting**, on the same addon page, and the two share nothing: its window has no ad and no wares, and the shop reminds you of the next ad in its own window. Your tips, tippers and numbers are copied over to it the first time you log in with both.
