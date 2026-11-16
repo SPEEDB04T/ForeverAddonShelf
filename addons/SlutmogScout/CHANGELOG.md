@@ -1,5 +1,12 @@
 # Changelog
 
+## 1.21.1
+
+- **Season of Discovery items no longer count as same-look twins.** They are in the game files
+  but not in Forever, e.g. Wailing Berserker's Chestplate for Lofty Breastplate, Shifting Silver
+  Breastplate for Saltstone Surcoat. 36 pieces carry the same-look warning now, 58 before, and 18
+  more count as a look no other item has.
+
 ## 1.21.0
 
 - **Looks you can get elsewhere are off the Market list.** A piece is left out when another item
