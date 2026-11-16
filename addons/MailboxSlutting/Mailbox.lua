@@ -880,7 +880,6 @@ local function Look()
                 if not (v.seen and now - v.seen <= TICK + 0.6) then v.since = now end   -- a new look starts
                 v.seen = now
                 if now - (v.since or now) >= HOLD then Auto(v, LOOK_GAP, true) end
-                Nudge(v, now)
             end
         end
     end
@@ -996,16 +995,11 @@ end
 
 -- For a tip: a dance to their name, a few seconds after the thank-you. Only while the shop is open.
 function M.DanceFor(name)
+    -- SuccuDev, 2026-11-16, of a thank-you, a whisper, "dances for Bob." and a glance at the tip jar all
+    -- at one tipper: "bit too intense". A tip gets the thank-you and the whisper, nothing more by itself;
+    -- the glance at the tip jar at somebody who keeps looking is gone as well. The lines at nobody wait.
     lastEngage = Now()
-    if not (on and name) or Away() or not (C_Timer and C_Timer.After) then return false end
-    C_Timer.After(M.Random(4, 7), function()
-        if on and not Away() then
-            lastAuto = Now()
-            local line = M.DANCE_FOR:format(Short(name))
-            Queue(function(from) Say(line, from or "tip", nil, function() Stat("emotes") end) end)
-        end
-    end)
-    return true
+    return false
 end
 
 -- AFK while the mailbox is on: a big prompt, so you come back (SuccuDev: "I need a big prompt telling

@@ -1,5 +1,10 @@
 # Changelog
 
+## 1.4.2
+
+- Less at one person. A tipper gets the thank-you and the whisper, and no "dances for Bob." after it.
+- The "glances at the tip jar, then down at Bob." line is gone: nobody is pointed at the tip jar any more, least of all somebody who just tipped.
+
 ## 1.4.1
 
 - Four lines that tried to be clever are out (the ones about checking the mail, forgetting the mail, pretending to check it, and the tip jar speaking for itself). Plain ones in their place: "smiles at whoever is looking up.", "runs a slow look over the crowd.", "dances with eyes on somebody in the crowd."
