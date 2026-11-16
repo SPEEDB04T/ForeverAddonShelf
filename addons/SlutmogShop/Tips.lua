@@ -49,9 +49,7 @@ end
 
 -- Who you are trading with, or nil.
 local function Partner()
-    local name = Call(UnitName, "NPC")
-    if type(name) == "string" and Readable(name) and name ~= "" then return name end
-    return nil
+    return ns.FullName and ns.FullName("NPC") or nil
 end
 
 -- The tip on the table, in copper: gold from them, and nothing at all from you. nil when it is not one.
@@ -275,8 +273,9 @@ end
 local function Mine(sender, guid)
     if Readable(guid) and guid ~= nil and guid == Call(UnitGUID, "player") then return true end
     if not Readable(sender) or type(sender) ~= "string" then return false end
-    local me = Call(UnitName, "player")
-    return me ~= nil and (sender == me or sender:match("^([^%-]+)") == me)
+    local me, full = Call(UnitName, "player"), ns.FullName and ns.FullName("player")
+    local short = sender:match("^([^%-]+)")
+    return (me ~= nil and (sender == me or short == me or sender:match("^(%S+)") == me)) or (full ~= nil and short == full)
 end
 
 local function Echo(event, text, sender, guid)

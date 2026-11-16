@@ -105,6 +105,7 @@ local function Me()
     local ok, name = pcall(UnitName, "player")
     return ok and Readable(name) and type(name) == "string" and name or nil
 end
+local function MeFull() return ns.FullName and ns.FullName("player") or Me() end
 
 -- Makes a button wide enough for its label (at least w0, at most wmax). Returns the width.
 local function Fit(b, w0, wmax)
@@ -123,13 +124,9 @@ M.Fit = Fit
 
 local CTA_W = 430 - 28          -- the row of big buttons, inside the window
 
--- The full name of a unit ("Name" or "Name-Realm"), or nil.
+-- The full name of a unit ("Name Surname", or "Name-Realm"), or nil.
 local function NameOf(unit)
-    if type(UnitName) ~= "function" then return nil end
-    local ok, name, realm = pcall(UnitName, unit)
-    if not (ok and Readable(name) and type(name) == "string" and name ~= "") then return nil end
-    if Readable(realm) and type(realm) == "string" and realm ~= "" then name = name .. "-" .. realm end
-    return name
+    return ns.FullName(unit)
 end
 
 -- A unit the game knows this person by right now (your target, or a nameplate in view), or nil.
@@ -557,7 +554,7 @@ end
 -- The name check alone missed them, so the wording and the sender's GUID count as well.
 local function Mine(text, sender, guid)
     local me = Me()
-    if me and Short(sender) == me then return true end
+    if me and (Short(sender) == me or Short(sender) == MeFull()) then return true end
     if text:match("^You ") then return true end
     if guid ~= nil and Readable(guid) and type(UnitGUID) == "function" then
         local ok, mine = pcall(UnitGUID, "player")

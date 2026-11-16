@@ -1,5 +1,9 @@
 # Changelog
 
+## 1.12.8
+
+- Names with a surname work: the tip thank-you, its whisper and the mailbox use the whole name ("Googi Baba"), not only the first one, which the game could not find.
+
 ## 1.12.7
 
 - Even more quiet emotes to answer with: chuckle, blink, purr, beckon, welcome, cuddle and say hello.

@@ -15,7 +15,7 @@
 -- works too). A reminder in your own chat says when it is time for the next one.
 local ADDON, ns = ...
 
-ns.VERSION = "1.12.7"
+ns.VERSION = "1.12.8"
 ns.TITLE = "Slutmog Shop"
 ns.ICON = "Interface\\Icons\\INV_Misc_Coin_02"
 ns.ACCENT = { 0.96, 0.55, 0.78 }
@@ -241,6 +241,24 @@ function ns.ParsePrice(text)
 end
 
 -- Coins as the game draws them, for the shop window.
+-- A unit's whole name, the way chat and whispers know it. On Forever characters have a surname, and
+-- UnitName gives it as its second value, where other clients put the realm (SuccuDev: "tip thanks is
+-- failing because people have last names too not just first names"). The game's own whisper menu
+-- joins them like this (UnitPopupUtils.lua, GetFullPlayerName, Gethe/wow-ui-source branch forever).
+function ns.FullName(unit)
+    if type(UnitName) ~= "function" then return nil end
+    local ok, name, second = pcall(UnitName, unit)
+    if not (ok and ns.Readable(name) and type(name) == "string" and name ~= "") then return nil end
+    if not (ns.Readable(second) and type(second) == "string" and second ~= "") then return name end
+    local regional = type(RegionalUniqueNamesEnabled) == "function" and select(2, pcall(RegionalUniqueNamesEnabled))
+    if regional == true then
+        local c = Constants and Constants.CharacterNameSeparatorConsts
+        local sep = c and c.CHARACTERNAME_SURNAME_SEPARATOR
+        return name .. (type(sep) == "string" and sep or " ") .. second
+    end
+    return name .. "-" .. second
+end
+
 function ns.MoneyText(copper)
     copper = max(0, floor(tonumber(copper) or 0))
     if copper == 0 then return "free" end
