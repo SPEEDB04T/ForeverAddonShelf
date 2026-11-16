@@ -137,46 +137,45 @@ end
 
 -- The tip jar: now and then, while somebody is around, one line in /e, so people know you take tips
 -- (SuccuDev picked this to get more tips). Short and quiet, in the shop owner's voice.
+-- The same for the jar: a look, a nod, a toe. No hands (holding it out, counting coins, polishing).
 M.JAR = {
-    "jingles the tip jar.",
+    "glances at the tip jar.",
     "taps the tip jar with a toe.",
-    "drops a coin in the tip jar to get it started.",
-    "gives the tip jar a little shake.",
+    "nods at the tip jar.",
     "nudges the tip jar toward the edge of the mailbox with a toe.",
-    "counts the coins in the tip jar and pouts.",
-    "holds out the tip jar.",
-    "rattles the tip jar at the crowd.",
-    "peeks into the tip jar.",
-    "polishes the tip jar.",
-    "points a toe at the tip jar.",
-    "sets the tip jar down where everybody can see it.",
+    "eyes the tip jar, then the crowd.",
+    "looks at the tip jar, then at the crowd again.",
+    "dances a step closer to the tip jar.",
+    "peeks into the tip jar without missing a step.",
+    "jingles the tip jar with a toe.",
 }
 -- Now and then while somebody is around, at nobody: something to look at. You stand on the mailbox.
+-- What people see is the dance, nonstop, by somebody half away from the keyboard (SuccuDev: "strikes a
+-- pose? im obviously semi-afk dancing on a mailbox"). So a line never claims a move the character is not
+-- making (a pose, a spin, a bow, a wave, a hop): only eyes, face, voice, and the dance going on.
 M.IDLE = {
-    "does a little spin on the mailbox.",
-    "strikes a pose on top of the mailbox.",
-    "blows a kiss to the crowd below.",
-    "looks down from the mailbox and waves.",
-    "balances on tiptoe on the mailbox.",
-    "sways slowly on top of the mailbox.",
-    "twirls once and curtsies to the crowd.",
-    "beckons the crowd closer to the mailbox.",
-    "winks at nobody in particular.",
-    "taps a heel on the mailbox lid.",
-    "looks around for an audience.",
-    "dances a slow circle around the top of the mailbox.",
-    "waves at everybody passing by.",
-    "leans down from the mailbox and smiles at the crowd.",
-    "claps along to the dance.",
-    "bows to the crowd from the mailbox.",
-    "stretches, then goes back to dancing.",
-    "hops to the edge of the mailbox and back.",
-    "peers down at the people checking their mail.",
-    "spins twice and blows a kiss.",
-    "gives the crowd a slow wave.",
-    "dips low, then rises back up on the mailbox.",
-    "shimmies on top of the mailbox.",
+    "keeps dancing on the mailbox.",
     "smiles down at whoever is watching.",
+    "winks at nobody in particular.",
+    "looks over the crowd without missing a step.",
+    "hums along to the dance.",
+    "glances down at the people checking their mail.",
+    "dances on.",
+    "catches somebody's eye and smiles.",
+    "looks around for an audience.",
+    "grins at the crowd below.",
+    "is still dancing up here.",
+    "watches the crowd go by.",
+    "dances for whoever is looking.",
+    "raises an eyebrow at the crowd.",
+    "hums a tune.",
+    "looks down from the mailbox and smiles.",
+    "glances around without missing a step.",
+    "smirks at the passers-by.",
+    "has not stopped dancing yet.",
+    "peeks at who is watching.",
+    "gives the crowd a look.",
+    "sighs happily and keeps dancing.",
 }
 -- Somebody who has kept you targeted this long gets one look at the tip jar, once an hour at most.
 M.NUDGE = "glances at the tip jar, then down at %s."

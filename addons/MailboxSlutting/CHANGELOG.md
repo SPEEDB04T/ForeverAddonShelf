@@ -1,5 +1,10 @@
 # Changelog
 
+## 1.3.1
+
+- The lines at nobody are rewritten for what people actually see: somebody dancing nonstop on a mailbox. No more poses, spins, bows, waves, hops or stretches that the character does not do; the 22 lines are looks, smiles, humming and the dance going on ("looks over the crowd without missing a step.").
+- The tip jar lines likewise: a glance, a nod or a toe, no holding the jar out, counting coins or polishing it.
+
 ## 1.3.0
 
 - New big button **Say a line**: one click says the next line at nobody, right away. It is the big button while nobody is waiting for an answer, and sits small at the right of the row when somebody is. It lights up while a line is waiting for your key press or click.
