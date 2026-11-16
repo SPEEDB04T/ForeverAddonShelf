@@ -61,7 +61,9 @@ function T.Tip()
     return theirs
 end
 
-local pre                       -- the thank-you sent with the click that finished the trade
+local pre                       -- the thank-you sent with your Accept click
+local trade = 0                 -- counts trade windows, so one click thanks once
+local kept                      -- the tip on the table, kept while the trade goes through
 local owed                      -- the last tip's thank-you, until the game shows it went out
 local mode = "accept"           -- what the button does: "accept" a tip or "thank" for one
 local Say                       -- set below
@@ -75,8 +77,11 @@ function T.Accept()
     if mode == "thank" then return T.Thank() end
     if not T.Tip() or type(AcceptTrade) ~= "function" then return false end
     local ok = pcall(AcceptTrade)
-    if ok and theyAccepted and last and last.who then
-        pre = { who = last.who, amount = last.amount, at = Now() }
+    -- The click is the one moment the game surely lets a chat line out, so the thank-you goes with it,
+    -- whoever accepts first (when you accepted first, it used to wait for their click and the game
+    -- dropped it: SuccuDev, "its not reliably emote thanking"). Once per trade.
+    if ok and last and last.who and not (pre and pre.trade == trade) then
+        pre = { who = last.who, amount = last.amount, at = Now(), trade = trade }
         Say(pre)
     end
     return ok
@@ -137,6 +142,7 @@ local function Update()
     end
     local new = not last or last.amount ~= amount
     last = { who = Partner() or (last and last.who), amount = amount }
+    kept = { who = last.who, amount = amount, at = Now(), trade = trade }
     if accepted then
         b:SetText("Waiting for " .. (last.who or "them"))
         b:SetEnabled(false)
@@ -153,14 +159,58 @@ local function Update()
 end
 T.Update = Update
 
--- "Smuttanie thanks Bob for the tip of 5 gold pieces."
+-- The thank-you grows with the tip (SuccuDev: "need to scale thanks on tips based on amount"). Each
+-- step: from how much copper, and its lines, in /e after your name ("Smuttanie hugs Bob for the tip
+-- of 5 gold pieces."). Every line names them and the amount, so people around see what tipping gets.
+T.THANKS = {
+    { 0, {                                  -- under a gold
+        "thanks {who} for the tip of {amount}.",
+        "drops {who}'s {amount} in the tip jar. Thank you!",
+    } },
+    { 10000, {                              -- a gold or more
+        "thanks {who} for the tip of {amount}.",
+        "curtseys to {who}. Thank you for the {amount}.",
+    } },
+    { 50000, {                              -- 5 gold or more
+        "blows {who} a kiss. Thank you for the {amount}.",
+        "hugs {who} for the tip of {amount}.",
+    } },
+    { 200000, {                             -- 20 gold or more
+        "gives {who} a big hug. Thank you for the {amount}!",
+        "bows to {who}. Thank you for the {amount}!",
+    } },
+    { 1000000, {                            -- 100 gold or more
+        "is speechless. {who} just tipped {amount}. Thank you!",
+        "bows deeply to {who}. Thank you so much for the {amount}!",
+    } },
+}
+T.Random = function(n) return math.random(n) end
+local lastThanks = {}
+
+-- The lines for this much copper.
+function T.Step(amount)
+    local pick = T.THANKS[1]
+    for _, step in ipairs(T.THANKS) do
+        if amount >= step[1] then pick = step end
+    end
+    return pick[2], pick[1]
+end
+
+-- One thank-you for this tip, not the same line twice in a row.
 function T.Thanks(who, amount)
-    return "thanks " .. who .. " for the tip of " .. ns.PriceText(amount, "words") .. "."
+    local lines, at = T.Step(amount)
+    local i = T.Random(#lines)
+    if #lines > 1 and i == lastThanks[at] then i = i % #lines + 1 end
+    lastThanks[at] = i
+    local money = ns.PriceText(amount, "words")
+    local line = lines[i]:gsub("{who}", function() return who end)
+    line = line:gsub("{amount}", function() return money end)
+    return line
 end
 
 -- A little whisper after it, a few seconds later like a person would (SuccuDev: "whisper can be a cute
 -- little thank you <3 or something, with a natural delay randomized").
-T.WHISPERS = { "thank you <3", "aww, thank you <3", "you're sweet, thank you <3", "ty ty <3", "thank you, cutie <3" }
+T.WHISPERS = { "thank you <3", "aww, thank you <3", "ty ty <3", "thank you!! <3" }
 T.DELAY_MIN, T.DELAY_MAX = 3, 8
 local ECHO_WAIT = 2             -- seconds for the game to show a line went out
 local THANK_SHOWN = 60          -- seconds the Thank button stays up
@@ -175,8 +225,16 @@ end
 -- Thanked out loud with the amount, as an emote everybody around sees (SuccuDev: "not a whisper. in
 -- emote with the thank. it advertises to others they can tip me"). A text emote plays no animation,
 -- so the dance goes on.
+local function Log(what)
+    if ns.Mailbox and ns.Mailbox.Log then ns.Mailbox.Log("tip " .. what) end
+end
+T.Log = Log
+
 Say = function(tip)
-    return Send(T.Thanks(tip.who, tip.amount), "EMOTE")
+    tip.text = tip.text or T.Thanks(tip.who, tip.amount)
+    local ok = Send(tip.text, "EMOTE")
+    Log("/e " .. tip.text .. ": " .. (ok and "sent" or "error"))
+    return ok
 end
 
 local function Line()
@@ -213,21 +271,37 @@ local function ShowThank()
     end
 end
 
+local RETRIES = 3               -- more tries at the thank-you, each on a chat line that comes in
 local function Watch(tip, what)
     if not (C_Timer and C_Timer.After) then return end
     C_Timer.After(ECHO_WAIT, function()
         if owed == tip and not tip[what] then
+            Log("no echo for the " .. (what == "said" and "thank-you" or "whisper"))
             tip["need_" .. what] = true
             ShowThank()
         end
     end)
 end
 
+-- A line from the shop after a chat line from somebody else gets out where one from a timer does not
+-- (the same as the dance in mailbox mode), so a thank-you that did not go out is tried again then.
+local function Retry()
+    local tip = owed
+    if not (tip and tip.need_said and not tip.said) then return end
+    tip.tries = (tip.tries or 0) + 1
+    if tip.tries > RETRIES then return end
+    Log("trying the thank-you again")
+    tip.need_said = nil
+    Say(tip)
+    Watch(tip, "said")
+end
+T.Retry = Retry
+
 -- The Thank button: what did not go out by itself goes out now.
 function T.Thank()
     local tip = owed
     if not tip then return false end
-    if tip.need_said then Say(tip) end
+    if tip.need_said and not tip.said then Say(tip) end
     if tip.need_whispered then Send(tip.line, "WHISPER", tip.who) end
     tip.need_said, tip.need_whispered = nil, nil
     mode = "accept"
@@ -249,10 +323,12 @@ local function Whisper(tip)
 end
 
 -- It went through: thank them, and count it.
-local function Done()
+local function Done(why)
     local tip = last
-    last = nil
+    if not tip and kept and kept.trade == trade and Now() - kept.at < 30 then tip = kept end
+    last, kept = nil, nil
     if not (tip and tip.amount and tip.amount > 0) then return end
+    Log("went through (" .. tostring(why) .. "): " .. tostring(tip.who) .. " " .. tostring(tip.amount))
     local db = ns.db
     if type(db) == "table" then
         db.tips = (tonumber(db.tips) or 0) + tip.amount
@@ -272,8 +348,8 @@ local function Done()
     ns.Print(string.format("%s tipped you %s. Tips so far: %s.", tip.who or "Somebody", ns.MoneyText(tip.amount),
         ns.MoneyText(type(db) == "table" and db.tips or tip.amount)))
     if not tip.who then return end
-    local early = pre and pre.who == tip.who and pre.amount == tip.amount and Now() - pre.at < 30
-    owed = { who = tip.who, amount = tip.amount, said = early and pre.seen or nil }
+    local early = pre and pre.who == tip.who and pre.trade == trade and Now() - pre.at < 120
+    owed = { who = tip.who, amount = tip.amount, said = early and pre.seen or nil, text = early and pre.text or nil }
     pre = nil
     if not early then Say(owed) end
     Watch(owed, "said")
@@ -291,9 +367,13 @@ end
 
 local function Echo(event, text, sender, guid)
     if not (Readable(text) and type(text) == "string") then return end
-    if event == "CHAT_MSG_EMOTE" and Mine(sender, guid) and text:find("for the tip of", 1, true) then
-        if owed then owed.said = true end
-        if pre then pre.seen = true end
+    if event == "CHAT_MSG_EMOTE" and Mine(sender, guid) then
+        local hit = false
+        if owed and (owed.text == text or (not owed.text and owed.who and text:find(owed.who, 1, true))) then
+            owed.said, hit = true, true
+        end
+        if pre and pre.text == text then pre.seen, hit = true, true end
+        if hit then Log("echo of the thank-you") end
     elseif event == "CHAT_MSG_WHISPER_INFORM" and owed and owed.line == text then
         owed.whispered = true
     end
@@ -302,27 +382,38 @@ end
 local events = CreateFrame("Frame")
 for _, e in ipairs({ "TRADE_SHOW", "TRADE_CLOSED", "TRADE_UPDATE", "TRADE_MONEY_CHANGED", "PLAYER_TRADE_MONEY",
     "TRADE_PLAYER_ITEM_CHANGED", "TRADE_TARGET_ITEM_CHANGED", "TRADE_ACCEPT_UPDATE", "UI_INFO_MESSAGE",
-    "CHAT_MSG_EMOTE", "CHAT_MSG_WHISPER_INFORM" }) do
+    "CHAT_MSG_EMOTE", "CHAT_MSG_WHISPER_INFORM", "CHAT_MSG_SAY", "CHAT_MSG_YELL", "CHAT_MSG_CHANNEL",
+    "CHAT_MSG_TEXT_EMOTE", "CHAT_MSG_WHISPER", "CHAT_MSG_GUILD", "CHAT_MSG_PARTY" }) do
     pcall(events.RegisterEvent, events, e)
 end
 events:SetScript("OnEvent", function(_, event, a, b, ...)
     if event == "TRADE_SHOW" then
-        open, accepted, theyAccepted, last = true, false, false, nil
+        open, accepted, theyAccepted, last, kept = true, false, false, nil, nil
+        trade = trade + 1
         if mode == "thank" then mode = "accept" end
         if button and button.SetParent and type(TradeFrame) == "table" then pcall(button.SetParent, button, TradeFrame) end
         Update()
     elseif event == "TRADE_CLOSED" then
         open = false
         if button and mode ~= "thank" then button:Hide() end
+        -- both had accepted: it went through, even if the game's "Trade complete." does not come
+        if accepted and theyAccepted and C_Timer and C_Timer.After then
+            local mine = trade
+            C_Timer.After(1, function() if trade == mine and (last or kept) then Done("closed") end end)
+        end
     elseif event == "TRADE_ACCEPT_UPDATE" then
         if Readable(a) and Readable(b) then
             accepted, theyAccepted = a == 1, b == 1
         end
         if open then Update() end
     elseif event == "UI_INFO_MESSAGE" then
-        if Readable(b) and type(b) == "string" and b == (ERR_TRADE_COMPLETE or "Trade complete.") then Done() end
+        local done = ERR_TRADE_COMPLETE or "Trade complete."
+        if (Readable(b) and b == done) or (Readable(a) and a == done) then Done("complete") end
     elseif event == "CHAT_MSG_EMOTE" or event == "CHAT_MSG_WHISPER_INFORM" then
         Echo(event, a, b, (select(10, ...)))
+        if event == "CHAT_MSG_EMOTE" and not Mine(b, (select(10, ...))) then Retry() end
+    elseif event:find("^CHAT_MSG_") then
+        if not Mine(b, (select(10, ...))) then Retry() end
     elseif open then
         Update()
     end

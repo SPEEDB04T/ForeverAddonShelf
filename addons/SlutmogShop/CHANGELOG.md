@@ -1,5 +1,12 @@
 # Changelog
 
+## 1.15.1
+
+- The thank-you for a tip grows with the tip: a plain thanks under 5 gold, a kiss or a hug from 5 gold, a big hug or a bow from 20, and from 100 gold the shop is speechless. Every line still names them and the amount.
+- The thank-you now goes out with your Accept tip click whoever accepts first. Before, when you accepted first, it waited for their click and the game often dropped it. If it still does not show up, it is tried again on the next chat line from somebody, and the Thank button stays as the last resort.
+- A tip is counted and thanked even when the game empties the trade before it says "Trade complete.", or does not say it at all.
+- The whispers lost "you're sweet" and "cutie".
+
 ## 1.15.0
 
 - The counter: one window, up from login, that holds everything you use while you stand there. At the top the next ad with its item and a big Post ad button (it shows "Next ad in 3:40" while you wait, and lights up when it is time instead of the prompt popping up), Reroll beside it. Under it the mailbox panel: whoever is waiting, the big reply button and the list. At the bottom Open shop / Close shop (dancing and replies on or off), Wares and Options. It steps aside in a fight and comes back after. Its close button puts it away and closes the shop; `/slutshop counter` brings it back.
