@@ -3,7 +3,7 @@
 local ADDON, ns = ...
 
 ns.ADDON = ADDON
-ns.VERSION = "1.0.0"
+ns.VERSION = "1.0.1"
 ns.NAME = "Destroy Advisor"
 ns.ICON = "Interface\\Icons\\INV_Misc_Bag_07_Red"
 
@@ -410,7 +410,8 @@ end
 
 SLASH_DESTROYADVISOR1 = "/destroy"
 SLASH_DESTROYADVISOR2 = "/destroyadvisor"
-SlashCmdList = SlashCmdList or {}
+-- Only the entry: writing the SlashCmdList global itself (even "SlashCmdList = SlashCmdList or {}")
+-- taints every slash command, and the game then blocks /tm marking and /invite.
 SlashCmdList["DESTROYADVISOR"] = Slash
 
 -- The addon's line in the list of addons next to the minimap: left-click the list,

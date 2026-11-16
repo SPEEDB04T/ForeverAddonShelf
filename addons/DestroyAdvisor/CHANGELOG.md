@@ -1,3 +1,6 @@
+## 1.0.1
+- Fixed: the addon no longer blocks other slash commands. It used to write the game's slash command list, which made the game refuse raid marking (/tm) and /invite from macros and blame an addon. A /reload is enough.
+
 ## 1.0.0
 - New addon: lists the items in your bags that are safe to get rid of, each with the reason. `/destroy` opens the list.
 - Suggests grey items, items that start a quest you have done or can't take, quest items whose quests are all handed in or not for this character (with Questie), bound gear your class can never use, bound recipes, pets, mounts and toys you already know, ammo for classes that can't shoot, and drinks and mana potions for warriors and rogues.
