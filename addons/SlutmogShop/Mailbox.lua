@@ -24,6 +24,12 @@ local RELOOK = 120              -- somebody who looks again after this long is n
 local LOOK_WINDOW = 10          -- a looker can be answered this long after they target you...
 local STILL = 3                 -- ... and only while they still do: seen on the last look (every 2 s)
 local ALERT_GAP = 3             -- seconds between two alert sounds
+local TICK = 1                  -- seconds between two looks at the nameplates
+local HOLD = 3                  -- seconds somebody must keep you targeted before the shop winks by itself
+                                -- (SuccuDev: "lets only wink at players that keep me targeted for at least 3 seconds")
+local JAR_MIN, JAR_MAX = 1200, 1800     -- seconds between two tip jar lines, picked at random
+local JAR_FIRST_MIN, JAR_FIRST_MAX = 60, 300    -- ... and before the first one
+local BACK_AGAIN = 2 * 3600     -- seconds before a tipper is welcomed back again
 
 -- Their emote, by a word in its text: the game's emote that goes back by itself, and which lines
 -- the reply comes from. First match wins.
@@ -40,6 +46,7 @@ local REPLIES = {
 local RUDE = { "spit", "rude", "slap", "insult", "mock", "taunt", "pity", "puke", "fart", "disgust", "threaten", "angry", "bonk" }
 local DEFAULT_REPLY = { nil, "WINK", "any" }
 local LOOK_REPLY = { nil, "WINK", "look" }
+local BACK_REPLY = { nil, nil, "hug" }
 local WHISPER_REPLY = { nil, "WINK", "whisper" }
 
 -- The replies: the game's own emotes, done at them (SuccuDev: "just make it simple emotes like wink
@@ -66,6 +73,26 @@ M.LABEL = {
     GRIN = "Grin", SMIRK = "Smirk", BASHFUL = "Act bashful", NOD = "Nod", TEASE = "Tease", BOW = "Bow", GREET = "Greet",
     CHUCKLE = "Chuckle", BLINK = "Blink", PURR = "Purr", BECKON = "Beckon", WELCOME = "Welcome", CUDDLE = "Cuddle",
     HELLO = "Say hello",
+    WELCOMEBACK = "Welcome back",
+}
+
+-- The tip jar: now and then, while somebody is around, one line in /e, so people know you take tips
+-- (SuccuDev picked this to get more tips). Short and quiet, in the shop owner's voice.
+M.JAR = {
+    "jingles the little tip jar on the mailbox.",
+    "polishes the tip jar, very slowly.",
+    "drops a coin in the tip jar to get it started.",
+    "gives the tip jar a little shake.",
+    "nudges the tip jar a bit closer to the edge of the mailbox.",
+    "counts the coins in the tip jar and pouts.",
+    "sets the tip jar down where everybody can see it.",
+}
+-- Somebody who tipped you before comes by again: one of these, in /e (SuccuDev: "just a welcome back emote").
+M.WELCOMES = {
+    "smiles at {name}. Welcome back, sweetie.",
+    "waves at {name}. Look who's back.",
+    "beams at {name}. Welcome back!",
+    "blows {name} a kiss. Missed you.",
 }
 
 -- The pitch, in the shop owner's voice. {item} and {price} are the ware whose turn it is.
@@ -194,6 +221,49 @@ local function Log(what)
 end
 M.Log = Log
 
+-- Away from keyboard: the shop does nothing by itself, since shoppers see <AFK> over your head
+-- (SuccuDev: "lets make sure emotes dont happen when my character goes afk"). Your clicks still work.
+local function Away()
+    if type(UnitIsAFK) ~= "function" then return false end
+    local ok, afk = pcall(UnitIsAFK, "player")
+    return (ok and Readable(afk) and afk) and true or false
+end
+M.Away = Away
+
+-- One line in /e. Whether it went out is told by the game's echo (CHAT_MSG_EMOTE); without one
+-- in time, miss() is called.
+local SAY_WAIT = 2
+local said
+local function Say(text, from, miss)
+    local send = (C_ChatInfo and C_ChatInfo.SendChatMessage) or SendChatMessage
+    local ok, err = false, "no SendChatMessage"
+    if type(send) == "function" then ok, err = pcall(send, text, "EMOTE") end
+    Log(string.format("%s /e %s: %s", from or "?", text, ok and "sent" or ("error " .. tostring(err))))
+    if not ok then
+        if miss then miss() end
+        return false
+    end
+    local mine = { text = text }
+    said = mine
+    if C_Timer and C_Timer.After then
+        C_Timer.After(SAY_WAIT, function()
+            if said == mine then
+                said = nil
+                Log("no echo for /e")
+                if miss then miss() end
+            end
+        end)
+    end
+    return true
+end
+
+local function SaidEcho(text)
+    if said and text == said.text then
+        said = nil
+        Log("echo /e")
+    end
+end
+
 -- Sends an emote from the addon, at somebody if a name is given. Returns false when the game would not have it.
 local Emote
 Emote = function(token, name, from)
@@ -229,7 +299,7 @@ end
 
 -- Dances again if it is time and the last try was a while ago.
 function M.Redance(from)
-    if not (on and dancing and due) then return false end
+    if not (on and dancing and due) or Away() then return false end
     local now = Now()
     local ready = math.max(due, lastDance + DANCE_GAP)
     if now < ready then return false end
@@ -401,7 +471,10 @@ local function Fade()
     end
     -- the big button pulses the way the game pulses a button that wants a click: its highlight, on and off
     local b = frame.cta.emote
-    if b:IsShown() and b.visitor and math.floor(now * 2) % 2 == 0 then b:LockHighlight() else b:UnlockHighlight() end
+    local pulse = math.floor(now * 2) % 2 == 0
+    if b:IsShown() and b.visitor and pulse then b:LockHighlight() else b:UnlockHighlight() end
+    -- and the tip jar button, while its line did not go out
+    if jarOwed and pulse then frame.jar:LockHighlight() else frame.jar:UnlockHighlight() end
 end
 
 Sync = function()
@@ -476,8 +549,12 @@ Sync = function()
         cta.pitch.visitor = nil
         cta.pitch:Hide()
     end
-    frame.status:SetText(manual and "No emotes back by itself here: the replies are your click."
-        or "The big button does that emote at them. Whisper price whispers your ware.")
+    if Away() then
+        frame.status:SetText("You are AFK: nothing goes out by itself until you are back.")
+    else
+        frame.status:SetText(manual and "No emotes back by itself here: the replies are your click."
+            or "The big button does that emote at them. Whisper price whispers your ware.")
+    end
     Fade()
 end
 M.Sync = function() Sync() end
@@ -495,7 +572,13 @@ function M.Reply(v)
     if not (v and v.token) then return false end
     local now = Now()
     if now - lastSend < SEND_GAP or not CanReply(v, now) then return false end
-    if not Emote(v.token, v.name, "click") then
+    if v.say then
+        if not Say(v.say, "click") then
+            ns.Print("the game refused the emote.")
+            return false
+        end
+        v.say = nil
+    elseif not Emote(v.token, v.name, "click") then
         ns.Print("the game refused the emote.")
         return false
     end
@@ -526,7 +609,7 @@ end
 
 -- An emote by itself, if the limits allow. The dance comes back a few seconds later.
 local function Auto(v, gap)
-    if manual or not v.reply then return false end
+    if manual or not v.reply or Away() then return false end
     local now = Now()
     if now - lastAuto < GLOBAL_GAP or (v.emotedAt and now - v.emotedAt < gap) then return false end
     -- a dance back only if you are not dancing already, and not right after the last one
@@ -595,17 +678,42 @@ local function OnWhisper(text, sender)
 end
 
 -- Who has you targeted: read off the nameplates in view (they must be shown for this to see anybody).
+-- Somebody who tipped you before is in view again: welcomed back in /e, once in two hours. If the
+-- line does not go out, they wait on the big button, whose click says it.
+local welcomeTurn = 0
+local function Welcome(name, now)
+    local db = ns.db
+    local t = type(db) == "table" and type(db.tippers) == "table" and db.tippers[name]
+    if type(t) ~= "table" or Away() or now - lastAuto < GLOBAL_GAP then return false end
+    local last = math.max(tonumber(t.last) or 0, tonumber(t.welcomed) or 0)
+    if time() - last < BACK_AGAIN then return false end
+    t.welcomed = time()
+    lastAuto = now
+    welcomeTurn = welcomeTurn % #M.WELCOMES + 1
+    local first = Short(name):match("^(%S+)") or Short(name)
+    local line = (M.WELCOMES[welcomeTurn]:gsub("{name}", first))
+    Say(line, "back", function()
+        local v = Visit(name, "back", "is back. Tipped you before", BACK_REPLY, true)
+        v.token, v.say = "WELCOMEBACK", line
+        Sync()
+    end)
+    return true
+end
+
+-- Who has you targeted: read off the nameplates in view (they must be shown for this to see anybody).
+-- Returns how many players are in view.
 local function Look()
-    if type(UnitExists) ~= "function" or type(UnitIsUnit) ~= "function" then return end
-    local now = Now()
+    if type(UnitExists) ~= "function" or type(UnitIsUnit) ~= "function" then return 0 end
+    local now, near = Now(), 0
     for i = 1, 40 do
         local unit = "nameplate" .. i
-        local ok, hit = pcall(function()
-            return UnitExists(unit) and UnitIsPlayer(unit) and UnitIsUnit(unit .. "target", "player")
-        end)
-        if ok and Readable(hit) and hit then
+        local okp, player = pcall(function() return UnitExists(unit) and UnitIsPlayer(unit) end)
+        if okp and Readable(player) and player then
+            near = near + 1
             local name = NameOf(unit)
-            if name then
+            if name then Welcome(name, now) end
+            local ok, hit = pcall(UnitIsUnit, unit .. "target", "player")
+            if name and ok and Readable(hit) and hit then
                 local v = Find(name)
                 if not v then
                     v = Visit(name, "look", nil, LOOK_REPLY, false)
@@ -614,19 +722,83 @@ local function Look()
                 elseif v.kind == "look" and now - (v.seen or v.at) > STILL then
                     v.at = now                                    -- targeted you again: a new ten seconds, quietly
                 end
+                if not (v.seen and now - v.seen <= TICK + 0.6) then v.since = now end   -- a new look starts
                 v.seen = now
-                Auto(v, LOOK_GAP)
+                if now - (v.since or now) >= HOLD then Auto(v, LOOK_GAP) end
             end
         end
     end
+    return near
 end
+
+-- The tip jar line, or the one that did not go out last time.
+local jarTurn, jarOwed, nextJar = 0, nil, nil
+function M.Jar(from)
+    local line = jarOwed
+    if not line then
+        jarTurn = jarTurn % #M.JAR + 1
+        line = M.JAR[jarTurn]
+    end
+    jarOwed = nil
+    if Sync then Sync() end
+    return Say(line, from, function()
+        jarOwed = line
+        if Sync then Sync() end
+    end)
+end
+function M.JarOwed() return jarOwed end
+function M.NextJar(t) if t then nextJar = t end return nextJar end
+
+-- AFK while the mailbox is on: a big prompt, so you come back (SuccuDev: "I need a big prompt telling
+-- me to un-afk"): the game's raid warning text, a dialog with a button that ends it, the taskbar icon.
+local wasAway = false
+local function AwayPrompt(away)
+    if away == wasAway then return end
+    wasAway = away
+    if away then
+        Log("afk: nothing by itself")
+        if type(FlashClientIcon) == "function" then pcall(FlashClientIcon) end
+        if type(RaidNotice_AddMessage) == "function" and RaidWarningFrame then
+            pcall(RaidNotice_AddMessage, RaidWarningFrame, "You are AFK. The mailbox emotes are paused.",
+                (ChatTypeInfo and ChatTypeInfo.RAID_WARNING) or { r = 1, g = 0.28, b = 0 })
+        end
+        if ns.db and ns.db.sound ~= false and ns.AlertSound then
+            ns.AlertSound(SOUNDKIT and SOUNDKIT.RAID_WARNING, 8959)
+        end
+        if StaticPopupDialogs and type(StaticPopup_Show) == "function" then
+            StaticPopupDialogs.SLUTMOGSHOP_AFK = StaticPopupDialogs.SLUTMOGSHOP_AFK or {
+                text = "You are AFK.\n\nShoppers see <AFK> over your head, and the shop is not emoting until you are back. Move, or click below.",
+                button1 = "I'm back",
+                OnAccept = function()
+                    local send = (C_ChatInfo and C_ChatInfo.SendChatMessage) or SendChatMessage
+                    if type(send) == "function" then pcall(send, "", "AFK") end   -- the game's /afk: off again
+                end,
+                timeout = 0, whileDead = true, hideOnEscape = false, showAlert = true, preferredIndex = 3,
+            }
+            pcall(StaticPopup_Show, "SLUTMOGSHOP_AFK")
+        end
+    elseif type(StaticPopup_Hide) == "function" then
+        pcall(StaticPopup_Hide, "SLUTMOGSHOP_AFK")
+    end
+    if Sync then Sync() end
+end
+M.AwayPrompt = function() return wasAway end
 
 local function Tick()
     if not on then return end
-    Look()
+    local away = Away()
+    AwayPrompt(away)
+    local near = Look()
+    local now = Now()
+    nextJar = nextJar or (now + M.Random(JAR_FIRST_MIN, JAR_FIRST_MAX))
+    if now >= nextJar and near > 0 and not away and not jarOwed and now - lastAuto >= GLOBAL_GAP then
+        nextJar = now + M.Random(JAR_MIN, JAR_MAX)
+        lastAuto = now
+        M.Jar("timer")
+    end
     Prune()
     Sync()
-    C_Timer.After(2, Tick)
+    C_Timer.After(TICK, Tick)
 end
 
 local function Button(parent, label, w, h)
@@ -666,7 +838,7 @@ local function ReplyTip(self)
     if not (GameTooltip and v and v.reply) then return end
     GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
     GameTooltip:SetText((Label(v) or "Emote") .. " at " .. Short(v.name))
-    GameTooltip:AddLine("Does the game's /" .. v.token:lower() .. " at them.", 1, 0.82, 0, true)
+    GameTooltip:AddLine(v.say and ("/e " .. v.say) or ("Does the game's /" .. v.token:lower() .. " at them."), 1, 0.82, 0, true)
     GameTooltip:Show()
 end
 
@@ -787,11 +959,23 @@ local function Build()
     f.empty:SetText("Whoever emotes at you, whispers you or targets you shows up here.")
     f.status = Text(f, "GameFontHighlightSmall")
     f.status:SetPoint("BOTTOMLEFT", f, "BOTTOMLEFT", 14, 16)
-    f.status:SetPoint("RIGHT", f, "RIGHT", -92, 0)
+    f.status:SetPoint("RIGHT", f, "RIGHT", -170, 0)
     if f.status.SetWordWrap then f.status:SetWordWrap(true) end
     f.dance = Button(f, "Dance", 72)
     f.dance:SetPoint("BOTTOMRIGHT", f, "BOTTOMRIGHT", -12, 12)
     f.dance:SetScript("OnClick", function() Emote("DANCE", nil, "click") end)
+    f.jar = Button(f, "Tip jar", 72)
+    f.jar:SetPoint("RIGHT", f.dance, "LEFT", -6, 0)
+    f.jar:SetScript("OnClick", function() M.Jar("click") end)
+    f.jar:SetScript("OnEnter", function(self)
+        if not GameTooltip then return end
+        GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
+        GameTooltip:SetText("Tip jar")
+        GameTooltip:AddLine("Says a short line about your tip jar in /e. The shop does it by itself every 20 to 30 minutes "
+            .. "while somebody is around; the button lights up when the game did not let it.", 1, 0.82, 0, true)
+        GameTooltip:Show()
+    end)
+    f.jar:SetScript("OnLeave", HideTip)
     f:Hide()
     return f
 end
@@ -812,15 +996,20 @@ function M.Start()
         events:SetScript("OnEvent", function(_, event, text, sender, ...)
             if not on then return end
             if event == "CHAT_MSG_TEXT_EMOTE" then OnEmote(text, sender, (select(10, ...)))
-            elseif event == "CHAT_MSG_WHISPER" then OnWhisper(text, sender) end
+            elseif event == "CHAT_MSG_WHISPER" then OnWhisper(text, sender)
+            elseif event == "CHAT_MSG_EMOTE" then
+                if Readable(text) and type(text) == "string" and Readable(sender) and type(sender) == "string"
+                    and Mine(text, sender, (select(10, ...))) then SaidEcho(text) end
+            elseif event == "PLAYER_FLAGS_CHANGED" then AwayPrompt(Away()) end
             M.Redance(event)
         end)
     end
     for _, e in ipairs({ "CHAT_MSG_TEXT_EMOTE", "CHAT_MSG_WHISPER", "CHAT_MSG_CHANNEL", "CHAT_MSG_SAY", "CHAT_MSG_YELL",
-        "CHAT_MSG_EMOTE", "CHAT_MSG_GUILD", "CHAT_MSG_PARTY", "CHAT_MSG_SYSTEM" }) do
+        "CHAT_MSG_EMOTE", "CHAT_MSG_GUILD", "CHAT_MSG_PARTY", "CHAT_MSG_SYSTEM", "PLAYER_FLAGS_CHANGED" }) do
         pcall(events.RegisterEvent, events, e)
     end
     on, manual, misses, pend, dancing, due = true, false, 0, nil, false, nil
+    nextJar, wasAway = nil, false
     frame:Show()
     Emote("DANCE", nil, "start")
     Tick()
@@ -831,6 +1020,8 @@ end
 function M.Stop(fromHide)
     if not on then return end
     on = false
+    if wasAway and type(StaticPopup_Hide) == "function" then pcall(StaticPopup_Hide, "SLUTMOGSHOP_AFK") end
+    wasAway = false
     if events then
         pcall(events.UnregisterAllEvents, events)
     end

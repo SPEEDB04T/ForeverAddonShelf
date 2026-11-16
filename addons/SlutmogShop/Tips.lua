@@ -257,6 +257,13 @@ local function Done()
     if type(db) == "table" then
         db.tips = (tonumber(db.tips) or 0) + tip.amount
         db.tipCount = (tonumber(db.tipCount) or 0) + 1
+        -- who tipped, so mailbox mode can welcome them back when they come by again
+        if tip.who then
+            db.tippers = type(db.tippers) == "table" and db.tippers or {}
+            local t = type(db.tippers[tip.who]) == "table" and db.tippers[tip.who] or {}
+            t.n, t.total, t.last = (tonumber(t.n) or 0) + 1, (tonumber(t.total) or 0) + tip.amount, time()
+            db.tippers[tip.who] = t
+        end
     end
     ns.Print(string.format("%s tipped you %s. Tips so far: %s.", tip.who or "Somebody", ns.MoneyText(tip.amount),
         ns.MoneyText(type(db) == "table" and db.tips or tip.amount)))

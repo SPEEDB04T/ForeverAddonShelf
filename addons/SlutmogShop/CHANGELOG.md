@@ -1,5 +1,12 @@
 # Changelog
 
+## 1.14.0
+
+- Mailbox mode has a tip jar: every 20 to 30 minutes, while somebody is around, one short line in /e ("jingles the little tip jar on the mailbox."), so people know you take tips. The new Tip jar button says one yourself, and lights up when the game did not let the shop's own line out.
+- Somebody who tipped you before is welcomed back in /e by first name when they come by again ("beams at Googi. Welcome back!"), once in two hours. The shop now remembers who tipped you.
+- Nothing goes out by itself while you are AFK: no winks, no emotes back, no dance, no tip jar. Going AFK with mailbox mode on puts up a big prompt: the raid warning text, a dialog whose I'm back button ends AFK, the alert sound and the taskbar flash.
+- A wink by itself only goes to somebody who keeps you targeted for 3 seconds; a quick click past you gets nothing. They are still listed and can be answered with a click.
+
 ## 1.13.1
 
 - Wares in your bags are checked too: each time you open the auction house the shop looks up their listings, and a ware somebody sells there for less than your asking price is left out of the ads (the shop window says "Cheaper on the AH") until that changes.
