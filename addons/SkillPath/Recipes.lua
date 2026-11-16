@@ -2,6 +2,7 @@
 -- level and its reagents come from the trade skill API; the yellow level (which the API doesn't
 -- give) comes from the client's own recipe table in Data.lua, and each row is checked against
 -- the game's grey level and today's colour before the guide relies on it.
+-- A path for someone else (any profession, any skill range) is planned from Data.lua alone.
 local _, ns = ...
 local R = {}
 ns.Recipes = R
@@ -37,12 +38,24 @@ function R.Rows(line)
     local rows = {}
     if type(text) == "string" then
         for part in text:gmatch("[^;]+") do
-            local main, teach = part:match("^([^|]+)|?(.*)$")
-            local spell, yellow, grey, ups = main:match("^(%d+):(%d+):(%d+):?(%d*)$")
+            local main, rest = part:match("^([%d:]+)(.*)$")
+            local spell, yellow, grey, ups = (main or ""):match("^(%d+):(%d+):(%d+):?(%d*)$")
             if spell then
                 local row = { y = tonumber(yellow), g = tonumber(grey), ups = tonumber(ups) or 1 }
-                local item, rank = (teach or ""):match("^(%d+):(%d+)$")
+                if rest:sub(1, 1) == "@" then row.auto = true end     -- comes with the profession
+                local item, rank = rest:match("|(%d+):(%d+)")
                 if item then row.item, row.rank = tonumber(item), tonumber(rank) end
+                local out, qty = rest:match(">(%d+)%*(%d+)")
+                if out then row.out, row.outQty = tonumber(out), tonumber(qty) end
+                local ability = rest:match("!(%d+)")
+                if ability then row.ability = tonumber(ability) end
+                local reagents = rest:match("=([%d%*,]+)")
+                if reagents then
+                    row.slots = {}
+                    for id, n in reagents:gmatch("(%d+)%*(%d+)") do
+                        row.slots[#row.slots + 1] = { qty = tonumber(n), items = { tonumber(id) } }
+                    end
+                end
                 rows[tonumber(spell)] = row
             end
         end
@@ -119,7 +132,10 @@ end
 local function ReadReagents(r, schematic)
     r.slots = {}
     local slots = Field(schematic, "reagentSlotSchematics")
-    if type(slots) ~= "table" then return end
+    if type(slots) ~= "table" then
+        r.unreadable = true          -- no reagents read is not "no reagents"
+        return
+    end
     local BASIC = EnumValue("CraftingReagentType", "Basic", 1)
     local CURRENCY = EnumValue("TradeskillSlotDataType", "Currency", 3)
     for _, slot in ipairs(slots) do
@@ -127,7 +143,9 @@ local function ReadReagents(r, schematic)
         local kind = Num(Field(slot, "reagentType"))
         local dataType = Num(Field(slot, "dataSlotType"))
         local qty = Num(Field(slot, "quantityRequired"))
-        if required ~= false and (kind == nil or kind == BASIC) and qty and qty > 0 then
+        if required ~= false and (kind == nil or kind == BASIC) and not (qty and qty > 0) then
+            r.unreadable = true      -- a required slot with no count
+        elseif required ~= false and (kind == nil or kind == BASIC) then
             if dataType == CURRENCY then
                 r.currency = true
             else
@@ -241,6 +259,226 @@ function R.Snapshot()
     }
     char.last = line
     return true
+end
+
+----------------------------------------------------------------------
+-- Recipes for someone else's path: every recipe of a skill line, from Data.lua
+----------------------------------------------------------------------
+function R.SpellName(id)
+    local name = Str(Call(C_Spell and C_Spell.GetSpellName, id))
+    if name then return name end
+    return Str(Call(GetSpellInfo, id))
+end
+
+local function SpellIcon(id)
+    local icon = Call(C_Spell and C_Spell.GetSpellTexture, id)
+    if icon then return icon end
+    return Call(GetSpellTexture, id)
+end
+
+-- The skill line a typed profession name means ("eng" is Engineering). nil when none or several fit.
+function R.LineByName(text)
+    text = Str(text) and text:lower() or nil
+    if not (text and ns.Data) then return nil end
+    local found
+    for line, name in pairs(ns.Data.NAMES) do
+        local low = name:lower()
+        if low == text then return line, name end
+        if low:sub(1, #text) == text then
+            if found then return nil end
+            found = line
+        end
+    end
+    if found then return found, ns.Data.NAMES[found] end
+end
+
+local ordered = {}
+function R.Forget() ordered = {} end
+
+-- Only what comes with the profession is known: the path says what else to learn and when. A
+-- recipe your own professions window showed keeps the name and icon the game gave it there.
+function R.ForOrder(line)
+    if ordered[line] then return ordered[line] end
+    local mine = {}
+    local char = ns.Char()
+    local prof = char and char.profs[line]
+    for _, r in ipairs(prof and prof.recipes or {}) do mine[r.id] = r end
+    local list, named = {}, true
+    for id, row in pairs(R.Rows(line)) do
+        if row.slots and #row.slots > 0 then
+            local own = mine[id]
+            local name = own and own.name or R.SpellName(id)
+            if not name then named = false end
+            list[#list + 1] = {
+                id = id, name = name or ("recipe " .. id),
+                icon = own and own.icon or SpellIcon(id) or "Interface\\Icons\\INV_Misc_QuestionMark",
+                known = row.auto or false, trust = not (own and own.trust == false), ups = row.ups or 1,
+                y = row.y, g = row.g,
+                item = row.item, rank = row.rank, slots = row.slots, out = row.out, outQty = row.outQty,
+            }
+        end
+    end
+    table.sort(list, function(a, b) return a.id < b.id end)
+    -- Kept only once the game has given every name.
+    if named then ordered[line] = list end
+    return list
+end
+
+----------------------------------------------------------------------
+-- The trainer's window: which recipes it teaches, at what skill, for how much
+----------------------------------------------------------------------
+-- db.trainer[line] = { t, top (the highest skill any listed recipe asks for), list = { [recipe] =
+-- { rank, cost, blocked } } }. The game says nothing about a recipe you haven't learned except
+-- here, so this is what turns "a trainer should teach it" into a skill and a fee.
+local function ReadServices()
+    local db, char = ns.db, ns.Char()
+    local n = Num(Call(GetNumTrainerServices)) or 0
+    if n <= 0 then return 0 end
+    -- Recipe names by profession (a trainer service has a name, no recipe ID): the saved
+    -- professions' own lists, and for any other profession the names of Data.lua's recipes.
+    local byName = {}
+    for line, prof in pairs(char.profs) do
+        local names = {}
+        for _, recipe in ipairs(prof.recipes or {}) do
+            if recipe.name then
+                names[recipe.name] = names[recipe.name] or {}
+                table.insert(names[recipe.name], recipe.id)
+            end
+        end
+        byName[prof.name or ""] = { line = line, names = names }
+    end
+    setmetatable(byName, { __index = function(t, skill)
+        local found = false
+        for line, name in pairs(ns.Data and ns.Data.NAMES or {}) do
+            if name == skill then
+                local names = {}
+                for id in pairs(R.Rows(line)) do
+                    local spell = R.SpellName(id)
+                    if spell then
+                        names[spell] = names[spell] or {}
+                        table.insert(names[spell], id)
+                    end
+                end
+                found = { line = line, names = names }
+            end
+        end
+        rawset(t, skill, found)
+        return found
+    end })
+    local level = Num(Call(UnitLevel, "player")) or 0
+    local read, lines = 0, {}
+    for i = 1, n do
+        local name, kind, _, reqLevel = Call(GetTrainerServiceInfo, i)
+        name = Str(name)
+        local skill, rank = Call(GetTrainerServiceSkillReq, i)
+        skill = Str(skill) or Str(Call(GetTrainerServiceSkillLine, i))
+        local prof = skill and byName[skill]
+        local ids = name and prof and prof.names[name]
+        if ids and kind ~= "header" then
+            local entry = { rank = Num(rank) or 0, cost = Num(Call(GetTrainerServiceCost, i)) }
+            -- What you have learned already may show no fee: unknown, not free.
+            if kind == "used" and entry.cost == 0 then entry.cost = nil end
+            reqLevel = Num(reqLevel)
+            if reqLevel and reqLevel > level then entry.blocked = ("needs level %d"):format(reqLevel) end
+            for j = 1, Num(Call(GetTrainerServiceNumAbilityReq, i)) or 0 do
+                local ability, has = Call(GetTrainerServiceAbilityReq, i, j)
+                if Str(ability) and has == false then entry.blocked = "needs " .. ability end
+            end
+            db.trainer = type(db.trainer) == "table" and db.trainer or {}
+            local seen = db.trainer[prof.line]
+            if type(seen) ~= "table" or type(seen.list) ~= "table" then
+                seen = { top = 0, list = {} }
+                db.trainer[prof.line] = seen
+            end
+            seen.t = ns.Clock()
+            if entry.rank > (Num(seen.top) or 0) then seen.top = entry.rank end
+            for _, id in ipairs(ids) do
+                local old = seen.list[id]
+                if not entry.cost and type(old) == "table" then entry.cost = Num(old.cost) end
+                seen.list[id] = entry
+            end
+            read = read + 1
+            lines[prof.line] = true
+        end
+    end
+    return read, lines
+end
+
+-- The trainer's window leaves out what its filter hides (by default the recipes you know), and a
+-- path for someone else needs those too: every kind is switched on for the read and put back
+-- right after, before the window draws again.
+local FILTERS = { "available", "unavailable", "used" }
+function R.ReadTrainer()
+    if not (ns.db and ns.Char() and GetNumTrainerServices and GetTrainerServiceInfo) then return 0 end
+    if IsTradeskillTrainer and Call(IsTradeskillTrainer) == false then return 0 end
+    local off = {}
+    if type(GetTrainerServiceTypeFilter) == "function" and type(SetTrainerServiceTypeFilter) == "function" then
+        -- Switching the filter makes the game say the list changed: that isn't a reason to read it again.
+        R.trainerQuiet = math.huge
+        for _, kind in ipairs(FILTERS) do
+            local ok, on = pcall(GetTrainerServiceTypeFilter, kind)
+            if ok and not ns.Val(on) and pcall(SetTrainerServiceTypeFilter, kind, true) then off[#off + 1] = kind end
+        end
+    end
+    local ok, read, lines = pcall(ReadServices)
+    for _, kind in ipairs(off) do pcall(SetTrainerServiceTypeFilter, kind, false) end
+    R.trainerQuiet = #off > 0 and ns.Now() + 0.5 or 0
+    if not ok then return 0 end
+    return read or 0, lines
+end
+
+-- How a recipe you haven't learned can be learned: { how = "trainer", at, fee, seen } or
+-- { how = "item", item, at }. nil (and why) when the path can't count on it.
+--   * On a trainer's list that was read: at the skill and fee it showed.
+--   * Taught by a recipe item (Data.lua): from the skill the item asks for.
+--   * Neither, and no trainer's list read that reaches its level: taken to be a trainer's, learned
+--     at its yellow skill (a recipe is orange from the skill it is learned at up to there, so the
+--     trainer can't ask for more).
+--   * What it makes only a specialisation can use (Gnomish or Goblin Engineering): only that
+--     specialisation is taught it, so it is left out unless you have it.
+-- other: the path is for someone else. Their level and specialisation aren't known, and a recipe
+-- you know yourself isn't on your trainer's list any more.
+function R.Learn(line, r, other)
+    local row = R.Rows(line)[r.id]
+    local ability = row and row.ability
+    if ability then
+        local has = not other and (Call(IsPlayerSpell, ability) == true or Call(IsSpellKnown, ability) == true)
+        if not has then return nil, "only " .. (R.SpellName(ability) or "a specialisation") .. " learns it" end
+    end
+    local seen = ns.db and type(ns.db.trainer) == "table" and ns.db.trainer[line]
+    local entry = type(seen) == "table" and type(seen.list) == "table" and seen.list[r.id]
+    if type(entry) == "table" then
+        if entry.blocked and not other then return nil, "the trainer " .. entry.blocked end
+        return { how = "trainer", at = Num(entry.rank) or 0, fee = Num(entry.cost), seen = true }
+    end
+    if r.item then return { how = "item", item = r.item, at = r.rank or 0 } end
+    if not r.y then return nil, "not in the recipe table" end
+    if type(seen) == "table" and r.y <= (Num(seen.top) or 0) then
+        local mine = false
+        if other then
+            local char = ns.Char()
+            local prof = char and char.profs[line]
+            for _, own in ipairs(prof and prof.recipes or {}) do
+                if own.id == r.id and own.known then mine = true end
+            end
+        end
+        if not mine then return nil, "not on the trainer's list" end
+    end
+    return { how = "trainer", at = r.y, seen = false }
+end
+
+-- A recipe learned with the professions window closed (at the trainer, from a recipe item).
+function R.MarkLearned(id)
+    local char = ns.Char()
+    local found = false
+    for _, prof in pairs(char and char.profs or {}) do
+        for _, recipe in ipairs(prof.recipes or {}) do
+            if recipe.id == id then
+                recipe.known, found = true, true
+            end
+        end
+    end
+    return found
 end
 
 -- The skill of every profession, from the spellbook's list (works with the window closed).

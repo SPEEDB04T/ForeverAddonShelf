@@ -1,3 +1,19 @@
+## 1.3.0
+- Trainer steps. A recipe you don't know is no longer left out: the path says "Trainer at skill 97: learn Copper Modulator" and goes on with the steps after it. Recipes taught by a recipe item become a "buy and learn" step when the item has a price.
+- Open a profession's trainer once and the addon reads its list: the real skill each recipe is taught at, and its fee. Fees are then part of the cost. Until then a trainer recipe is taken to be learnable at its yellow skill (the latest it can be), with no fee in the cost, and the path says how many recipes that is.
+- No guessed steps. Where nothing you can learn for sure gives skill, the path stops there and names the trainer recipe that may go on.
+- At your rank's cap with no target set, the path goes on through the next rank, the trainer first. Skill 300 is the top.
+- Each profession has its own target.
+- Plans for other players. "Plan for someone" on the professions tab, or `/skillpath for engineering 75 225`, builds the path for any profession and any skill range from current prices, whatever you know yourself: what to buy, what it costs, every trainer visit, every craft, what to sell and where. "Copy guide" (`/skillpath guide`) opens the written plan to copy. `/skillpath send <player>` whispers it, `/skillpath send party` posts it to your party. "My path" goes back to your own.
+- Recipes that come with a profession are known from the client's table, so a plan for someone else starts with what every beginner has.
+- Each step shows what it costs. A craft step shows what its reagents cost and what its result is worth; a trainer step shows its fees.
+- The sell step says where each leftover goes: auction house (price after the cut, cheapest listing, how many sell a day), vendor, or no sale, with the reason (a vendor pays as much, none sold, fewer sell than you'd have, nobody buys it).
+- Auction house sales now count unless you turn them off. Only as many as were seen to sell count at the auction price.
+- A reagent the path can make itself is made, when that is cheaper than buying it ("Make first").
+- A reagent that isn't on the auction house no longer blocks the path: another recipe is used, and listed reagents are used for as many crafts as there are.
+- The shopping list adds spare reagents that cover an unlucky run 9 times in 10, with their cost apart.
+- A plan with item names the game hasn't loaded yet isn't whispered at the first ask.
+
 ## 1.2.0
 - SkillPath no longer has a window of its own. It is a tab in the professions window, with the profession tabs on the right edge, and a tab in the auction house.
 - The path is one numbered list in the order you do it: 1. buy reagents, 2. craft (one step per recipe, with how many), train or learn where needed, and last, sell what's left. The same numbers appear on both tabs and in `/skillpath print`.

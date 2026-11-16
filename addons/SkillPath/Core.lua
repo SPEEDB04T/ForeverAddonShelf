@@ -2,12 +2,11 @@
 local ADDON, ns = ...
 
 ns.ADDON = ADDON
-ns.VERSION = "1.2.0"
+ns.VERSION = "1.3.0"
 ns.NAME = "SkillPath"
 ns.ICON = "Interface\\Icons\\INV_Misc_Note_01"
 
 local defaults = {
-    target = 0,          -- 0 = as far as your current trainer rank allows
     openOnTab = false,   -- a profession opens on the SkillPath tab
     showPoints = true,   -- each point's chance and cost under a craft step
     useBank = true,      -- reagents in the bank count as free, like those in the bags
@@ -15,7 +14,7 @@ local defaults = {
     staleHours = 3,      -- an auction price older than this is called out as old
     autoScan = true,     -- read reagent prices a few seconds after the auction house opens
     sellVendor = true,   -- what the guide makes and doesn't use again counts at its vendor sell price
-    sellAH = false,      -- ...or at the auction house, for as many as were seen to sell there
+    sellAH = true,       -- ...or at the auction house, for as many as were seen to sell there
     sellDays = 3,        -- how many days of those sales to count
 }
 
@@ -106,6 +105,17 @@ function ns.Money(copper)
     return ("%dc"):format(c)
 end
 
+-- Money as plain text, for the written guide: "12g 34s 56c", without the parts that are zero.
+function ns.Coins(copper)
+    copper = math.floor((copper or 0) + 0.5)
+    local g, s, c = math.floor(copper / 10000), math.floor(copper / 100) % 100, copper % 100
+    local parts = {}
+    if g > 0 then parts[#parts + 1] = g .. "g" end
+    if s > 0 then parts[#parts + 1] = s .. "s" end
+    if c > 0 or #parts == 0 then parts[#parts + 1] = c .. "c" end
+    return table.concat(parts, " ")
+end
+
 -- "40 min", "3 h", "2 days"
 function ns.Age(seconds)
     seconds = math.max(0, seconds or 0)
@@ -135,8 +145,23 @@ local function InitDB()
     if type(db.chars) ~= "table" then db.chars = {} end
     if type(db.ah) ~= "table" then db.ah = {} end
     if type(db.vendor) ~= "table" then db.vendor = {} end
+    if type(db.trainer) ~= "table" then db.trainer = {} end
+    if type(db.targets) ~= "table" then db.targets = {} end     -- per profession: [skill line] = skill
+    local order = db.order
+    if type(order) ~= "table" or not (ns.Num(order.line) and ns.Num(order.from) and ns.Num(order.to)) then
+        db.order = nil
+    end
     db.point, db.scale, db.autoShow = nil, nil, nil     -- 1.1's own window
     ns.db = db
+    -- 1.2 had one target for every profession, and left auction house sales out unless asked.
+    if not db.v13 then
+        db.v13 = true
+        if db.sellAH == false then db.sellAH = true end
+        local old = ns.Num(db.target)
+        local char = ns.Char()
+        if old and old > 0 and char and char.last then db.targets[char.last] = old end
+    end
+    db.target = nil
 end
 ns.InitDB = InitDB
 ns.defaults = defaults
@@ -157,6 +182,7 @@ end
 function ns.ResetSettings()
     local db = ns.db
     for key, value in pairs(defaults) do db[key] = value end
+    db.targets = {}
     db.minimap = nil
     if ns.Kit then ns.Kit.RefreshMinimap() end
     ns.Changed()
@@ -177,10 +203,24 @@ function ns.Profession()
     return line and char.profs[line] or nil, line
 end
 
+-- A plan for someone else: { line, from, to }, or nil for your own path.
+function ns.Order()
+    return ns.db and ns.db.order or nil
+end
+
+function ns.SetOrder(line, from, to)
+    ns.db.order = line and { line = line, from = from, to = to } or nil
+    ns.Changed()
+end
+
 function ns.Plan()
     if plan then return plan end
-    local prof = ns.Profession()
-    plan = ns.Planner.ForProfession(prof)
+    local order = ns.Order()
+    if order then
+        plan = ns.Planner.ForCustomer(order)
+    else
+        plan = ns.Planner.ForProfession((ns.Profession()))
+    end
     return plan
 end
 
@@ -197,24 +237,113 @@ function ns.Changed()
     end)
 end
 
+-- Item data that arrives one item at a time (names, vendor prices): one rebuild for the lot.
+local soonQueued = false
+function ns.ChangedSoon()
+    if soonQueued then return end
+    soonQueued = true
+    ns.After(1, function()
+        soonQueued = false
+        ns.Changed()
+    end)
+end
+
 ----------------------------------------------------------------------
 -- Chat
 ----------------------------------------------------------------------
--- The path in chat: the same numbered steps as the pages.
+-- The written guide in your own chat window: the same numbered steps as the pages.
 function ns.Report()
     local p = ns.Plan()
     if not (p.ok and ns.UI) then
         ns.Print(p.why or "No path yet.")
         return
     end
-    local title, line = ns.UI.Summary(p)
-    ns.Print(title .. ". " .. line)
-    for _, s in ipairs(ns.UI.Steps(p)) do
-        local text, sub = ns.UI.StepText(s, p)
-        ns.Print(("  %d. %s: %s"):format(s.n, text, sub))
-    end
-    for _, note in ipairs(p.notes) do ns.Print("  " .. note) end
+    for _, line in ipairs(ns.UI.Guide(p)) do ns.Print(line) end
 end
+
+-- A chat message holds 255 characters: longer lines are cut at a space.
+local function Wrap(lines, width)
+    local out = {}
+    for _, line in ipairs(lines) do
+        while #line > width do
+            local cut = width
+            for i = width, math.floor(width / 2), -1 do
+                if line:sub(i, i) == " " then
+                    cut = i
+                    break
+                end
+            end
+            out[#out + 1] = line:sub(1, cut):gsub("%s+$", "")
+            line = "    " .. line:sub(cut + 1):gsub("^%s+", "")
+        end
+        out[#out + 1] = line
+    end
+    return out
+end
+ns.Wrap = Wrap
+
+-- The written guide to another player, a line a second (the chat server drops faster ones).
+local sending, held
+function ns.Send(to)
+    to = ns.Str(to)
+    if not to then
+        ns.Print("Usage: /skillpath send <player> (or party). /skillpath send stop ends it.")
+        return false
+    end
+    if to:lower() == "stop" then
+        ns.Print(sending and "Stopped sending." or "Nothing is being sent.")
+        held = nil
+        sending = nil
+        return false
+    end
+    if sending then
+        ns.Print("Still sending the last plan. /skillpath send stop ends it.")
+        return false
+    end
+    local p = ns.Plan()
+    if not (p.ok and ns.UI) then
+        ns.Print(p.why or "No path yet.")
+        return false
+    end
+    local send = (C_ChatInfo and C_ChatInfo.SendChatMessage) or SendChatMessage
+    if type(send) ~= "function" then
+        ns.Print("This client has no chat function for addons.")
+        return false
+    end
+    local channel, target, who = "WHISPER", to, to
+    if to:lower() == "party" then channel, target, who = "PARTY", nil, "your party" end
+    local job = { lines = Wrap(ns.UI.Guide(p, true), 240), i = 0 }
+    -- A plan with names the game is still loading is held back once; asked again, it goes as it is.
+    local unnamed = ns.UI.Unnamed(job.lines)
+    if unnamed > 0 and held ~= to then
+        held = to
+        ns.Print(("%d %s in the plan %s still loading from the game. Try again in a moment (asked again, it is "
+            .. "sent as it is)."):format(unnamed, unnamed == 1 and "name" or "names", unnamed == 1 and "is" or "are"))
+        return false
+    end
+    held = nil
+    sending = job
+    ns.Print(("Sending %d lines to %s."):format(#job.lines, who))
+    local function Next()
+        if sending ~= job then return end
+        job.i = job.i + 1
+        local line = job.lines[job.i]
+        if not line then
+            sending = nil
+            ns.Print(("Sent the plan to %s."):format(who))
+            return
+        end
+        if not pcall(send, line, channel, nil, target) then
+            sending = nil
+            ns.Print("The game didn't take the message. Stopped.")
+            return
+        end
+        ns.After(1, Next)
+    end
+    Next()
+    return true
+end
+function ns.Sending() return sending ~= nil end
 
 ----------------------------------------------------------------------
 -- Slash commands
@@ -244,6 +373,53 @@ local function Debug()
     if ns.Prices then ns.Prices.Debug() end
 end
 
+local FOR_USAGE = "Usage: /skillpath for <profession> <from> <to>, like /skillpath for engineering 75 225. "
+    .. "/skillpath for me: back to your own path."
+
+-- A plan for someone else: "engineering 75 225", "eng 75-225", "tailoring 1 to 150".
+local function For(arg)
+    local low = arg:lower()
+    if low == "" or low == "me" or low == "off" or low == "clear" then
+        if low ~= "" and ns.Order() then
+            ns.SetOrder(nil)
+            ns.Print("Back to your own path.")
+        elseif low ~= "" then
+            ns.Print("The path is your own already.")
+        else
+            ns.Print(FOR_USAGE)
+        end
+        return false
+    end
+    local name, from, to = arg:match("^(.-)%s+(%d+)%D+(%d+)$")
+    from, to = tonumber(from), tonumber(to)
+    local line, full = ns.Recipes.LineByName(name)
+    if not line then
+        local names = {}
+        for _, n in pairs(ns.Data and ns.Data.NAMES or {}) do names[#names + 1] = n end
+        table.sort(names)
+        ns.Print(name and ("No profession called \"%s\". The ones in the table: %s."):format(name,
+            table.concat(names, ", ")) or FOR_USAGE)
+        return false
+    end
+    if from < 1 then from = 1 end
+    if to <= from or to > ns.Planner.TOP then
+        ns.Print(("%s %d to %d isn't a range to level. "):format(full, from, to) .. FOR_USAGE)
+        return false
+    end
+    ns.SetOrder(line, from, to)
+    local p = ns.Plan()
+    if p.ok and ns.UI then
+        local title, text = ns.UI.Summary(p, ns.Coins)
+        ns.Print(title .. ". " .. text)
+        ns.Print("/skillpath guide: the written plan to copy. /skillpath send <player>: whisper it. "
+            .. "/skillpath for me: back to your own path.")
+    else
+        ns.Print(p.why or "No path.")
+    end
+    return true
+end
+ns.For = For
+
 local function Slash(msg)
     msg = (msg or ""):gsub("^%s+", ""):gsub("%s+$", "")
     local cmd, arg = msg:match("^(%S*)%s*(.-)$")
@@ -256,13 +432,26 @@ local function Slash(msg)
         ns.Prices.StartScan(true)
     elseif cmd == "target" then
         local n = tonumber(arg)
-        if n and n >= 0 and n <= 450 then
-            ns.db.target = math.floor(n)
-            ns.Changed()
-            ns.Print(n == 0 and "Target: your rank's cap." or ("Target: skill %d."):format(n))
+        local prof, line = ns.Profession()
+        if ns.Order() then
+            ns.Print("The plan for someone else has its own range: /skillpath for <profession> <from> <to>.")
+        elseif not (n and n >= 0 and n <= math.max(ns.Planner.TOP, prof and prof.max or 0)) then
+            ns.Print(("Usage: /skillpath target <skill>, up to %d (0: your rank's cap)"):format(ns.Planner.TOP))
+        elseif not (prof and line) then
+            ns.Print("Open a profession first: each has its own target.")
         else
-            ns.Print("Usage: /skillpath target <skill> (0: your rank's cap)")
+            n = math.floor(n)
+            ns.db.targets[line] = n > 0 and n or nil
+            ns.Changed()
+            ns.Print(n == 0 and ("%s target: your rank's cap."):format(prof.name)
+                or ("%s target: skill %d."):format(prof.name, n))
         end
+    elseif cmd == "for" then
+        For(arg)
+    elseif cmd == "guide" or cmd == "copy" then
+        ns.UI.ShowGuide()
+    elseif cmd == "send" then
+        ns.Send(arg)
     elseif cmd == "forget" then
         ns.Prices.Forget()
     elseif cmd == "config" or cmd == "options" or cmd == "opt" then
@@ -279,8 +468,8 @@ local function Slash(msg)
     elseif cmd == "debug" then
         Debug()
     else
-        ns.Print("Commands: /skillpath (the SkillPath tab), print, scan, target <skill>, forget, config, minimap, "
-            .. "reset, debug")
+        ns.Print("Commands: /skillpath (the SkillPath tab), print, scan, target <skill>, for <profession> <from> "
+            .. "<to>, for me, guide, send <player>, forget, config, minimap, reset, debug")
     end
     if ns.Kit then ns.Kit.Sync() end      -- an open options window follows what was typed
 end
@@ -306,7 +495,7 @@ local frame = CreateFrame("Frame")
 ns.eventFrame = frame
 local EVENTS = { "PLAYER_LOGIN", "TRADE_SKILL_SHOW", "TRADE_SKILL_LIST_UPDATE", "TRADE_SKILL_DATA_SOURCE_CHANGED",
     "TRADE_SKILL_CLOSE", "SKILL_LINES_CHANGED", "CHAT_MSG_SKILL", "NEW_RECIPE_LEARNED", "BAG_UPDATE_DELAYED",
-    "MERCHANT_SHOW", "AUCTION_HOUSE_SHOW", "AUCTION_HOUSE_CLOSED", "AUCTION_HOUSE_THROTTLED_SYSTEM_READY",
+    "MERCHANT_SHOW", "TRAINER_SHOW", "TRAINER_UPDATE", "AUCTION_HOUSE_SHOW", "AUCTION_HOUSE_CLOSED", "AUCTION_HOUSE_THROTTLED_SYSTEM_READY",
     "ITEM_SEARCH_RESULTS_UPDATED", "COMMODITY_SEARCH_RESULTS_UPDATED", "GET_ITEM_INFO_RECEIVED" }
 for _, event in ipairs(EVENTS) do pcall(frame.RegisterEvent, frame, event) end
 
@@ -326,6 +515,37 @@ local function QueueSnapshot(thenShow)
     end)
 end
 ns.QueueSnapshot = QueueSnapshot
+
+-- The trainer's list arrives a moment after the window. On opening it, the recipes the path
+-- wants from this trainer go to chat: the SkillPath tab isn't on screen there.
+local trainerQueued, trainerSay = false, false
+local function QueueTrainer(opened)
+    if opened then trainerSay = true end
+    if trainerQueued then return end
+    trainerQueued = true
+    ns.After(0.3, function()
+        trainerQueued = false
+        local read, lines = ns.Recipes.ReadTrainer()
+        if read <= 0 then return end
+        ns.Changed()
+        if not trainerSay then return end
+        trainerSay = false
+        local p = ns.Plan()
+        local prof = p.ok and not p.forOther and lines[p.line] and p.prof
+        for _, step in ipairs(prof and p.steps or {}) do
+            if step.kind == "train" and #step.learn > 0 then
+                if step.at <= (prof.skill or 0) then
+                    local names = {}
+                    for _, l in ipairs(step.learn) do
+                        names[#names + 1] = l.unknown and l.r.name or ("%s (%s)"):format(l.r.name, ns.Money(l.fee))
+                    end
+                    ns.Print(("Learn here for %s: %s."):format(p.name, table.concat(names, ", ")))
+                end
+                break
+            end
+        end
+    end)
+end
 
 frame:SetScript("OnEvent", function(_, event, a, b)
     if event == "PLAYER_LOGIN" then
@@ -348,9 +568,12 @@ frame:SetScript("OnEvent", function(_, event, a, b)
         if ns.tradeOpen then
             QueueSnapshot(false)
         elseif event == "NEW_RECIPE_LEARNED" then
-            -- Learned with the window closed (a trainer, a recipe item): the saved lists are behind.
-            local char = ns.Char()
-            for _, prof in pairs(char and char.profs or {}) do prof.unread = true end
+            -- Learned with the window closed (a trainer, a recipe item): marked in the saved list.
+            -- A recipe the list doesn't hold leaves it behind until the profession is opened.
+            if not (ns.Num(a) and ns.Recipes.MarkLearned(a)) then
+                local char = ns.Char()
+                for _, prof in pairs(char and char.profs or {}) do prof.unread = true end
+            end
             ns.Changed()
         end
     elseif event == "TRADE_SKILL_CLOSE" then
@@ -364,6 +587,10 @@ frame:SetScript("OnEvent", function(_, event, a, b)
         ns.Changed()
     elseif event == "MERCHANT_SHOW" then
         if ns.Prices.ReadMerchant() > 0 then ns.Changed() end
+    elseif event == "TRAINER_SHOW" or event == "TRAINER_UPDATE" then
+        if event == "TRAINER_SHOW" or ns.Now() >= (ns.Recipes.trainerQuiet or 0) then
+            QueueTrainer(event == "TRAINER_SHOW")
+        end
     else
         ns.Prices.OnEvent(event, a, b)
         if event == "AUCTION_HOUSE_SHOW" and ns.UI then ns.UI.AuctionOpened() end

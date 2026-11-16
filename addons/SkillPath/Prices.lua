@@ -83,8 +83,9 @@ end
 -- Supply: what getting x more units of an item costs, past the free ones
 ----------------------------------------------------------------------
 local cache = {}
+local bare = {}
 local resale = {}
-function P.Invalidate() cache, resale = {}, {} end
+function P.Invalidate() cache, bare, resale = {}, {}, {} end
 
 local function Prefix(segs)
     local U, K = {}, {}
@@ -149,6 +150,16 @@ function P.Supply(item)
     sup.priced = sup.vendor ~= nil or sup.listed > 0
     cache[item] = sup
     return sup
+end
+
+-- The same supply for someone who holds nothing (a path made for another player).
+function P.Bare(item)
+    local b = bare[item]
+    if b then return b end
+    local sup = P.Supply(item)
+    b = setmetatable({ have = 0 }, { __index = sup })
+    bare[item] = b
+    return b
 end
 
 -- Cost of k units from commodities (cheapest first) and then the vendor; nil if there aren't k.
@@ -229,19 +240,25 @@ end
 ----------------------------------------------------------------------
 -- Vendors: the price a merchant actually shows (with any discount)
 ----------------------------------------------------------------------
--- The reagents of the saved professions; with outputs, also what their known recipes make
--- (scanned only when auction house sales are counted).
+-- The reagents of the saved professions, and of the profession a path for someone else is for.
+-- With outputs, also what the recipes make that the path could use: the ones you know, and the
+-- ones that still give skill from where the path starts (scanned only when auction house sales
+-- are counted).
 function P.Interest(outputs)
     local set = {}
     local char = ns.Char()
-    for _, prof in pairs(char and char.profs or {}) do
-        for _, r in ipairs(prof.recipes or {}) do
+    local order = ns.Order and ns.Order()
+    local function Add(recipes, from)
+        for _, r in ipairs(recipes or {}) do
             for _, slot in ipairs(r.slots or {}) do
                 for _, item in ipairs(slot.items) do set[item] = true end
             end
-            if outputs and r.known and r.out then set[r.out] = true end
+            if r.item then set[r.item] = true end
+            if outputs and r.out and (r.known or (r.g and r.g > from)) then set[r.out] = true end
         end
     end
+    for _, prof in pairs(char and char.profs or {}) do Add(prof.recipes, prof.skill or 0) end
+    if order then Add(ns.Recipes.ForOrder(order.line), order.from) end
     return set
 end
 
@@ -299,6 +316,8 @@ function P.Progress() return scan.done, scan.total end
 
 -- The items a scan asks for: reagents of the saved professions that a vendor doesn't sell and
 -- that can be bought. An automatic scan skips prices younger than half an hour.
+-- What to search for, the reagents of the path on screen first. all (a scan you asked for):
+-- prices read a moment ago and what a vendor sells too (an auction can be under the vendor).
 function P.ScanList(all)
     local store = AHStore()
     local now = ns.Clock()
@@ -307,9 +326,15 @@ function P.ScanList(all)
         local vendor = P.Vendor(item)
         local rec = store[item]
         local fresh = type(rec) == "table" and Num(rec.t) and now - rec.t < FRESH_SKIP
-        if not vendor and BindType(item) ~= 1 and (all or not fresh) then list[#list + 1] = item end
+        if BindType(item) ~= 1 and (all or not (vendor or fresh)) then list[#list + 1] = item end
     end
-    table.sort(list)
+    local plan = ns.Plan and ns.Plan()
+    local used = plan and plan.ok and plan.used or {}
+    table.sort(list, function(a, b)
+        local ua, ub = used[a] ~= nil, used[b] ~= nil
+        if ua ~= ub then return ua end
+        return a < b
+    end)
     return list
 end
 
@@ -464,34 +489,51 @@ local MAX_LISTINGS = 80
 
 -- Units listed in `old` that aren't in `new`. Commodities are compared price by price, item
 -- auctions lot by lot. When a list was cut short, only prices both lists cover are compared.
+-- Two things that aren't sales are taken off:
+--   * buyers take the cheapest first, so nothing dearer than the cheapest price that still has
+--     units from before can have sold: what left above it was cancelled or ran out;
+--   * units that now sit below the old cheapest price are most likely the same ones, listed
+--     again lower.
 local function Gone(old, new, cutOld, cutNew)
     local top = math.huge
     if cutOld and old[#old] then top = math.min(top, old[#old][1]) end
     if cutNew and new[#new] then top = math.min(top, new[#new][1]) end
     local function Key(e) return e[3] and (e[1] .. ":" .. e[2] .. ":" .. tostring(e[4])) or tostring(e[1]) end
-    local now = {}
+    local now, lowest = {}, math.huge
+    for _, e in ipairs(old) do
+        if e[1] < lowest then lowest = e[1] end
+    end
+    local relisted = 0
     for _, e in ipairs(new) do
         if e[1] < top then
             local k = Key(e)
             now[k] = (now[k] or 0) + (e[3] and 1 or e[2])
+            if e[1] < lowest then relisted = relisted + e[2] end
         end
     end
-    local gone = 0
-    local before = {}
+    local before, levels = {}, {}
     for _, e in ipairs(old) do
         if e[1] < top then
             local k = Key(e)
-            before[k] = (before[k] or 0) + (e[3] and 1 or e[2])
-            before[k .. "#q"] = e[3] and e[2] or 1
+            if not before[k] then
+                before[k] = { n = 0, per = e[3] and e[2] or 1, price = e[1] }
+                levels[#levels + 1] = k
+            end
+            before[k].n = before[k].n + (e[3] and 1 or e[2])
         end
     end
-    for k, n in pairs(before) do
-        if not k:find("#q", 1, true) then
-            local left = n - (now[k] or 0)
-            if left > 0 then gone = gone + left * before[k .. "#q"] end
-        end
+    table.sort(levels, function(a, b)
+        if before[a].price ~= before[b].price then return before[a].price < before[b].price end
+        return a < b
+    end)
+    local gone = 0
+    for _, k in ipairs(levels) do
+        local b = before[k]
+        local stay = math.min(b.n, now[k] or 0)
+        gone = gone + (b.n - stay) * b.per
+        if stay > 0 then break end
     end
-    return gone
+    return math.max(0, gone - relisted)
 end
 P.Gone = Gone
 
@@ -588,8 +630,8 @@ function P.Resale(item)
                 res.waiting = true
             else
                 local net = cheapest * (1 - AH_CUT)
-                if net <= (sell or 0) then
-                    res.why = "the vendor pays more after the auction house cut"
+                if net <= (res.vendor or 0) then
+                    res.why = "a vendor pays as much after the auction house cut"
                 elseif perDay <= 0 then
                     res.why = ("none sold in %.0f h of scans"):format(hours)
                 else
@@ -617,6 +659,32 @@ function P.ValueOf(item, n)
         return atAH * res.ah + (n - atAH) * vendor
     end
     return n * vendor
+end
+
+-- Where n whole left-over units go: { item, n, ah = { n, each }, vendor = { n, each }, none (units
+-- nothing buys), value, why (why the auction house isn't used, or only for some), res }.
+function P.SellPlan(item, n)
+    local res = P.Resale(item)
+    local plan = { item = item, n = n, none = 0, value = 0, res = res, why = res.why }
+    local rest = n
+    if res.ah and res.cap > 0 then
+        local atAH = math.min(rest, res.cap)
+        plan.ah = { n = atAH, each = res.ah }
+        plan.value = plan.value + atAH * res.ah
+        rest = rest - atAH
+        if rest > 0 then
+            plan.why = ("about %s a day %s"):format(ns.Crafts(res.perDay), res.perDay == 1 and "sells" or "sell")
+        end
+    end
+    if rest > 0 then
+        if (res.vendor or 0) > 0 then
+            plan.vendor = { n = rest, each = res.vendor }
+            plan.value = plan.value + rest * res.vendor
+        else
+            plan.none = rest
+        end
+    end
+    return plan
 end
 
 function P.OnEvent(event, a)
@@ -655,7 +723,7 @@ function P.OnEvent(event, a)
             Pump()
         end
     elseif event == "GET_ITEM_INFO_RECEIVED" then
-        ns.Changed()
+        ns.ChangedSoon()
     end
 end
 

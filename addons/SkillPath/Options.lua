@@ -18,16 +18,30 @@ end
 local function Rows()
     return {
         { kind = "header", text = "Path" },
-        { kind = "slider", label = "Target skill", min = 0, max = 450, step = 5,
+        { kind = "slider", label = "Target skill", min = 0, max = 300, step = 5,
           format = function(value) return value == 0 and "your rank's cap" or tostring(value) end,
-          tip = "Where the path stops. 0: your rank's cap. Same as /skillpath target <skill>.",
-          get = function() return ns.db.target or 0 end, set = Set("target") },
-        { kind = "check", label = "Each point's chance and cost",
-          tip = "Under a craft step: every skill point, the chance a craft gives it and what it costs.",
+          tip = "Where the path of the profession you opened last stops; each profession has its own. 0: your "
+              .. "rank's cap, or the next rank's once you are at it. Past the cap, the path says where to train "
+              .. "the next rank. Same as /skillpath target <skill>.",
+          get = function()
+              local _, line = ns.Profession()
+              return line and ns.Planner.Target(line) or 0
+          end,
+          set = function(value)
+              local _, line = ns.Profession()
+              if not line then
+                  ns.Print("Open a profession first: each has its own target.")
+                  return
+              end
+              ns.db.targets[line] = value > 0 and value or nil
+              ns.Changed()
+          end },
+        { kind = "check", label = "Show each skill point",
+          tip = "Under a craft step: every skill point, the chance a craft gives it and what its reagents cost.",
           get = Get("showPoints"), set = Set("showPoints") },
-        { kind = "check", label = "Recipes worth learning",
-          tip = "Recipes you don't know that would make the path cheaper or longer, and where the game says "
-              .. "they are learned.",
+        { kind = "check", label = "Show recipes to learn",
+          tip = "Recipes the path leaves out (a recipe item with no price, a recipe your trainer doesn't "
+              .. "list) that would make it cheaper or longer.",
           get = Get("showOptions"), set = Set("showOptions") },
         { kind = "check", label = "Open on the SkillPath tab",
           tip = "The professions window opens on the SkillPath tab. Off: on its recipe list, as usual.",
@@ -54,14 +68,13 @@ local function Rows()
         } },
 
         { kind = "header", text = "Selling what you make" },
-        { kind = "check", label = "Count leftovers at the vendor price",
+        { kind = "check", label = "Count vendor sales",
           tip = "What the path makes and never uses counts at its vendor price, so a recipe whose result sells "
               .. "for more can be the cheaper way up. Off: it counts as nothing.",
           get = Get("sellVendor"), set = Set("sellVendor") },
         { kind = "check", label = "Count auction house sales",
-          tip = "Leftovers count at the cheapest auction price after the 5% cut, for as many as were seen to "
-              .. "sell: units listed at one scan and gone at the next. An item needs 4 hours of scans first. "
-              .. "The rest counts at the vendor price. What you craft is scanned too.",
+          tip = "Leftovers count at the auction price after the 5% cut when that beats a vendor, for as many "
+              .. "as were seen to sell (4 hours of scans first). The rest go to a vendor.",
           get = Get("sellAH"), set = Set("sellAH") },
         { kind = "slider", label = "Days of sales to count", min = 1, max = 14, step = 1,
           format = function(value) return ("%d %s"):format(value, value == 1 and "day" or "days") end,
@@ -78,6 +91,10 @@ local function Rows()
               click = function() ns.UI.Toggle() end },
             { label = "Print the path", tip = "Same as /skillpath print.",
               click = function() ns.Report() end },
+            { label = "Copy the guide",
+              tip = "The path as text you can copy: what to buy, each step, what to sell where. For a plan "
+                  .. "for someone else: /skillpath for <profession> <from> <to>. Same as /skillpath guide.",
+              click = function() ns.UI.ShowGuide() end },
             { label = "Reset settings", confirm = true, tip = "Saved recipes and prices are kept.",
               click = function() ns.ResetSettings() end },
         } },
