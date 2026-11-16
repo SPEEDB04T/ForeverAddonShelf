@@ -743,6 +743,51 @@ function ns.Worth(id, it)
   return math.floor(vendor * times + 0.5), { vendor = vendor, look = look, lookFrom = from, times = times, why = why }
 end
 
+-- The other items with a piece's look, each by name with how it is had (from
+-- the list's "same" field: at most 4, the easiest to get first), for a warning
+-- (SuccuDev, 2026-11-16: "you failed to warn me saltstone surcoat has a dungeon
+-- item with the same model"). Second return: true when one of them is had
+-- without the auction house (crafted, a white or grey item, bind on pickup).
+local SAME_HOW = { made = "crafted", plain = "white or grey item", bop = "bind on pickup", boe = "BoE" }
+function ns.SameLook(it)
+  local out = {}
+  local alt = type(it) == "table" and type(it.alt) == "table" and it.alt or nil
+  if not alt then
+    return out, false
+  end
+  local made, plain, bop, boe = Num(alt.made) or 0, Num(alt.plain) or 0, Num(alt.bop) or 0, Num(alt.boe) or 0
+  local total = made + plain + bop + boe
+  if type(it.same) == "table" then
+    for _, s in ipairs(it.same) do
+      if type(s) == "table" and type(s.name) == "string" then
+        local how = SAME_HOW[s.how]
+        if type(s.inst) == "string" then
+          how = (s.how == "bop" or not how) and ("drops in " .. s.inst) or (how .. ", drops in " .. s.inst)
+        end
+        out[#out + 1] = how and ("%s (%s)"):format(s.name, how) or s.name
+      end
+    end
+  elseif type(it.altName) == "string" then
+    out[1] = ("%s (%s)"):format(it.altName,
+      made > 0 and SAME_HOW.made or plain > 0 and SAME_HOW.plain or bop > 0 and SAME_HOW.bop or SAME_HOW.boe)
+  end
+  if #out == 0 and total > 0 then
+    out[1] = total == 1 and "1 other item" or (total .. " other items")
+  elseif total > #out then
+    out[#out + 1] = ("%d more"):format(total - #out)
+  end
+  return out, made + plain + bop > 0
+end
+
+-- The warning line in an item tooltip: orange when the look is had without
+-- the auction house, grey when only other BoE drops have it.
+function ns.AddSameLook(tip, it)
+  local same, warn = ns.SameLook(it)
+  if #same > 0 then
+    tip:AddLine("Same look: " .. table.concat(same, ", ") .. ".", warn and 1 or 0.6, warn and 0.5 or 0.6, warn and 0.25 or 0.6, true)
+  end
+end
+
 -- Returns a table describing what is known about an item's price.
 --   low       lowest price in the last scan (nil when none were listed)
 --   qty       items listed in the last scan (nil before any scan)
@@ -2503,6 +2548,18 @@ function ns.DefaultPostPrice(id, market, link)
   return math.max(math.ceil(price / s) * s, s), "1.5x vendor"
 end
 
+-- What the Sell tab's Undercut button posts at: 1 silver under the lowest
+-- other listing. nil when no other listing was read (nobody to undercut) or
+-- the price cannot go lower.
+function ns.UndercutPrice(market)
+  local low = type(market) == "table" and not market.unknown and Num(market.low) or nil
+  if not low then
+    return nil
+  end
+  local price = RoundPrice(low - Silver())
+  return price < low and price or nil
+end
+
 function ns.PostDeposit(e)
   local loc = e and SlotLocation(e.bag, e.slot)
   if loc and C_AuctionHouse.CalculateItemDeposit then
@@ -3491,18 +3548,10 @@ local function OnTooltipItem(tooltip, data)
     if b and b.cheaper and items[b.cheaper.id] then
       tooltip:AddDoubleLine("Same look, cheaper: " .. items[b.cheaper.id].name, ns.Money(b.cheaper.low))
     end
-    local alt = type(it.alt) == "table" and it.alt or {}
-    local g = GRAY_FONT_COLOR
-    if (Num(alt.made) or 0) > 0 then
-      tooltip:AddLine(("A crafted item has this look (%s)."):format(it.altName or "made by a profession"),
-        g and g.r or 0.5, g and g.g or 0.5, g and g.b or 0.5, true)
-    elseif (Num(alt.plain) or 0) > 0 then
-      tooltip:AddLine(("A white or grey item has this look (%s)."):format(it.altName or "a plain item"),
-        g and g.r or 0.5, g and g.g or 0.5, g and g.b or 0.5, true)
-    end
   elseif info.qty ~= nil then
     tooltip:AddLine("Not listed in your last scan.", 1, 1, 1)
   end
+  ns.AddSameLook(tooltip, it)
   if info.fair then
     tooltip:AddDoubleLine("Slutmog worth", ns.Money(info.fair))
     tooltip:AddLine(("%.1f times its vendor price (%s): %s."):format(info.times or 0, ns.Money(info.vendor or 0),

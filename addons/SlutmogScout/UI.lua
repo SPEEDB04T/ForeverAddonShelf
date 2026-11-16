@@ -304,27 +304,11 @@ function ns.FillItemTooltip(tip, id)
   end
 
   -- other items with its look
-  local alt = type(it.alt) == "table" and it.alt or {}
   local b = info.low and ns.Buy(id, info) or nil
   if b and b.cheaper and ns.Items()[b.cheaper.id] then
     pair("Same look, cheaper", ns.Items()[b.cheaper.id].name .. " " .. ns.Money(b.cheaper.low))
   end
-  if (tonumber(alt.made) or 0) > 0 then
-    note(("A crafted item has this look (%s)."):format(it.altName or "made by a profession"))
-  elseif (tonumber(alt.plain) or 0) > 0 then
-    note(("A white or grey item has this look (%s)."):format(it.altName or "a plain item"))
-  end
-  local boe, bop = tonumber(alt.boe) or 0, tonumber(alt.bop) or 0
-  local same = {}
-  if boe > 0 then
-    same[#same + 1] = ("%d other BoE %s"):format(boe, boe == 1 and "item" or "items")
-  end
-  if bop > 0 then
-    same[#same + 1] = ("%d bind-on-pickup %s"):format(bop, bop == 1 and "item" or "items")
-  end
-  if #same > 0 then
-    note("Same look on " .. table.concat(same, " and ") .. ".")
-  end
+  ns.AddSameLook(tip, it)
 
   -- where it comes from
   tip:AddLine(" ")
@@ -582,6 +566,10 @@ for _, col in ipairs(COLS) do
 end
 
 local FRESH_TEXT = { new = "|cff40ff40new|r", cheaper = "|cff40ff40cheaper|r" }
+-- after a piece's name: another item has its look and is had without the
+-- auction house (the game's alert icon; the tooltip names the item)
+local SAME_ICON = "|TInterface\\DialogFrame\\UI-Dialog-Icon-AlertNew:14:14|t"
+ns.SAME_ICON = SAME_ICON
 
 -- Farm time of one copy, short: "40 min", "2.5 h", "87 h".
 local function ShortHours(h)
@@ -721,7 +709,9 @@ local function RefreshMarket()
       row.iconBorder:SetShown(row.iconBorder.smogArt == true)
       row.id = d.id
       row.icon:SetTexture(ItemIcon(d.id))
+      local _, sameWarn = ns.SameLook(d.it)
       c.name:SetText(ItemName(d.id, d.it) .. (d.it.custom and (" " .. Grey("*")) or "")
+        .. (sameWarn and (" " .. SAME_ICON) or "")
         .. (d.fresh and ("  " .. FRESH_TEXT[d.fresh]) or ""))
       c.type:SetText(d.type)
       if d.rating < 0 then
@@ -1563,6 +1553,14 @@ local function RefreshSellBox(bags)
   local box = sellView.box
   local r = SellSelected(bags)
   local ahOpen = ns.AuctionHouseOpen()
+  -- Undercut shows beside Post while others list the piece; the price box moves over for it
+  local under = r and ns.UndercutPrice(r.market) or nil
+  box.undercut:SetShown(under ~= nil)
+  box.undercut:SetEnabled(ahOpen and not ns.sell.pending)
+  if sellMoney then
+    sellMoney:ClearAllPoints()
+    sellMoney:SetPoint("RIGHT", under and box.undercut or box.post, "LEFT", -12, 0)
+  end
   if not r then
     state.sellBoxId = nil
     box.icon:SetTexture(nil)
@@ -2887,6 +2885,20 @@ local function PostFromBox()
   SellPostRow(SellSelectedNow())
 end
 
+-- Undercut: posts the piece in the box 1 silver under the lowest other listing,
+-- whatever the price box says (SuccuDev, 2026-11-16: "need an undercut button
+-- next to post button when theres competitors"). The price box shows what was posted.
+local function UndercutFromBox()
+  local r = SellSelectedNow()
+  local price = r and ns.UndercutPrice(r.market)
+  if not price then
+    return
+  end
+  MoneySet(price)
+  state.sellBoxSet = price
+  ns.SellPost(r.entry, price)
+end
+
 local function CreateSellView()
   sellView = MakeView()
   -- the sell box: item, price box and Post, as in the auction house's Sell tab
@@ -2907,19 +2919,39 @@ local function CreateSellView()
   end
   local name = box:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
   name:SetPoint("TOPLEFT", icon, "TOPRIGHT", 10, -2)
-  name:SetPoint("RIGHT", box, "RIGHT", -400, 0)
+  name:SetPoint("RIGHT", box, "RIGHT", -504, 0)
   name:SetJustifyH("LEFT")
   name:SetWordWrap(false)
   box.name = name
   local info = box:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
   info:SetPoint("BOTTOMLEFT", icon, "BOTTOMRIGHT", 10, 2)
-  info:SetPoint("RIGHT", box, "RIGHT", -400, 0)
+  info:SetPoint("RIGHT", box, "RIGHT", -504, 0)
   info:SetJustifyH("LEFT")
   info:SetWordWrap(false)
   box.info = info
   local post = MakeButton(box, "Post", 100, PostFromBox)
   post:SetPoint("RIGHT", box, "RIGHT", -8, 0)
   box.post = post
+  local undercut = MakeButton(box, "Undercut", 100, UndercutFromBox)
+  undercut:SetPoint("RIGHT", post, "LEFT", -4, 0)
+  undercut:SetScript("OnEnter", function(self)
+    local r = SellSelectedNow()
+    local price = r and ns.UndercutPrice(r.market)
+    if not price then
+      return
+    end
+    GameTooltip:SetOwner(self, "ANCHOR_TOP")
+    GameTooltip:AddLine("Undercut")
+    GameTooltip:AddLine(("Posts for %s, 1s under the lowest (%s)."):format(ns.Money(price), ns.Money(r.market.low)), 1, 1, 1, true)
+    local vendor = ns.Price(r.id).vendor
+    if vendor and price <= vendor then
+      GameTooltip:AddLine(("A vendor pays %s."):format(ns.Money(vendor)), 1, 0.25, 0.25, true)
+    end
+    GameTooltip:Show()
+  end)
+  undercut:SetScript("OnLeave", GameTooltip_Hide)
+  undercut:Hide()
+  box.undercut = undercut
   sellMoney = TryCreate("Frame", "SlutmogScoutSellPrice", box, "MoneyInputFrameTemplate")
   if sellMoney then
     sellMoney:SetPoint("RIGHT", post, "LEFT", -12, 0)

@@ -1,5 +1,15 @@
 # Changelog
 
+## 1.19.0
+
+- **Undercut button on the Sell tab.** While others list the piece in the sell box, an Undercut
+  button shows beside Post. It posts 1 silver under the lowest other listing, whatever the price
+  box says.
+- **Same-look warning.** A piece whose look another item also has now names that item and where it
+  comes from in its tooltip, listed or not, for example "Same look: Carapace of Anub'shiah (drops
+  in Blackrock Depths)" on Saltstone Surcoat. The Market list puts a warning icon after such a
+  piece's name when the other item is crafted, sold by a vendor or bind on pickup.
+
 ## 1.18.0
 
 - **The Market tab is the list again.** The models are still there under Filter > View > Models.
