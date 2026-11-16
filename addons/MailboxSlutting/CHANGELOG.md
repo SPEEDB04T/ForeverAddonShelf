@@ -1,5 +1,12 @@
 # Changelog
 
+## 1.3.2
+
+- The dance holds better. Somebody who only targets you no longer gets the game's own wink, which stopped your dance each time: the wink goes in /e on your next key press or click (the dance goes on), and is dropped after 10 seconds without one.
+- After an emote that does stop the dance (an answer to somebody who emoted at you), the dance is tried again every 4 seconds, up to 6 times, instead of once more after 15 seconds. A try that does not take shows nothing, so this does not spam.
+- A key press or click also brings the dance back when it is down.
+- A dance that did not take no longer counts toward "the game does not let an addon emote here".
+
 ## 1.3.1
 
 - The lines at nobody are rewritten for what people actually see: somebody dancing nonstop on a mailbox. No more poses, spins, bows, waves, hops or stretches that the character does not do; the 22 lines are looks, smiles, humming and the dance going on ("looks over the crowd without missing a step.").

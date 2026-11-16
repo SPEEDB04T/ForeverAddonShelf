@@ -297,12 +297,17 @@ end
 -- (SuccuDev: "make sure dance emote doesnt get spammed, add a cooldown to make things feel less bot-like").
 local REDANCE_MIN, REDANCE_MAX = 3, 7   -- seconds after a wink or a smile before dancing again, picked at random
 local DANCE_GAP = 15             -- seconds at least between two dances the shop does by itself
-local TRIES = 2                  -- dances it tries for one comeback, at most
-local GIVE_UP = 30               -- seconds after which it stops trying
+-- The first dance after a wink often does not take (in the saved log the try 4 to 6 seconds after it
+-- has no echo every time, and the next one, which used to come 15 seconds later, does). A try that does
+-- not take shows nothing, so the next one comes soon (SuccuDev: "fails to maintain dance too much").
+local RETRY_GAP = 4              -- seconds between two tries at the same comeback
+local TRIES = 6                  -- dances it tries for one comeback, at most
+local GIVE_UP = 45               -- seconds after which it stops trying
 local dancing = false            -- you are dancing, as far as the shop knows
 local due                        -- when the dance should be back, until its echo
 local tries = 0
 local lastDance = -1e9           -- when the last dance went out
+local lastOk = -1e9              -- when the game last showed one of them: two that take stay DANCE_GAP apart
 
 function M.Random(a, b)
     if math and math.random then return a + math.random() * (b - a) end
@@ -422,7 +427,7 @@ Game = function(token, name, from)
         dancing, lastDance = true, Now()
     elseif dancing then
         due, tries = Now() + M.Random(REDANCE_MIN, REDANCE_MAX), 0
-        local wait = math.max(due, lastDance + DANCE_GAP) - Now()
+        local wait = math.max(due, lastDance + RETRY_GAP, lastOk + DANCE_GAP) - Now()
         if C_Timer and C_Timer.After then
             C_Timer.After(wait + 0.05, function() M.Redance("timer") end)
         end
@@ -434,7 +439,7 @@ Game = function(token, name, from)
             if pend == mine then
                 pend = nil
                 Log("no echo for " .. token)
-                if Missed then Missed() end
+                if Missed and token ~= "DANCE" then Missed() end     -- a dance that did not take is tried again, not counted
             end
         end)
     end
@@ -445,7 +450,7 @@ end
 function M.Redance(from)
     if not (on and dancing and due) or Away() then return false end
     local now = Now()
-    local ready = math.max(due, lastDance + DANCE_GAP)
+    local ready = math.max(due, lastDance + RETRY_GAP, lastOk + DANCE_GAP)
     if now < ready then return false end
     if now - ready > GIVE_UP or tries >= TRIES then
         due = nil
@@ -455,7 +460,7 @@ function M.Redance(from)
     local done = Emote("DANCE", nil, from)  -- refused: the next chat line may try straight away
     if done then tries = tries + 1 end
     if C_Timer and C_Timer.After then
-        C_Timer.After(DANCE_GAP + 0.05, function() M.Redance("timer") end)
+        C_Timer.After(RETRY_GAP + 0.05, function() M.Redance("timer") end)
     end
     return done
 end
@@ -467,14 +472,14 @@ local function Echo(text)
     if not pend then
         -- one you did yourself: dancing or not is your call
         dancing = text:lower():find("danc", 1, true) ~= nil
-        if dancing then lastDance = Now() end
+        if dancing then lastDance = Now() lastOk = lastDance end
         due = nil
         return
     end
     if pend.who and not text:find(pend.who, 1, true) then
         aimBy = pend.how == "unit" and "name" or "unit"
     end
-    if pend.token == "DANCE" then due = nil else Stat("emotes") end
+    if pend.token == "DANCE" then due, lastOk = nil, lastDance else Stat("emotes") end
     pend, misses = nil, 0
 end
 M.AimBy = function() return aimBy end
@@ -746,10 +751,19 @@ Missed = function()
 end
 
 -- An emote by itself, if the limits allow. The dance comes back a few seconds later.
-local function Auto(v, gap)
+local LOOK_OLD = 10              -- seconds a wink at a looker waits for a key before it is dropped
+local function Auto(v, gap, soft)
     if manual or not v.reply or Away() then return false end
     local now = Now()
     if now - lastAuto < GLOBAL_GAP or (v.emotedAt and now - v.emotedAt < gap) then return false end
+    -- Somebody who only looked: the game's own wink would stop the dance, and that is not worth it for
+    -- a look. The wink goes in /e (the dance goes on) on your next key or click, or not at all.
+    if soft and M.HARDWARE_ONLY and v.reply[2] ~= "DANCE" then
+        local token, name = v.reply[2], v.name
+        Queue(function(from) Emote(token, name, from or "click") end, LOOK_OLD)
+        lastAuto, v.emotedAt = now, now
+        return true
+    end
     -- a dance back only if you are not dancing already, and not right after the last one
     if v.reply[2] == "DANCE" and (dancing or now - lastDance < DANCE_GAP) then return false end
     if not Emote(v.reply[2], v.name, "event") then
@@ -874,7 +888,7 @@ local function Look()
                 end
                 if not (v.seen and now - v.seen <= TICK + 0.6) then v.since = now end   -- a new look starts
                 v.seen = now
-                if now - (v.since or now) >= HOLD then Auto(v, LOOK_GAP) end
+                if now - (v.since or now) >= HOLD then Auto(v, LOOK_GAP, true) end
                 Nudge(v, now)
             end
         end
@@ -887,9 +901,15 @@ end
 -- that (M.Hardware). One at a time, FLUSH_GAP apart; one that waited too long is dropped.
 local QUEUE_KEEP, QUEUE_OLD, FLUSH_GAP = 3, 60, 2
 local queue, lastFlush = {}, -1e9
+local function Purge()
+    local now = Now()
+    for i = #queue, 1, -1 do
+        if M.HARDWARE_ONLY and now - queue[i].at > (queue[i].old or QUEUE_OLD) then table.remove(queue, i) end
+    end
+end
 Flush = function(from)
     local now = Now()
-    while queue[1] and M.HARDWARE_ONLY and now - queue[1].at > QUEUE_OLD do table.remove(queue, 1) end
+    Purge()
     if not (on and queue[1]) or Away() then return false end
     if from == "key" and now - lastFlush < FLUSH_GAP then return false end
     lastFlush = now
@@ -897,15 +917,17 @@ Flush = function(from)
     q.fn(from)
     return true
 end
-Queue = function(fn)
-    queue[#queue + 1] = { fn = fn, at = Now() }
+Queue = function(fn, old)
+    queue[#queue + 1] = { fn = fn, at = Now(), old = old }
     while #queue > QUEUE_KEEP do table.remove(queue, 1) end
     if not M.HARDWARE_ONLY then Flush() end
 end
 M.Queued = function() return #queue end
 -- The player pressed a key or clicked: the line that was waiting goes out.
 function M.Hardware()
-    if on and queue[1] then return Flush("key") end
+    if not on then return false end
+    if dancing and due then M.Redance("key") end      -- the dance is down: a key press brings it back
+    if queue[1] then return Flush("key") end
     return false
 end
 
@@ -1039,6 +1061,7 @@ local function Tick()
     local now = Now()
     nextJar = nextJar or (now + M.Random(JAR_FIRST_MIN, JAR_FIRST_MAX))
     local quiet = now - lastEngage >= ENGAGE_HOLD
+    Purge()
     if now >= nextJar and near > 0 and not away and quiet and not queue[1] and now - lastAuto >= GLOBAL_GAP then
         nextJar = now + M.Random(JAR_MIN, JAR_MAX)
         lastAuto = now
