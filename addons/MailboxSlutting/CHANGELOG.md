@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.2.2
+
+- The game lets a /e line from an addon out only on your own key press or click, and says "action failed because of an addon" otherwise. So the lines by itself (at nobody, the tip jar, the glance at the tip jar, the dance for a tipper) now wait for your next key press or click in the world and go out on that. Any key counts: a step, a jump, a modifier.
+- Nothing is sent in /e from a timer or from somebody's chat line any more, so that message should not come up again. Answers by itself use the game's own emotes (wink, smile), which are allowed; your clicks still use the /e wording.
+- One line waits at a time, so a burst of keys does not send a burst of lines. Not at the keyboard, no lines.
+
 ## 1.2.1
 
 - The lines by itself (at nobody, the tip jar, the glance at the tip jar, the dance for a tipper) did not go out: the game drops a /e line sent from a timer. They now wait for the next chat line or emote from anybody around and go out on that. In a city that is a few seconds at most. With no chat at all for 15 seconds the line is tried from the timer anyway.

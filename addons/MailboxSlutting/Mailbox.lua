@@ -196,13 +196,19 @@ M.WELCOMES = {
 }
 
 local on = false
-local frame, events
+local frame, events, keys
 -- newest first: { name, kind = "look"|"emote"|"whisper", what, at, seen, reply = { word, token, label }, pitch = bool,
 --                 pitchedAt, emotedAt (by itself), doneAt (answered: a click, or the game showed the emote going at them) }
 local visitors = {}
 local lastAuto = -1e9
 local lastEngage = -1e9         -- somebody last emoted at you, whispered or tipped
 local Queue, Flush
+-- The game lets a chat line from an addon out only while it handles the player's own key press or
+-- click. From a timer or from somebody's chat line it is blocked ("action failed because of an addon",
+-- and in the saved log every "timer /e" and "event /e" has "no echo"). The game's own emotes (/wink)
+-- are not blocked. So: nothing in /e from these origins, and lines by itself wait for the next key or click.
+M.HARDWARE_ONLY = true
+local NOKEY = { timer = true, event = true, nudge = true, tip = true, back = true, ["?"] = true }
 local lastAlert = -1e9
 local manual = false            -- the game refused an emote from the addon: buttons only
 local Sync
@@ -328,6 +334,11 @@ M.Away = Away
 local SAY_WAIT = 2
 local saying = {}                -- lines sent, until their echo: { text, miss, done }
 local function Say(text, from, miss, done)
+    if M.HARDWARE_ONLY and NOKEY[from or "?"] then       -- the game would block it: not sent at all
+        Log(string.format("%s /e %s: held, no key or click", from or "?", text))
+        if miss then miss() end
+        return false
+    end
     local send = (C_ChatInfo and C_ChatInfo.SendChatMessage) or SendChatMessage
     local ok, err = false, "no SendChatMessage"
     if type(send) == "function" then ok, err = pcall(send, text, "EMOTE") end
@@ -373,7 +384,7 @@ local sayMisses = 0
 M.UsesSay = function() return useSay end
 M.SetSay = function(yes) useSay, sayMisses = yes and true or false, 0 end
 Emote = function(token, name, from)
-    local line = useSay and token ~= "DANCE" and name and M.Wording(token)
+    local line = useSay and token ~= "DANCE" and name and not (M.HARDWARE_ONLY and NOKEY[from or "?"]) and M.Wording(token)
     if not line then return Game(token, name, from) end
     local who = Short(name)
     line = line:format(who)
@@ -866,19 +877,15 @@ local function Look()
 end
 
 -- The tip jar line, or the one that did not go out last time.
--- A /e line sent from a timer does not go out: the game only lets it through while it is handling
--- something that happened (in the saved log every "timer /e" has "no echo", and the one thank-you sent
--- again on somebody's chat line did go out). So a line by itself waits here for the next chat line or
--- emote from anybody around, and goes out on that. After WAIT_EVENT seconds without one it is tried
--- from the timer anyway.
-M.WAIT_EVENT = 15
+-- A line by itself waits here for the player's next key press or click in the world, and goes out on
+-- that (M.Hardware). One at a time, FLUSH_GAP apart; one that waited too long is dropped.
 local QUEUE_KEEP, QUEUE_OLD, FLUSH_GAP = 3, 60, 2
 local queue, lastFlush = {}, -1e9
 Flush = function(from)
     local now = Now()
-    while queue[1] and M.WAIT_EVENT > 0 and now - queue[1].at > QUEUE_OLD do table.remove(queue, 1) end
+    while queue[1] and M.HARDWARE_ONLY and now - queue[1].at > QUEUE_OLD do table.remove(queue, 1) end
     if not (on and queue[1]) or Away() then return false end
-    if from == "event" and now - lastFlush < FLUSH_GAP then return false end
+    if from == "key" and now - lastFlush < FLUSH_GAP then return false end
     lastFlush = now
     local q = table.remove(queue, 1)
     q.fn(from)
@@ -887,9 +894,14 @@ end
 Queue = function(fn)
     queue[#queue + 1] = { fn = fn, at = Now() }
     while #queue > QUEUE_KEEP do table.remove(queue, 1) end
-    if M.WAIT_EVENT <= 0 then Flush() end
+    if not M.HARDWARE_ONLY then Flush() end
 end
 M.Queued = function() return #queue end
+-- The player pressed a key or clicked: the line that was waiting goes out.
+function M.Hardware()
+    if on and queue[1] then return Flush("key") end
+    return false
+end
 
 local jarTurn, jarOwed, nextJar = 0, nil, nil
 -- Every third jar line counts the jar out loud, and the count is seeded like a busker's hat
@@ -944,7 +956,7 @@ function M.Idle(from)
     local function send(f)
         Say(line, f or "timer", function()
             tries = tries + 1
-            if tries < 2 and M.WAIT_EVENT > 0 then Queue(send) end     -- once more, on the next chat line
+            if tries < 2 and M.HARDWARE_ONLY then Queue(send) end     -- once more, on the next key or click
         end, done)
     end
     Queue(send)
@@ -1010,18 +1022,17 @@ local function Tick()
     local now = Now()
     nextJar = nextJar or (now + M.Random(JAR_FIRST_MIN, JAR_FIRST_MAX))
     local quiet = now - lastEngage >= ENGAGE_HOLD
-    if now >= nextJar and near > 0 and not away and quiet and now - lastAuto >= GLOBAL_GAP then
+    if now >= nextJar and near > 0 and not away and quiet and not queue[1] and now - lastAuto >= GLOBAL_GAP then
         nextJar = now + M.Random(JAR_MIN, JAR_MAX)
         lastAuto = now
         Queue(function(from) M.Jar(from or "timer") end)
     end
     nextIdle = nextIdle or (now + M.Random(IDLE_FIRST_MIN, IDLE_FIRST_MAX))
-    if now >= nextIdle and near > 0 and not away and quiet and now - lastAuto >= GLOBAL_GAP then
+    if now >= nextIdle and near > 0 and not away and quiet and not queue[1] and now - lastAuto >= GLOBAL_GAP then
         nextIdle = now + M.Random(IDLE_MIN, IDLE_MAX)
         lastAuto = now
         M.Idle("timer")
     end
-    if queue[1] and now - queue[1].at >= M.WAIT_EVENT then Flush() end     -- no chat line came: try it anyway
     Prune()
     Sync()
     C_Timer.After(TICK, Tick)
@@ -1207,12 +1218,6 @@ function M.Start()
                 if Readable(text) and type(text) == "string" and Readable(sender) and type(sender) == "string"
                     and Mine(text, sender, (select(10, ...))) then SaidEcho(text) end
             elseif event == "PLAYER_FLAGS_CHANGED" then AwayPrompt(Away()) end
-            -- somebody else's chat line or emote: a line that was waiting goes out on it
-            if queue[1] and event ~= "PLAYER_FLAGS_CHANGED"
-                and not (type(text) == "string" and type(sender) == "string" and Readable(text) and Readable(sender)
-                    and Mine(text, sender, (select(10, ...)))) then
-                Flush("event")
-            end
             M.Redance(event)
         end)
     end
@@ -1223,16 +1228,32 @@ function M.Start()
     on, manual, misses, pend, dancing, due = true, false, 0, nil, false, nil
     nextJar, nextIdle, wasAway, lastEngage = nil, nil, false, -1e9
     for i = #queue, 1, -1 do queue[i] = nil end
+    -- every key press and every click in the world, passed on untouched: the moment a waiting line may go out
+    if not keys and type(CreateFrame) == "function" then
+        keys = CreateFrame("Frame", "MailboxSluttingKeys", UIParent)
+        keys:SetScript("OnKeyDown", function() M.Hardware() end)
+        -- only with the keys passed on: a frame that takes the keyboard without it would swallow them all
+        if type(keys.SetPropagateKeyboardInput) == "function" and pcall(keys.SetPropagateKeyboardInput, keys, true)
+            and type(keys.EnableKeyboard) == "function" then
+            pcall(keys.EnableKeyboard, keys, true)
+        end
+        local world = rawget(_G, "WorldFrame")
+        if type(world) == "table" and type(world.HookScript) == "function" then
+            pcall(world.HookScript, world, "OnMouseDown", function() M.Hardware() end)
+        end
+    end
+    if keys then keys:Show() end
     frame:Show()
     Emote("DANCE", nil, "start")
     Tick()
-    ns.Print("you are dancing, and the big button winks or smiles at whoever is waiting. Stop dancing on the counter ends it.")
+    ns.Print("you are dancing, and the big button winks or smiles at whoever is waiting. Lines by itself go out when you press any key or click in the world. Stop dancing on the counter ends it.")
     return true
 end
 
 function M.Stop(fromHide)
     if not on then return end
     on = false
+    if keys then keys:Hide() end
     if wasAway and type(StaticPopup_Hide) == "function" then pcall(StaticPopup_Hide, "MAILBOXSLUTTING_AFK") end
     wasAway = false
     if events then
