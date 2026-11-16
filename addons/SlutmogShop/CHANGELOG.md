@@ -1,5 +1,9 @@
 # Changelog
 
+## 1.12.5
+
+- The thank-you goes out with your Accept click when they have accepted first (the game takes chat lines from an addon most surely on a click). If the game drops the thank-you or the whisper, a "Thank Bob" button shows where the trade was, and one click sends what is missing.
+
 ## 1.12.4
 
 - The tip thank-you is an emote everybody around sees, with the amount ("Smuttanie thanks Bob for the tip of 5 gold pieces."). The plain thank emote only if the game refuses it.

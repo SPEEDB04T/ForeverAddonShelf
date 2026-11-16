@@ -63,10 +63,25 @@ function T.Tip()
     return theirs
 end
 
--- Accepts the trade, if it is a tip. On a click or a key press only.
+local pre                       -- the thank-you sent with the click that finished the trade
+local owed                      -- the last tip's thank-you, until the game shows it went out
+local mode = "accept"           -- what the button does: "accept" a tip or "thank" for one
+local Say                       -- set below
+
+local function Now() return (type(GetTime) == "function" and GetTime()) or 0 end
+
+-- Accepts the trade, if it is a tip. On a click or a key press only. When they have accepted already,
+-- this click finishes the trade, so the thank-you goes out with it: the game takes a chat line from
+-- an addon most surely on a click.
 function T.Accept()
+    if mode == "thank" then return T.Thank() end
     if not T.Tip() or type(AcceptTrade) ~= "function" then return false end
-    return (pcall(AcceptTrade))
+    local ok = pcall(AcceptTrade)
+    if ok and theyAccepted and last and last.who then
+        pre = { who = last.who, amount = last.amount, at = Now() }
+        Say(pre)
+    end
+    return ok
 end
 function SlutmogShop_AcceptTip() T.Accept() end
 
@@ -78,6 +93,12 @@ end
 local function Tip(self)
     if not GameTooltip then return end
     GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
+    if mode == "thank" then
+        GameTooltip:SetText("Thank them")
+        GameTooltip:AddLine("The game did not let the thank-you out by itself. This click sends it.", 1, 0.82, 0, true)
+        GameTooltip:Show()
+        return
+    end
     GameTooltip:SetText("Accept tip")
     GameTooltip:AddLine("They give gold, you give nothing. Goes through once they accept too.", 1, 0.82, 0, true)
     GameTooltip:AddLine("The game wants a click or a key for every trade: there is an \"Accept a tip\" key binding too.", 1, 1, 1, true)
@@ -143,18 +164,88 @@ end
 -- little thank you <3 or something, with a natural delay randomized").
 T.WHISPERS = { "thank you <3", "aww, thank you <3", "you're sweet, thank you <3", "ty ty <3", "thank you, cutie <3" }
 T.DELAY_MIN, T.DELAY_MAX = 3, 8
+local ECHO_WAIT = 2             -- seconds for the game to show a line went out
+local THANK_SHOWN = 60          -- seconds the Thank button stays up
 local lastWhisper
-local function Whisper(who)
+
+local function Send(text, kind, target)
+    local send = (C_ChatInfo and C_ChatInfo.SendChatMessage) or SendChatMessage
+    if type(send) ~= "function" then return false end
+    return (pcall(send, text, kind, nil, target))
+end
+
+-- Thanked out loud with the amount, as an emote everybody around sees (SuccuDev: "not a whisper. in
+-- emote with the thank. it advertises to others they can tip me"). A text emote plays no animation,
+-- so the dance goes on.
+Say = function(tip)
+    return Send(T.Thanks(tip.who, tip.amount), "EMOTE")
+end
+
+local function Line()
     local list = T.WHISPERS
     local line = list[math.random(#list)]
     if #list > 1 then
         while line == lastWhisper do line = list[math.random(#list)] end
     end
     lastWhisper = line
+    return line
+end
+
+-- The game drops a chat line from an addon that comes with no click, without a word. So each line is
+-- watched for: if it does not show up, the button under where the trade was says "Thank Bob", and
+-- that click sends what is missing.
+local function ShowThank()
+    if not owed then return end
+    local b = Build()
+    mode = "thank"
+    if b.SetParent then pcall(b.SetParent, b, UIParent) end
+    b:SetText("Thank " .. owed.who)
+    b:SetEnabled(true)
+    if b.UnlockHighlight then b:UnlockHighlight() end
+    Fit(b)
+    b:Show()
+    local mine = owed
+    if C_Timer and C_Timer.After then
+        C_Timer.After(THANK_SHOWN, function()
+            if owed == mine and mode == "thank" then
+                mode, owed = "accept", nil
+                b:Hide()
+            end
+        end)
+    end
+end
+
+local function Watch(tip, what)
+    if not (C_Timer and C_Timer.After) then return end
+    C_Timer.After(ECHO_WAIT, function()
+        if owed == tip and not tip[what] then
+            tip["need_" .. what] = true
+            ShowThank()
+        end
+    end)
+end
+
+-- The Thank button: what did not go out by itself goes out now.
+function T.Thank()
+    local tip = owed
+    if not tip then return false end
+    if tip.need_said then Say(tip) end
+    if tip.need_whispered then Send(tip.line, "WHISPER", tip.who) end
+    tip.need_said, tip.need_whispered = nil, nil
+    mode = "accept"
+    if button then button:Hide() end
+    return true
+end
+T.Owed = function() return owed end
+T.Mode = function() return mode end
+
+local function Whisper(tip)
+    tip.line = Line()
     local delay = T.DELAY_MIN + math.random() * (T.DELAY_MAX - T.DELAY_MIN)
     local function Go()
-        local send = (C_ChatInfo and C_ChatInfo.SendChatMessage) or SendChatMessage
-        if type(send) == "function" then pcall(send, line, "WHISPER", nil, who) end
+        if owed ~= tip then return end
+        Send(tip.line, "WHISPER", tip.who)
+        Watch(tip, "whispered")
     end
     if C_Timer and C_Timer.After then C_Timer.After(delay, Go) else Go() end
 end
@@ -171,38 +262,48 @@ local function Done()
     end
     ns.Print(string.format("%s tipped you %s. Tips so far: %s.", tip.who or "Somebody", ns.MoneyText(tip.amount),
         ns.MoneyText(type(db) == "table" and db.tips or tip.amount)))
-    if tip.who then
-        -- thanked out loud with the amount, as an emote everybody around sees (SuccuDev: "not a whisper.
-        -- in emote with the thank. it advertises to others they can tip me"). A text emote plays no
-        -- animation, so the dance goes on. If the game will not have it, the plain thank emote instead.
-        local send = (C_ChatInfo and C_ChatInfo.SendChatMessage) or SendChatMessage
-        local said = type(send) == "function"
-            and pcall(send, T.Thanks(tip.who, tip.amount), "EMOTE")
-        Whisper(tip.who)
-        if not said then
-            local mb = ns.Mailbox
-            if mb and mb.IsOn and mb.IsOn() and mb.EmoteAt then
-                mb.EmoteAt("THANK", tip.who)
-            else
-                local fn = (C_ChatInfo and C_ChatInfo.PerformEmote) or DoEmote
-                if type(fn) == "function" then pcall(fn, "THANK", tip.who, true) end
-            end
-        end
+    if not tip.who then return end
+    local early = pre and pre.who == tip.who and pre.amount == tip.amount and Now() - pre.at < 30
+    owed = { who = tip.who, amount = tip.amount, said = early and pre.seen or nil }
+    pre = nil
+    if not early then Say(owed) end
+    Watch(owed, "said")
+    Whisper(owed)
+end
+
+-- Your own line came back from the game: it went out.
+local function Mine(sender, guid)
+    if Readable(guid) and guid ~= nil and guid == Call(UnitGUID, "player") then return true end
+    if not Readable(sender) or type(sender) ~= "string" then return false end
+    local me = Call(UnitName, "player")
+    return me ~= nil and (sender == me or sender:match("^([^%-]+)") == me)
+end
+
+local function Echo(event, text, sender, guid)
+    if not (Readable(text) and type(text) == "string") then return end
+    if event == "CHAT_MSG_EMOTE" and Mine(sender, guid) and text:find("for the tip of", 1, true) then
+        if owed then owed.said = true end
+        if pre then pre.seen = true end
+    elseif event == "CHAT_MSG_WHISPER_INFORM" and owed and owed.line == text then
+        owed.whispered = true
     end
 end
 
 local events = CreateFrame("Frame")
 for _, e in ipairs({ "TRADE_SHOW", "TRADE_CLOSED", "TRADE_UPDATE", "TRADE_MONEY_CHANGED", "PLAYER_TRADE_MONEY",
-    "TRADE_PLAYER_ITEM_CHANGED", "TRADE_TARGET_ITEM_CHANGED", "TRADE_ACCEPT_UPDATE", "UI_INFO_MESSAGE" }) do
+    "TRADE_PLAYER_ITEM_CHANGED", "TRADE_TARGET_ITEM_CHANGED", "TRADE_ACCEPT_UPDATE", "UI_INFO_MESSAGE",
+    "CHAT_MSG_EMOTE", "CHAT_MSG_WHISPER_INFORM" }) do
     pcall(events.RegisterEvent, events, e)
 end
-events:SetScript("OnEvent", function(_, event, a, b)
+events:SetScript("OnEvent", function(_, event, a, b, ...)
     if event == "TRADE_SHOW" then
         open, accepted, theyAccepted, last = true, false, false, nil
+        if mode == "thank" then mode = "accept" end
+        if button and button.SetParent and type(TradeFrame) == "table" then pcall(button.SetParent, button, TradeFrame) end
         Update()
     elseif event == "TRADE_CLOSED" then
         open = false
-        if button then button:Hide() end
+        if button and mode ~= "thank" then button:Hide() end
     elseif event == "TRADE_ACCEPT_UPDATE" then
         if Readable(a) and Readable(b) then
             accepted, theyAccepted = a == 1, b == 1
@@ -210,6 +311,8 @@ events:SetScript("OnEvent", function(_, event, a, b)
         if open then Update() end
     elseif event == "UI_INFO_MESSAGE" then
         if Readable(b) and type(b) == "string" and b == (ERR_TRADE_COMPLETE or "Trade complete.") then Done() end
+    elseif event == "CHAT_MSG_EMOTE" or event == "CHAT_MSG_WHISPER_INFORM" then
+        Echo(event, a, b, (select(10, ...)))
     elseif open then
         Update()
     end
