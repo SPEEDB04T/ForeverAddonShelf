@@ -147,6 +147,12 @@ local function Done()
     ns.Print(string.format("%s tipped you %s. Tips so far: %s.", tip.who or "Somebody", ns.MoneyText(tip.amount),
         ns.MoneyText(type(db) == "table" and db.tips or tip.amount)))
     if tip.who then
+        -- the emote cannot carry the amount, so a whisper says it (SuccuDev: "thanking people for their
+        -- tip should say how much they tipped me"); it goes only after a trade you accepted yourself
+        local send = (C_ChatInfo and C_ChatInfo.SendChatMessage) or SendChatMessage
+        if type(send) == "function" then
+            pcall(send, "Thank you for the " .. ns.PriceText(tip.amount, "short") .. " tip!", "WHISPER", nil, tip.who)
+        end
         local mb = ns.Mailbox
         if mb and mb.IsOn and mb.IsOn() and mb.EmoteAt then
             mb.EmoteAt("THANK", tip.who)

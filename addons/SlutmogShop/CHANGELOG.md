@@ -1,5 +1,9 @@
 # Changelog
 
+## 1.12.3
+
+- A tip that goes through gets a whisper with the amount ("Thank you for the 5g tip!") next to the thank emote.
+
 ## 1.12.2
 
 - Emotes at you no longer make a sound, only the taskbar icon flashes. Tips still play the coin sound.
