@@ -216,14 +216,14 @@ end
 
 -- Why an item has no price, in words.
 function P.Missing(sup)
-    if sup.bound then return "binds when picked up: farm it or make it" end
+    if sup.bound then return "binds when picked up" end
     if sup.ah and sup.listed == 0 then
-        return ("none on the auction house at the last scan (%s)"):format(ns.Age(sup.age))
+        return ("none listed at the last scan (%s)"):format(ns.Age(sup.age))
     end
     if sup.ah then
-        return ("only %d on the auction house at the last scan (%s)"):format(sup.listed, ns.Age(sup.age))
+        return ("only %d listed at the last scan (%s)"):format(sup.listed, ns.Age(sup.age))
     end
-    return "not scanned at the auction house yet"
+    return "not scanned yet"
 end
 
 ----------------------------------------------------------------------
@@ -328,8 +328,7 @@ local function Finish()
     scan.pending = nil
     if wasActive then
         local failed = scan.failed > 0 and (" (%d didn't answer)"):format(scan.failed) or ""
-        ns.Print(("Read the auction house prices of %d %s%s."):format(scan.done, scan.done == 1 and "reagent" or "reagents",
-            failed))
+        ns.Print(("Read %d auction %s%s."):format(scan.done, scan.done == 1 and "price" or "prices", failed))
     end
     ns.Changed()
 end
@@ -340,7 +339,7 @@ function P.StartScan(manual)
         return false
     end
     if not scan.open then
-        if manual then ns.Print("Open the auction house first; the scan runs while it is open.") end
+        if manual then ns.Print("Open the auction house first.") end
         return false
     end
     if scan.active then
@@ -350,11 +349,11 @@ function P.StartScan(manual)
     scan.queue = P.ScanList(manual)
     scan.done, scan.failed, scan.total, scan.tries = 0, 0, #scan.queue, {}
     if #scan.queue == 0 then
-        if manual then ns.Print("No reagents to price: open a profession first, or every reagent is sold by a vendor.") end
+        if manual then ns.Print("Nothing to scan: no profession read yet, or vendors sell every reagent.") end
         return false
     end
     scan.active = true
-    if manual then ns.Print(("Reading the auction house prices of %d reagents, one at a time."):format(#scan.queue)) end
+    if manual then ns.Print(("Reading %d auction %s."):format(#scan.queue, #scan.queue == 1 and "price" or "prices")) end
     ns.Changed()
     Pump()
     return true
@@ -564,13 +563,13 @@ function P.Resale(item)
     res.cap = 0
     local bound = BindType(item) == 1
     if not ns.db.sellAH then
-        res.why = "auction house sales aren't counted (options)"
+        res.why = "auction house sales are off in the options"
     elseif bound then
         res.why = "it binds when picked up"
     else
         local latest = AHStore()[item]
         if type(latest) ~= "table" or not Num(latest.t) or type(latest.l) ~= "table" then
-            res.why = "not scanned at the auction house yet"
+            res.why = "not scanned yet"
             res.waiting = true
         else
             res.age = ns.Clock() - latest.t
@@ -582,15 +581,15 @@ function P.Resale(item)
             local perDay, hours, scans = P.Demand(item)
             res.perDay, res.hours, res.scans = perDay, hours, scans
             if not cheapest then
-                res.why = ("none listed at the last scan (%s), so there is no price to sell at"):format(ns.Age(res.age))
+                res.why = ("none listed at the last scan (%s)"):format(ns.Age(res.age))
             elseif not perDay then
-                res.why = ("watched for %.1f h so far; it takes %d h of scans to see how fast it sells")
+                res.why = ("%.1f h of scans so far, it takes %d")
                     :format(hours or 0, DEMAND_MIN_HOURS)
                 res.waiting = true
             else
                 local net = cheapest * (1 - AH_CUT)
                 if net <= (sell or 0) then
-                    res.why = "the vendor pays more than the auction house after its cut"
+                    res.why = "the vendor pays more after the auction house cut"
                 elseif perDay <= 0 then
                     res.why = ("none sold in %.0f h of scans"):format(hours)
                 else
@@ -664,7 +663,7 @@ function P.Forget()
     ns.db.ah[P.RealmKey()] = {}
     ns.db.vendor = {}
     ns.Changed()
-    ns.Print("Forgot every saved auction and vendor price on this realm.")
+    ns.Print("Forgot every auction and vendor price on this realm.")
 end
 
 -- How many reagents have a price, and how old the newest scan is.

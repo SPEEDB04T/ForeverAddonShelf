@@ -44,7 +44,7 @@ local function CraftCost(ctx, r, crafts)
     local extra = { credit = 0, given = 0, take = {} }
     if r.currency then
         priced = false
-        missing = { { why = "it also costs a currency, which has no gold price" } }
+        missing = { { why = "it also costs a currency" } }
     end
     if r.unreadable then
         priced = false
@@ -206,8 +206,7 @@ function Pl.Build(args)
         local pick = best or bestUnpriced
         if not pick then
             plan.steps[#plan.steps + 1] = { kind = "gap", from = s, to = args.target,
-                why = ("None of your recipes gives skill at %d. Learn a new one%s."):format(s,
-                    ns.db and ns.db.showOptions and " (see below)" or "") }
+                why = ("Nothing you know gives skill at %d. Learn a new recipe."):format(s) }
             plan.gapAt = s
             plan.totalComplete = false
             break
@@ -295,7 +294,7 @@ function Pl.Shopping(plan)
                 elseif fromAH then
                     from = "auction house"
                 elseif sup.vendor then
-                    from = sup.vendorFrom == "vendor" and "vendor" or "vendor (item-data price)"
+                    from = sup.vendorFrom == "vendor" and "vendor" or "vendor (item data)"
                 end
             end
             list[#list + 1] = { item = item, need = need, have = sup.have, made = made, buy = buy, cost = cost,
@@ -311,7 +310,7 @@ function Pl.Shopping(plan)
     return list
 end
 
--- Recipes you don't know that would make the guide cheaper, or reach past where it stops.
+-- Recipes you don't know that would make the path cheaper, or reach past where it stops.
 function Pl.Options(plan, prof, limit)
     local out = {}
     local ctx = { offset = prof.offset or 0, seenSkill = prof.seenSkill, used = {}, made = {}, madeUsed = {},
@@ -359,11 +358,11 @@ function Pl.Options(plan, prof, limit)
 end
 
 ----------------------------------------------------------------------
--- The guide for a saved profession, with its notes
+-- The path for a saved profession, with its notes
 ----------------------------------------------------------------------
 function Pl.ForProfession(prof)
     if not prof then
-        return { ok = false, why = "Open a profession window once and its guide appears here." }
+        return { ok = false, why = "Open a profession to get its path." }
     end
     local R = ns.Recipes
     local ceiling = R.Ceiling(prof.line)
@@ -374,10 +373,9 @@ function Pl.ForProfession(prof)
     local base = { ok = false, name = prof.name, from = skill, to = target, max = max, prof = prof }
     if skill >= target then
         if (ns.db.target or 0) == 0 and skill >= max then
-            base.why = ("%s is at %d, the most your rank allows. Train the next rank, or set a higher target."):format(
-                prof.name, skill)
+            base.why = ("%s is at %d, your rank's cap. Train the next rank."):format(prof.name, skill)
         else
-            base.why = ("%s is at %d: the target (%d) is reached."):format(prof.name, skill, target)
+            base.why = ("%s is at %d. The target (%d) is reached."):format(prof.name, skill, target)
         end
         return base
     end
@@ -392,7 +390,7 @@ function Pl.ForProfession(prof)
 
     local notes = plan.notes
     if capped then
-        notes[#notes + 1] = ("No %s recipe gives skill past %d, so the guide stops there."):format(prof.name, ceiling)
+        notes[#notes + 1] = ("No %s recipe gives skill past %d. The path stops there."):format(prof.name, ceiling)
     end
     local nMissing, nStale = 0, 0
     for _ in pairs(plan.missing) do nMissing = nMissing + 1 end
@@ -401,16 +399,16 @@ function Pl.ForProfession(prof)
     if nMissing > 0 then
         local has = nMissing == 1 and "reagent has" or "reagents have"
         if plan.totalComplete then
-            notes[#notes + 1] = ("%d %s no price, so recipes that use %s were left out where they might be "
-                .. "cheaper: scan at the auction house."):format(nMissing, has, nMissing == 1 and "it" or "them")
+            notes[#notes + 1] = ("%d %s no price, so a cheaper recipe may be left out. Scan at the auction house.")
+                :format(nMissing, has)
         else
-            notes[#notes + 1] = ("%d %s no price, so %s isn't counted in the cost: scan at the auction house.")
-                :format(nMissing, has, nMissing == 1 and "it" or "they")
+            notes[#notes + 1] = ("%d %s no price and %s not in the cost. Scan at the auction house.")
+                :format(nMissing, has, nMissing == 1 and "is" or "are")
         end
     end
     if nStale > 0 then
-        notes[#notes + 1] = ("%d %s auction prices older than %d h: scan again for today's."):format(nStale,
-            nStale == 1 and "reagent uses" or "reagents use", ns.db.staleHours or 3)
+        notes[#notes + 1] = ("%d reagent %s over %d h old. Scan again."):format(nStale,
+            nStale == 1 and "price is" or "prices are", ns.db.staleHours or 3)
     end
     if ns.db.sellAH then
         local waiting = 0
@@ -418,23 +416,27 @@ function Pl.ForProfession(prof)
             if ns.Prices.Resale(e.item).waiting then waiting = waiting + 1 end
         end
         if waiting > 0 then
-            notes[#notes + 1] = ("%d %s the guide leaves over %s no auction sales seen yet, so %s at the vendor price: "
-                .. "it takes a few scans hours apart to see what sells."):format(waiting,
-                waiting == 1 and "item" or "items", waiting == 1 and "has" or "have", waiting == 1 and "it counts" or "they count")
+            notes[#notes + 1] = ("%d %s no auction sales seen yet, so %s at the vendor price. Seeing sales takes "
+                .. "scans hours apart."):format(waiting, waiting == 1 and "leftover has" or "leftovers have",
+                waiting == 1 and "it counts" or "they count")
         end
     end
     if plan.untrusted > 0 then
-        notes[#notes + 1] = ("%d known %s didn't match the game's colours, so %s only used while the game shows %s orange (/skillpath debug)."):format(
-            plan.untrusted, plan.untrusted == 1 and "recipe" or "recipes", plan.untrusted == 1 and "it is" or "they are",
-            plan.untrusted == 1 and "it" or "them")
+        notes[#notes + 1] = ("%d known %s the game's colours and %s used only while orange (/skillpath debug).")
+            :format(plan.untrusted, plan.untrusted == 1 and "recipe doesn't match" or "recipes don't match",
+                plan.untrusted == 1 and "is" or "are")
     end
+    -- Data.BUILD is "1.60.1.70938"; the game gives the last part.
     local build = prof.build
-    if build and ns.Data and build ~= ns.Data.BUILD then
-        notes[#notes + 1] = ("The recipe table is from game build %s, the game is %s; each recipe is checked against the game before use."):format(
-            ns.Data.BUILD, build)
+    local table = ns.Data and tostring(ns.Data.BUILD):match("(%d+)$")
+    if build and table and tostring(build) ~= table then
+        notes[#notes + 1] = ("The recipe table is from build %s, the game is %s. Each recipe is checked against the game.")
+            :format(table, build)
     end
-    if not ns.Recipes.WindowOpen() and prof.t then
-        notes[#notes + 1] = ("Recipes as of when you last opened %s (%s)."):format(prof.name, ns.Age(ns.Clock() - prof.t))
+    if prof.unread then
+        notes[#notes + 1] = "A recipe learned since isn't in the path. Open the profession to read it."
+    elseif not ns.Recipes.WindowOpen() and prof.t and ns.Clock() - prof.t > 86400 then
+        notes[#notes + 1] = ("Recipes last read %s."):format(ns.Age(ns.Clock() - prof.t))
     end
     return plan
 end

@@ -2,16 +2,14 @@
 local ADDON, ns = ...
 
 ns.ADDON = ADDON
-ns.VERSION = "1.1.0"
+ns.VERSION = "1.2.0"
 ns.NAME = "SkillPath"
 ns.ICON = "Interface\\Icons\\INV_Misc_Note_01"
 
 local defaults = {
-    point = nil,
-    scale = 1,
     target = 0,          -- 0 = as far as your current trainer rank allows
-    autoShow = true,     -- open beside the professions window
-    showPoints = true,   -- a line for every skill point under each step
+    openOnTab = false,   -- a profession opens on the SkillPath tab
+    showPoints = true,   -- each point's chance and cost under a craft step
     useBank = true,      -- reagents in the bank count as free, like those in the bags
     showOptions = true,  -- recipes you don't know yet that would help
     staleHours = 3,      -- an auction price older than this is called out as old
@@ -137,6 +135,7 @@ local function InitDB()
     if type(db.chars) ~= "table" then db.chars = {} end
     if type(db.ah) ~= "table" then db.ah = {} end
     if type(db.vendor) ~= "table" then db.vendor = {} end
+    db.point, db.scale, db.autoShow = nil, nil, nil     -- 1.1's own window
     ns.db = db
 end
 ns.InitDB = InitDB
@@ -159,10 +158,6 @@ function ns.ResetSettings()
     local db = ns.db
     for key, value in pairs(defaults) do db[key] = value end
     db.minimap = nil
-    if ns.UI then
-        ns.UI.ApplyScale()
-        ns.UI.Place()
-    end
     if ns.Kit then ns.Kit.RefreshMinimap() end
     ns.Changed()
     ns.Print("Settings reset. Saved recipes and prices are kept.")
@@ -205,27 +200,18 @@ end
 ----------------------------------------------------------------------
 -- Chat
 ----------------------------------------------------------------------
+-- The path in chat: the same numbered steps as the pages.
 function ns.Report()
     local p = ns.Plan()
-    if not p.ok then
-        ns.Print(p.why)
+    if not (p.ok and ns.UI) then
+        ns.Print(p.why or "No path yet.")
         return
     end
-    ns.Print(("%s %d -> %d: %s expected%s."):format(p.name, p.from, p.to, ns.Money(p.total),
-        p.totalComplete and "" or " for the priced part (some reagents have no price)"))
-    if (p.back or 0) >= 0.5 then
-        ns.Print(("  Selling what is left gives back about %s, so it nets %s."):format(ns.Money(p.back),
-            p.net >= 0 and ns.Money(p.net) or (ns.Money(-p.net) .. " profit")))
-    end
-    for _, step in ipairs(p.steps) do
-        if step.kind == "craft" then
-            local cost = step.priced and ns.Money(step.cost) or "no price"
-            ns.Print(("  %d-%d: %s, %s crafts, %s"):format(step.from, step.to, step.name, ns.Crafts(step.crafts), cost))
-        elseif step.kind == "train" then
-            ns.Print(("  %d: train the next rank at your trainer"):format(step.at))
-        elseif step.kind == "gap" then
-            ns.Print(("  %d-%d: %s"):format(step.from, step.to, step.why))
-        end
+    local title, line = ns.UI.Summary(p)
+    ns.Print(title .. ". " .. line)
+    for _, s in ipairs(ns.UI.Steps(p)) do
+        local text, sub = ns.UI.StepText(s, p)
+        ns.Print(("  %d. %s: %s"):format(s.n, text, sub))
     end
     for _, note in ipairs(p.notes) do ns.Print("  " .. note) end
 end
@@ -273,9 +259,9 @@ local function Slash(msg)
         if n and n >= 0 and n <= 450 then
             ns.db.target = math.floor(n)
             ns.Changed()
-            ns.Print(n == 0 and "Target: as far as your trainer rank allows." or ("Target: skill %d."):format(n))
+            ns.Print(n == 0 and "Target: your rank's cap." or ("Target: skill %d."):format(n))
         else
-            ns.Print("Usage: /skillpath target <skill>, or 0 for as far as your trainer rank allows")
+            ns.Print("Usage: /skillpath target <skill> (0: your rank's cap)")
         end
     elseif cmd == "forget" then
         ns.Prices.Forget()
@@ -289,15 +275,12 @@ local function Slash(msg)
             ns.Print("The minimap button isn't loaded; /reload loads it.")
         end
     elseif cmd == "reset" then
-        ns.db.point, ns.db.scale = nil, 1
-        ns.UI.ApplyScale()
-        ns.UI.Place()
-        ns.Print("Window position and scale reset.")
+        ns.ResetSettings()
     elseif cmd == "debug" then
         Debug()
     else
-        ns.Print("Commands: /skillpath (the guide), print (the guide in chat), scan (read reagent prices at the "
-            .. "auction house), target <skill>, forget (forget prices), config, minimap, reset, debug")
+        ns.Print("Commands: /skillpath (the SkillPath tab), print, scan, target <skill>, forget, config, minimap, "
+            .. "reset, debug")
     end
     if ns.Kit then ns.Kit.Sync() end      -- an open options window follows what was typed
 end
@@ -309,7 +292,7 @@ SLASH_SKILLPATH2 = "/spath"
 -- taints every slash command, and the game then blocks /tm marking and /invite.
 SlashCmdList["SKILLPATH"] = Slash
 
--- The addon's line in the list of addons next to the minimap: left-click the guide,
+-- The addon's line in the list of addons next to the minimap: left-click the SkillPath tab,
 -- right-click the options.
 function SkillPath_Toggle(_, mouseButton)
     if not (ns.UI and ns.db) then return end
@@ -348,7 +331,7 @@ frame:SetScript("OnEvent", function(_, event, a, b)
     if event == "PLAYER_LOGIN" then
         InitDB()
         ns.Recipes.UpdateSkills()
-        if ns.UI then ns.UI.Create() end
+        if ns.UI then ns.UI.Init() end
         if ns.Kit and ns.Options then
             local ok, err = pcall(ns.Options.Init)
             if not ok then ns.Print("options error: " .. tostring(err)) end
@@ -362,7 +345,14 @@ frame:SetScript("OnEvent", function(_, event, a, b)
         QueueSnapshot(true)
     elseif event == "TRADE_SKILL_LIST_UPDATE" or event == "TRADE_SKILL_DATA_SOURCE_CHANGED"
         or event == "NEW_RECIPE_LEARNED" then
-        if ns.tradeOpen then QueueSnapshot(false) end
+        if ns.tradeOpen then
+            QueueSnapshot(false)
+        elseif event == "NEW_RECIPE_LEARNED" then
+            -- Learned with the window closed (a trainer, a recipe item): the saved lists are behind.
+            local char = ns.Char()
+            for _, prof in pairs(char and char.profs or {}) do prof.unread = true end
+            ns.Changed()
+        end
     elseif event == "TRADE_SKILL_CLOSE" then
         ns.tradeOpen = false
         ns.showAfterSnapshot = false
@@ -376,5 +366,6 @@ frame:SetScript("OnEvent", function(_, event, a, b)
         if ns.Prices.ReadMerchant() > 0 then ns.Changed() end
     else
         ns.Prices.OnEvent(event, a, b)
+        if event == "AUCTION_HOUSE_SHOW" and ns.UI then ns.UI.AuctionOpened() end
     end
 end)
