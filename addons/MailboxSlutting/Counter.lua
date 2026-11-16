@@ -44,7 +44,7 @@ local function Text(parent, font)
     local fs = parent:CreateFontString(nil, "ARTWORK", font)
     if fs.SetFontObject and _G[font] then pcall(fs.SetFontObject, fs, _G[font]) end
     fs:SetJustifyH("LEFT")
-    -- ui-style rule 16: one line in a box it cannot leave
+    -- one line in a box it cannot leave
     if fs.SetWordWrap then fs:SetWordWrap(false) end
     if fs.SetMaxLines then fs:SetMaxLines(1) end
     fs:SetHeight(12)

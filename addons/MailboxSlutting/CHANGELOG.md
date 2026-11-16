@@ -1,5 +1,9 @@
 # Changelog
 
+## 1.5.1
+
+- "glances over a shoulder at the crowd." is gone: somebody in the dance animation does not turn and look back. In its place: "takes it slow for the ones staring." The giggle "behind a hand" is now "gives Bob a little giggle.", since the hands are busy dancing.
+
 ## 1.5.0
 
 - Works wherever you dance, not only on a mailbox. No line says where you stand any more: "smiles down at Bob.", "gives the crowd below something to look at." and the like are reworded ("gives Bob a slow smile.", "gives the crowd something to look at."). Nothing else ever needed a mailbox.

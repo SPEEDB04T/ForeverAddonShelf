@@ -114,7 +114,7 @@ M.VARIANTS = {
     WINK = { "winks at %s.", "gives %s a wink.", "gives %s a slow wink." },
     SMILE = { "gives %s a slow smile.", "gives %s a little smile.", "smiles warmly at %s." },
     WAVE = { "gives %s a little wave." },
-    GIGGLE = { "giggles behind a hand at %s." },
+    GIGGLE = { "gives %s a little giggle." },
     GRIN = { "grins at %s.", "gives %s a grin." },
     SMIRK = { "smirks at %s." },
     NOD = { "gives %s a slow nod.", "gives %s a little nod." },
@@ -153,6 +153,9 @@ M.JAR = {
 -- What people see is the dance, nonstop, by somebody half away from the keyboard (SuccuDev: "strikes a
 -- pose? im obviously semi-afk dancing on a mailbox"). So a line never claims a move the character is not
 -- making (a pose, a spin, a bow, a wave, a hop): only eyes, face, voice, and the dance going on.
+-- Picture it: the dance animation loops, the body never holds still or turns, the arms are busy. So no
+-- line turns the body or uses a hand either (SuccuDev, 2026-11-16: "looks over her shoulder is dumb
+-- please visualize what WOW mailbox dancing looks like").
 M.IDLE = {
     "dances a little slower for whoever is watching.",
     "catches somebody staring and smiles.",
@@ -167,7 +170,7 @@ M.IDLE = {
     "dances just out of reach.",
     "lets the crowd look.",
     "smiles at whoever is looking.",
-    "glances over a shoulder at the crowd.",
+    "takes it slow for the ones staring.",
     "enjoys being watched.",
     "does not mind the staring at all.",
     "licks a lip and looks over the crowd.",
@@ -1092,8 +1095,7 @@ local function ReplyButton(parent, label, w, h)
     return b
 end
 
--- ui-style rule 16, "text never runs over anything" (SuccuDev, 2026-11-16: "blaize smirks went over
--- buttons at the bottom, UI system shouldnt be alloweing overlaps like this"). Every text gets a box it
+-- Text never runs over anything. Every text gets a box it
 -- cannot leave: a fixed height for its lines on top of the width its anchors give it, no wrapping for
 -- one line and a line cap for more. The game draws nothing outside a box with both sizes set.
 local LINE_H = { GameFontNormalLarge = 18, GameFontNormal = 14, GameFontDisable = 14 }
