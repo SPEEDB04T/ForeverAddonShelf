@@ -1,5 +1,9 @@
 # Changelog
 
+## 1.4.1
+
+- Four lines that tried to be clever are out (the ones about checking the mail, forgetting the mail, pretending to check it, and the tip jar speaking for itself). Plain ones in their place: "smiles at whoever is looking up.", "runs a slow look over the crowd.", "dances with eyes on somebody in the crowd."
+
 ## 1.4.0
 
 - The lines at nobody are rewritten to tease instead of wait: somebody who knows they are being watched ("dances a little slower for whoever is watching.", "catches somebody staring and smiles.", "makes checking the mail take longer than it should."). Gone are the flat ones (keeps dancing, hums a tune) and the needy ones (looks around for an audience).

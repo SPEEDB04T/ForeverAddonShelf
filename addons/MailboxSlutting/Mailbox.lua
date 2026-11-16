@@ -143,7 +143,6 @@ end
 -- No looking for an audience, no eyeing the jar. The jar is mentioned seldom and never asked for.
 M.JAR = {
     "dances a little slower beside the tip jar.",
-    "lets the tip jar speak for itself.",
     "taps the tip jar with a toe, then looks away.",
     "leaves the tip jar where everybody can reach it.",
 }
@@ -159,19 +158,19 @@ M.IDLE = {
     "knows exactly who is watching.",
     "winks at whoever is staring.",
     "puts a little more hip into it.",
-    "smirks at somebody who forgot their mail.",
+    "runs a slow look over the crowd.",
     "moves a little slower every time somebody looks up.",
     "meets a stare and does not look away.",
     "dances just out of reach.",
     "lets the crowd look.",
-    "makes checking the mail take longer than it should.",
+    "smiles at whoever is looking up.",
     "glances over a shoulder at the crowd.",
     "enjoys being watched.",
     "does not mind the staring at all.",
     "licks a lip and looks over the crowd.",
     "takes the next step slow, for the view.",
     "pretends not to notice the staring.",
-    "notices how many people are pretending to check their mail.",
+    "dances with eyes on somebody in the crowd.",
     "sways those hips a little slower.",
     "looks down at the crowd, slow and smug.",
 }

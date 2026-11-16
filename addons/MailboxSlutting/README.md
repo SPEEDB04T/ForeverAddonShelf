@@ -46,6 +46,6 @@ When somebody opens a trade and gives you gold while you give nothing, an "Accep
 
 ## The tip jar, welcome backs and AFK
 
-- **The tip jar.** Every 8 to 12 minutes, while people are around and nobody is engaging, one line about the tip jar ("lets the tip jar speak for itself."), and the Tip jar button says one with a click. Every third one counts the jar out loud.
+- **The tip jar.** Every 8 to 12 minutes, while people are around and nobody is engaging, one line about the tip jar ("dances a little slower beside the tip jar."), and the Tip jar button says one with a click. Every third one counts the jar out loud.
 - **Welcome back.** Somebody who tipped you before and comes by again gets one "welcomes Bob back.".
 - **AFK.** When the game marks you AFK a warning with a sound comes up, so the dance does not end unnoticed.
