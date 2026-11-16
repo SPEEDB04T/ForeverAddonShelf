@@ -1,5 +1,9 @@
 # Changelog
 
+## 1.17.1
+
+- Removed the idle line about tugging a hem down: the shop does not know what you are wearing, and no line should say.
+
 ## 1.17.0
 
 Emotes written for dancing on top of the mailbox, all in the game's own emote style.

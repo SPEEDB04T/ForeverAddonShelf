@@ -147,7 +147,6 @@ M.IDLE = {
     "does a little spin on the mailbox.",
     "strikes a pose on top of the mailbox.",
     "blows a kiss to the crowd below.",
-    "tugs the hem down. It doesn't help.",
     "looks down from the mailbox and waves.",
     "balances on tiptoe on the mailbox.",
 }
