@@ -1,5 +1,20 @@
 # Changelog
 
+## 1.3.0 (2026-11-16)
+
+- No sound any more. A switch shows only as the glow and the line on screen.
+- New: Righteous Fury reminder for a Protection paladin in a group. Its button glows while it is off, its tooltip says "Not on", and one line shows when a fight starts without it (`/aura fury`).
+- New: your blessings on the party. A party member's tooltip shows your blessing and its time left ("Might 4 min"). Out of a fight, a blessing you gave that ran out or is about to glows, and its tooltip names who needs it. The minimap tooltip says "Blessed 3/5" (`/aura bless`).
+- One thing glows at a time: Righteous Fury, then the aura to switch to, then a blessing.
+- Back to your usual aura is suggested only for a minute after a fight, not for good, not at login and not on a flight.
+- No "No aura" guess when the game won't say which aura is on (just after dying, stance bar hidden).
+- In a fight, a held suggestion now comes down after 20 seconds of other hits (the Fire add died, the melee goes on). A plain pause still keeps it.
+- Enemy casts count only when aimed at you or your party, count less, and stop counting when interrupted.
+- One damage-over-time spell ticking on one of you, or two hits from a fire patch, no longer suggests a resistance aura. That needs hits on two of you, five hits in 10 seconds, or an enemy seen casting that school.
+- Hits you are immune to (Divine Shield) count for no aura. Spells of two schools at once (Frostfire, Shadowflame) count for no resistance. A Life Tap whose hit arrives before its cast is still left out.
+- The cause for physical hits says "physical hits", not "melee hits": the game doesn't say whether it was a sword or an arrow.
+- The glow is sized to the button again each time it shows (outside a fight), in case the bars were rescaled.
+
 ## 1.2.5 (2026-11-15)
 
 - Even less text. The line on screen is the aura's icon and name and nothing more. Its cause shows only in the aura's tooltip, short and in grey ("8 Fire hits", "Shadow Bolt, 2 hits", "3 pushbacks", "No aura"). The minimap tooltip shows just the aura on ("Devotion Aura", "No aura") and the one to switch to.

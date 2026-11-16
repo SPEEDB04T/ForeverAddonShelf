@@ -52,13 +52,22 @@ local function Rows()
           get = Get("betweenFights"), set = Set("betweenFights") },
 
         { kind = "header", text = "Alerts in a fight" },
-        { kind = "check", label = "Play a sound", get = Get("sound"), set = Set("sound") },
         { kind = "check", label = "Show a line on screen",
           tip = "The aura's icon and name in the middle of the screen when a switch is suggested in a fight. Same as /aura banner.",
           get = Get("banner"), set = Set("banner") },
         { kind = "check", label = "Write a line in chat",
           tip = "The aura's name in chat when a switch is suggested in a fight. Off unless you turn it on. Same as /aura chat.",
           get = Get("chat"), set = Set("chat") },
+
+        { kind = "header", text = "Reminders" },
+        { kind = "check", label = "Righteous Fury when you tank",
+          tip = "In a group, as a Protection paladin (tank role, Tank play style, or most points in Protection): "
+              .. "Righteous Fury's button glows while it is off, and a line shows when a fight starts without it. Same as /aura fury.",
+          get = Get("fury"), set = Set("fury") },
+        { kind = "check", label = "Your blessings on the party",
+          tip = "Party members' tooltips show your blessing on them and its time left. Out of a fight, a blessing you gave "
+              .. "that ran out (or is about to) glows; its tooltip names who needs it. Same as /aura bless.",
+          get = Get("blessings"), set = Set("blessings") },
 
         { kind = "header", text = "Minimap" },
         Kit.MinimapRow(),
@@ -87,6 +96,14 @@ local function Status()
     local lines = { res.current and ns.known[res.current] and ns.TwoWords(res.current) or "No aura" }
     if res.shown and ns.known[res.shown] then
         lines[#lines + 1] = ns.UI.Paint("GREEN_FONT_COLOR", ns.TwoWords(res.shown))
+    end
+    local R = ns.Reminders
+    if R then
+        if res.reminder and res.reminder.kind == "fury" then
+            lines[#lines + 1] = ns.UI.Paint("RED_FONT_COLOR", "No Righteous Fury")
+        end
+        local blessed = R.StatusLine()
+        if blessed then lines[#lines + 1] = blessed end
     end
     return lines
 end

@@ -16,9 +16,10 @@ local defaults = {
     idle = "auto",              -- the aura between fights: auto | devotion | retribution | concentration
     sensitivity = "normal",     -- low | normal | high
     betweenFights = true,       -- suggest going back to the default aura after a fight
-    sound = true,
     banner = true,              -- a line in the middle of the screen
     chat = false,               -- a line in the chat window
+    fury = true,                -- remind a Protection paladin in a group to put Righteous Fury on
+    blessings = true,           -- your blessings on the party: in tooltips, and a glow when they run out
 }
 local CHOICES = {
     style = { auto = true, damage = true, tank = true, healer = true },
@@ -27,12 +28,14 @@ local CHOICES = {
 }
 local RANGES = {}
 -- 1.0-1.1 had a bar of its own; 1.2 shows the advice on the game's bars. Its settings go.
-local OLD_KEYS = { "show", "locked", "scale", "idleAlpha", "point", "v110" }
+local OLD_KEYS = { "show", "locked", "scale", "idleAlpha", "point", "v110", "sound" }   -- 1.3: no sound any more
 
 local TICK = 0.4                -- seconds between two looks at the fight
 local HOLD = 0.8                -- a suggestion must stand this long before it is shown
 local REALERT = 10              -- seconds before the same aura is announced again
 local FORGET_AFTER = 6          -- seconds after a fight before its hits are forgotten
+local BACK_FOR = 60             -- seconds after a fight the default aura is suggested; then it is up to you
+local HELD_FOR = 20             -- seconds a held suggestion stays once nothing of its kind is seen any more
 
 ns.known = {}                   -- key -> { key, name, icon, spellID, form }
 ns.knownSet = {}                -- key -> true
@@ -89,7 +92,7 @@ function ns.SpellInfo(spell)
     end
 end
 
-local function PlayerKnows(id)
+function ns.PlayerKnows(id)
     for _, f in ipairs({ IsPlayerSpell or false, IsSpellKnown or false }) do
         if f then
             local ok, known = pcall(f, id)
@@ -157,7 +160,7 @@ function ns.ResolveAuras()
     for key, def in pairs(Data.AURAS) do
         local id
         for i = #def.ids, 1, -1 do
-            if PlayerKnows(def.ids[i]) then id = def.ids[i]; break end
+            if ns.PlayerKnows(def.ids[i]) then id = def.ids[i]; break end
         end
         if not id then
             -- A lookup by name only finds spells in the spellbook (this catches new spell IDs).
@@ -178,6 +181,12 @@ end
 function ns.CurrentAura()
     if ns.formsListed and ns.formsReadable then return ns.formCurrent end
     return ns.seenCurrent
+end
+
+-- Is it known which aura is on (none counts)? Not when the stance bar can't be read and your
+-- buffs haven't been read since you died or logged in: then "no aura" would only be a guess.
+function ns.CurrentKnown()
+    return (ns.formsListed and ns.formsReadable) or ns.seenValid == true
 end
 
 -- Your own buffs show your aura, the auras other paladins have on you, and Righteous Fury.
@@ -222,6 +231,7 @@ function ns.ScanBuffs()
     end
     ns.buffOthers, ns.castOthers, ns.fury = others, {}, fury
     if not (ns.formsListed and ns.formsReadable) then ns.seenCurrent = own end
+    ns.seenValid = true
     return true
 end
 
@@ -290,19 +300,22 @@ function ns.TwoWords(key)
     return def and def.short or tostring(name)
 end
 
--- The aura's icon and name, "|T...|t Fire Resistance": nothing else shows in play.
-function ns.IconName(key)
-    local info = ns.known[key]
-    local text = ns.TwoWords(key)
+-- A spell's icon and a text, "|T...|t Fire Resistance": nothing else shows in play.
+function ns.IconText(spellID, text)
     local get = (C_Spell and C_Spell.GetSpellTexture) or GetSpellTexture
-    if info and info.spellID and get then
-        local ok, tex = pcall(get, info.spellID)
+    if spellID and get then
+        local ok, tex = pcall(get, spellID)
         tex = ok and Plain(tex) or nil
         if type(tex) == "number" or (type(tex) == "string" and tex ~= "") then
             text = "|T" .. tex .. ":0|t " .. text
         end
     end
     return text
+end
+
+function ns.IconName(key)
+    local info = ns.known[key]
+    return ns.IconText(info and info.spellID, ns.TwoWords(key))
 end
 
 local function Alert(res, now)
@@ -316,9 +329,6 @@ local function Alert(res, now)
         UIErrorsFrame:AddMessage(text, 1, 0.82, 0.2)
     end
     if ns.db.chat then DEFAULT_CHAT_FRAME:AddMessage("|cfff58cba" .. text .. "|r") end
-    if ns.db.sound and PlaySound then
-        pcall(PlaySound, (SOUNDKIT and SOUNDKIT.RAID_WARNING) or 8959, "Master")
-    end
 end
 
 -- UnitIsDeadOrGhost when the game shows it; else what PLAYER_DEAD / PLAYER_ALIVE / PLAYER_UNGHOST said.
@@ -330,20 +340,36 @@ function ns.IsDead()
     return ns.deadFlag and true or false
 end
 
+local function RecentEvents(sum)
+    local n = 0
+    for _, v in pairs(sum.count) do n = n + v end
+    return n
+end
+
+local function OnTaxi()
+    if not UnitOnTaxi then return false end
+    local ok, v = pcall(UnitOnTaxi, "player")
+    return ok and Plain(v) == true
+end
+
 function ns.Think(now)
     Signals.ScanEnemies(now)
     local sum = Signals.Summary(now)
     local style, styleWhy = ns.Style()
+    -- Back to the default only just after a fight: an aura you keep on after that is your choice.
+    local afterFight = ns.fightEndedAt ~= nil and now - ns.fightEndedAt <= BACK_FOR and not OnTaxi()
     local res = Advisor.Advise(sum, {
         known = ns.knownSet, current = ns.CurrentAura(), others = ns.OtherAuras(),
         style = style, idle = ns.db.idle, sensitivity = ns.db.sensitivity,
         sticky = ns.sticky, betweenFights = ns.db.betweenFights,
+        afterFight = afterFight, currentUnknown = not ns.CurrentKnown(),
     })
     res.style, res.styleWhy = style, styleWhy
     ns.sticky = res.suggest
+    res.reminder = ns.Reminders and ns.Reminders.Update(now) or nil
 
     -- Dead or a ghost: your aura is gone and nothing can be cast, so say nothing at all (no
-    -- glow, sound, banner, chat or tooltip line) until you're back on your feet.
+    -- glow, banner, chat or tooltip line) until you're back on your feet.
     if ns.IsDead() then
         pending.key, ns.held, ns.shownKey, ns.sticky = nil, nil, nil, nil
         res.dead = true
@@ -358,16 +384,22 @@ function ns.Think(now)
     if res.suggest ~= pending.key then pending.key, pending.since = res.suggest, now end
     local fresh = res.suggest and (res.suggest == ns.shownKey or now - pending.since >= HOLD)
     local held = ns.held
+    -- Still being hit by what brought it up (a hit or cast of its kind in the last 10 s), or a
+    -- pause with nothing hitting anyone: it stands. Other hits for HELD_FOR take it down (the
+    -- Fire add is dead, the boss's melee goes on).
+    if held and ((res.why[held.key] and not ns.OtherAuras()[held.key]) or RecentEvents(sum) == 0) then
+        held.seen = now
+    end
     if fresh then
         res.shown = res.suggest
         if held and ns.inCombat and held.key == res.suggest and not res.why[res.suggest] then
             -- still ahead, but the hits behind it have faded: keep saying why it came up
             res.reason, res.held = held.reason, true
         else
-            ns.held = ns.inCombat and { key = res.suggest, reason = res.reason } or nil
+            ns.held = ns.inCombat and { key = res.suggest, reason = res.reason, seen = now } or nil
         end
     elseif held and ns.inCombat and held.key ~= res.current and ns.knownSet[held.key]
-        and not ns.OtherAuras()[held.key] then
+        and not ns.OtherAuras()[held.key] and now - (held.seen or now) <= HELD_FOR then
         res.shown, res.reason, res.held = held.key, held.reason, true
     else
         ns.held = nil
@@ -375,7 +407,7 @@ function ns.Think(now)
     local changed = res.shown ~= ns.shownKey
     ns.shownKey = res.shown
     ns.result, ns.summary = res, sum
-    -- Between fights the glow alone says it; sound and banner are for fights.
+    -- Between fights the glow alone says it; the banner is for fights.
     if changed and res.shown and (not res.quiet or (not res.current and ns.inCombat)) then
         Alert(res, now)
     end
@@ -400,6 +432,7 @@ local function OnUpdate(_, dt)
     if knownDirty then
         knownDirty, formsDirty = false, false
         ns.ResolveAuras()
+        if ns.Reminders then ns.Reminders.Resolve() end
         ns.UI.Refresh()
     elseif formsDirty then
         formsDirty = false
@@ -431,26 +464,32 @@ local function OnEvent(_, event, a1, a2, a3, a4, a5)
         if unit == "player" then
             local key = ns.KeyFromSpell(Plain(a3))
             if key then
-                ns.seenCurrent = key
+                ns.seenCurrent, ns.seenValid = key, true
                 formsDirty, ns.thinkNow = true, true
             end
         elseif unit and PARTY[unit] then
             PartyAuraCast(unit, a3)
             Signals.OnFriendlyCast(unit, a3, false)
         end
+    elseif event == "UNIT_SPELLCAST_INTERRUPTED" or event == "UNIT_SPELLCAST_FAILED" then
+        Signals.OnCastFailed(a1)
     elseif event == "UNIT_AURA" then
-        if Plain(a1) == "player" then buffDirty = true end
+        local unit = Plain(a1)
+        if unit == "player" then buffDirty = true end
+        if ns.Reminders and (unit == "player" or (unit and PARTY[unit])) then ns.Reminders.dirty = true end
     elseif event == "PLAYER_REGEN_DISABLED" then
         ns.inCombat, ns.forgetAt = true, nil
         if ns.testing then ns.testing = nil; Signals.Reset() end
         ns.thinkNow = true
+        if ns.Reminders then pcall(ns.Reminders.OnCombatStart) end
     elseif event == "PLAYER_REGEN_ENABLED" then
         ns.inCombat = false
+        ns.fightEndedAt = GetTime()
         ns.forgetAt = GetTime() + FORGET_AFTER
         buffDirty, formsDirty = true, true
         ns.held, ns.thinkNow = nil, true    -- the fight is over: so is its suggestion
     elseif event == "PLAYER_DEAD" then
-        ns.seenCurrent, ns.deadFlag, ns.held = nil, true, nil
+        ns.seenCurrent, ns.seenValid, ns.deadFlag, ns.held = nil, false, true, nil
         formsDirty, buffDirty, ns.thinkNow = true, true, true
         -- the fight you died in is over for you: its hits don't count once you're back
         if not ns.testing then Signals.Reset() end
@@ -458,13 +497,14 @@ local function OnEvent(_, event, a1, a2, a3, a4, a5)
         -- PLAYER_ALIVE also fires on release, as a ghost: IsDead() still says so then
         local ok, dead = pcall(UnitIsDeadOrGhost or function() return false end, "player")
         if event == "PLAYER_UNGHOST" or (ok and not Secret(dead) and not dead) then ns.deadFlag = false end
-        ns.seenCurrent = nil
+        ns.seenCurrent, ns.seenValid = nil, false
         formsDirty, buffDirty, ns.thinkNow = true, true, true
     elseif event == "UPDATE_SHAPESHIFT_FORM" or event == "UPDATE_SHAPESHIFT_USABLE" then
         formsDirty, ns.thinkNow = true, true
     elseif event == "GROUP_ROSTER_UPDATE" or event == "PLAYER_ROLES_ASSIGNED" then
         PruneOthers()
         buffDirty = true
+        if ns.Reminders then ns.Reminders.dirty = true end
     else    -- spells, level, stance bar layout, entering the world
         knownDirty, buffDirty = true, true
     end
@@ -472,7 +512,7 @@ end
 
 local EVENTS = {
     "UNIT_COMBAT", "UNIT_SPELLCAST_START", "UNIT_SPELLCAST_CHANNEL_START", "UNIT_SPELLCAST_CHANNEL_STOP",
-    "UNIT_SPELLCAST_DELAYED",
+    "UNIT_SPELLCAST_DELAYED", "UNIT_SPELLCAST_INTERRUPTED", "UNIT_SPELLCAST_FAILED",
     "UNIT_SPELLCAST_SUCCEEDED", "UNIT_AURA", "PLAYER_REGEN_DISABLED", "PLAYER_REGEN_ENABLED", "PLAYER_DEAD",
     "PLAYER_ALIVE", "PLAYER_UNGHOST",
     "UPDATE_SHAPESHIFT_FORM", "UPDATE_SHAPESHIFT_FORMS", "UPDATE_SHAPESHIFT_USABLE", "GROUP_ROSTER_UPDATE",
@@ -584,6 +624,7 @@ function ns.PrintDebug()
     end
     ns.Print("glowing on: " .. (#glowing > 0 and table.concat(glowing, ", ") or "nothing")
         .. (ns.held and ns.result and ns.result.held and " (held until you switch or the fight ends)" or ""))
+    if ns.Reminders then ns.Reminders.PrintDebug() end
 end
 
 -- A pretend burst of damage, to see what the advisor does without a fight.
@@ -637,17 +678,18 @@ local function Help()
     ns.Print("  /aura style auto|damage|tank|healer  (now: " .. ns.db.style .. ")")
     ns.Print("  /aura default auto|devotion|retribution|concentration  - your aura between fights (now: " .. ns.db.idle .. ")")
     ns.Print("  /aura sens low|normal|high  - how quickly it suggests a switch (now: " .. ns.db.sensitivity .. ")")
-    ns.Print("  /aura glow | sound | banner | chat | between  - switch that on or off")
+    ns.Print("  /aura glow | banner | chat | between | fury | bless  - switch that on or off")
     ns.Print("  /aura test fire|frost|shadow|melee|push|off  - a pretend fight")
     ns.Print("  /aura minimap | reset | debug")
 end
 
 local TOGGLES = {
     glow = { "glow", "glow" },
-    sound = { "sound", "sound" },
     banner = { "banner", "line on screen" },
     chat = { "chat", "chat line" },
     between = { "betweenFights", "default after a fight" },
+    fury = { "fury", "Righteous Fury reminder" },
+    bless = { "blessings", "blessing reminders" },
 }
 
 SLASH_AURAADVISOR1 = "/aura"

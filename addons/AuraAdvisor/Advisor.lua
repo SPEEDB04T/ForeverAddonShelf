@@ -29,7 +29,8 @@ A.T = {
         high   = { margin = 0.25, gain = 1.5 },
     },
     baseline = 2,           -- points your default aura gets for free
-    cast = 2,               -- an enemy casting a spell of a known school
+    cast = 1,               -- an enemy casting a spell of a known school at you or your party
+    steady = 5,             -- hits of one school in 10 s that name it even when they all hit one of you
     pushMine = 4, pushParty = 2.5,
     danger = 1.8,           -- Devotion after crits and crushing blows
     crowd = 3,              -- this many enemies make Retribution worth more to a tank
@@ -84,9 +85,10 @@ function A.Score(sum, ctx)
     if danger then dev = dev * T.danger end
     scores.devotion = dev
     -- the causes are short: they show in the aura's tooltip, "8 Fire hits", "3 pushbacks"
+    -- "physical", not "melee": the game doesn't say whether a hit was a sword or an arrow
     if n.physical > 0 then
         why.devotion = ("%d %s"):format(n.physical, danger and Plural(n.physical, "hard hit", "hard hits")
-            or Plural(n.physical, "melee hit", "melee hits"))
+            or Plural(n.physical, "physical hit", "physical hits"))
     end
 
     -- Retribution: only what landed
@@ -94,7 +96,7 @@ function A.Score(sum, ctx)
     if style.crowdRetribution and (e.engaged or 0) >= T.crowd then retFactor = style.crowdRetribution end
     scores.retribution = phys * retFactor
     if n.physical > 0 then
-        why.retribution = ("%d %s"):format(n.physical, Plural(n.physical, "melee hit", "melee hits"))
+        why.retribution = ("%d %s"):format(n.physical, Plural(n.physical, "physical hit", "physical hits"))
     end
 
     -- Concentration: casts a hit actually pushed back
@@ -105,12 +107,19 @@ function A.Score(sum, ctx)
         why.concentration = ("%d party %s"):format(n.pushParty, Plural(n.pushParty, "pushback", "pushbacks"))
     end
 
-    -- Resistance auras: hits of that school, and enemy spells of that school being cast
+    -- Resistance auras: hits of that school, and enemy spells of that school being cast at you
+    -- or your party. To be named as the cause, a school needs more than one damage-over-time
+    -- spell ticking on one of you: it hit two of you, or an enemy was seen casting it, or it
+    -- hit often (a DoT ticks about 4 times in 10 s at most).
     for _, school in ipairs({ "shadow", "frost", "fire" }) do
         local pts = sum.magic[school] + sum.casts[school] * T.cast
         scores[school] = pts
         local name = Data.SCHOOL_NAME[school]
-        if n[school] > 0 then
+        local cast = sum.casts[school] > 0.3 and sum.castName[school]
+        local spread = sum.spread and sum.spread[school] or 2
+        if n[school] > 0 and not cast and spread < 2 and n[school] < T.steady then
+            -- not enough to name: it counts, but alone it suggests nothing
+        elseif n[school] > 0 then
             if sum.casts[school] > 0.3 and sum.castName[school] then
                 why[school] = ("%s, %d %s"):format(sum.castName[school], n[school], Plural(n[school], "hit", "hits"))
             else
@@ -142,7 +151,9 @@ end
 -- ctx: known = { key = true }, current = key or nil, others = { key = name or true },
 --      style = "damage" | "tank" | "healer", idle = "auto" | key, sensitivity = "low" | "normal" | "high",
 --      sticky = the aura suggested last time (it stays suggested until it stops being better),
---      betweenFights = suggest the default aura when nothing is going on
+--      betweenFights = suggest the default aura when nothing is going on,
+--      afterFight = false once the fight has been over a while (nil counts as just over),
+--      currentUnknown = true when the game won't say which aura is on
 -- Returns { best, suggest, reason, scores, why, current, idle, quiet }.
 function A.Advise(sum, ctx)
     local scores, why, idle = A.Score(sum, ctx)
@@ -163,6 +174,8 @@ function A.Advise(sum, ctx)
 
     local taken = ctx.others or {}
     if not current then
+        -- the game won't say which aura is on (just after dying, with the stance bar hidden): no guess
+        if ctx.currentUnknown then return res end
         res.suggest = best
         res.reason = "No aura"
         return res
@@ -177,7 +190,8 @@ function A.Advise(sum, ctx)
     end
 
     if res.quiet then
-        if ctx.betweenFights ~= false then
+        -- only just after a fight (afterFight): an aura you keep on after that is your choice
+        if ctx.betweenFights ~= false and ctx.afterFight ~= false then
             res.suggest = best
             res.reason = "Fight over"
         end

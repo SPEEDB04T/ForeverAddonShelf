@@ -46,7 +46,29 @@ Data.AURAS = {
     },
 }
 
-Data.RIGHTEOUS_FURY = { id = 25780, english = "Righteous Fury" }
+Data.RIGHTEOUS_FURY = { id = 25780, english = "Righteous Fury", ids = { 25780 } }
+
+-- Blessings: the 5-10 minute one and its Greater (class-wide, 15-30 minute) form count as the same.
+Data.BLESSING_ORDER = { "might", "wisdom", "kings", "salvation", "light", "sanctuary" }
+Data.BLESSINGS = {
+    might = { english = "Blessing of Might", short = "Might",
+              ids = { 19740, 19834, 19835, 19836, 19837, 19838, 25291, 27140, 48931, 48932 },
+              greater = { 25782, 25916, 27141, 48933, 48934 } },
+    wisdom = { english = "Blessing of Wisdom", short = "Wisdom",
+               ids = { 19742, 19850, 19852, 19853, 19854, 25290, 27142, 48935, 48936 },
+               greater = { 25894, 25918, 27143, 48937, 48938 } },
+    kings = { english = "Blessing of Kings", short = "Kings", ids = { 20217 }, greater = { 25898 } },
+    salvation = { english = "Blessing of Salvation", short = "Salvation", ids = { 1038 }, greater = { 25895 } },
+    light = { english = "Blessing of Light", short = "Light", ids = { 19977, 19978, 19979, 27144 },
+              greater = { 25890, 27145 } },
+    sanctuary = { english = "Blessing of Sanctuary", short = "Sanctuary",
+                  ids = { 20911, 20912, 20913, 20914, 27168 }, greater = { 25899, 27169 } },
+}
+Data.BLESSING_BY_ID = {}
+for key, def in pairs(Data.BLESSINGS) do
+    for _, id in ipairs(def.ids) do Data.BLESSING_BY_ID[id] = key end
+    for _, id in ipairs(def.greater) do Data.BLESSING_BY_ID[id] = key end
+end
 
 -- spell ID -> aura key
 Data.KEY_BY_ID = {}
@@ -71,6 +93,12 @@ function Data.SchoolOfMask(mask)
     if type(mask) ~= "number" or mask ~= mask or mask < 0 then return nil end
     mask = math.floor(mask)
     if mask == 0 or mask == 1 then return "physical" end
+    -- two magic schools at once (Frostfire, Shadowflame): one resistance covers only half of it
+    local magic = 0
+    for _, bit in ipairs({ 2, 4, 8, 16, 32, 64 }) do
+        if HasBit(mask, bit) then magic = magic + 1 end
+    end
+    if magic > 1 then return "other" end
     if HasBit(mask, 4) then return "fire" end
     if HasBit(mask, 16) then return "frost" end
     if HasBit(mask, 32) then return "shadow" end

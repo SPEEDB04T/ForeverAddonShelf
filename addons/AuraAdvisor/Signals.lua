@@ -50,6 +50,7 @@ function S.Reset()
     S.log = {}
     S.enemies = { engaged = 0 }
     S.selfHarm = {}
+    S.castBy = {}
     S.lastScan = nil
 end
 
@@ -57,9 +58,10 @@ end
 -- Recording
 ----------------------------------------------------------------------
 -- school: "physical", "fire", "frost", "shadow", "other", or "unknown" (the game hid it)
-function S.Hit(now, mine, school, landed, heavy)
+-- unit: who was hit ("player", "party1"...), or nil (a pretend hit)
+function S.Hit(now, mine, school, landed, heavy, unit)
     S.log[#S.log + 1] = { t = now, kind = "hit", mine = mine and true or false, school = school,
-                          landed = landed and true or false, heavy = heavy and true or false }
+                          landed = landed and true or false, heavy = heavy and true or false, unit = unit }
     S.stats.hits = S.stats.hits + 1
 end
 
@@ -68,11 +70,26 @@ function S.Push(now, mine)
     S.stats.pushes = S.stats.pushes + 1
 end
 
-function S.EnemyCast(now, school, name)
-    S.log[#S.log + 1] = { t = now, kind = "cast", school = school, name = name }
+S.castBy = {}               -- enemy unit -> its cast being counted, until it lands or fails
+
+function S.EnemyCast(now, school, name, unit)
+    local ev = { t = now, kind = "cast", school = school, name = name }
+    S.log[#S.log + 1] = ev
+    if unit then S.castBy[unit] = ev end
     S.stats.enemyCasts = S.stats.enemyCasts + 1
     if name then S.stats.namedCasts = S.stats.namedCasts + 1 end
     if school then S.stats.schoolCasts = S.stats.schoolCasts + 1 end
+end
+
+-- UNIT_SPELLCAST_INTERRUPTED / FAILED: an interrupted cast hits nobody, so it stops counting.
+function S.OnCastFailed(unit)
+    unit = Plain(unit)
+    if type(unit) ~= "string" then return end
+    local ev = S.castBy[unit]
+    if ev then
+        ev.dropped = true
+        S.castBy[unit] = nil
+    end
 end
 
 ----------------------------------------------------------------------
@@ -106,14 +123,17 @@ function S.OnUnitCombat(unit, action, flag, amount, mask)
         -- An amount of 0 with no reason given is a plain miss. A hidden amount counts as a hit.
         local landed = true
         if Plain(amount) == 0 and flag ~= "ABSORB" and flag ~= "BLOCK" and flag ~= "RESIST" then landed = false end
-        S.Hit(now, mine, school, landed, flag == "CRITICAL" or flag == "CRUSHING")
+        S.Hit(now, mine, school, landed, flag == "CRITICAL" or flag == "CRUSHING", unit)
     elseif action == "BLOCK" then
-        S.Hit(now, mine, "physical", true, false)
+        S.Hit(now, mine, "physical", true, false, unit)
     elseif AVOIDED[action] then
-        S.Hit(now, mine, "physical", false, false)
+        S.Hit(now, mine, "physical", false, false, unit)
+    elseif action == "IMMUNE" then
+        -- nothing got through (Divine Shield, say): no aura would have helped
+        S.Hit(now, mine, "unknown", false, false, unit)
     elseif SOAKED[action] then
         if not school or school == "physical" then school = (action == "ABSORB") and "unknown" or "other" end
-        S.Hit(now, mine, school, true, false)
+        S.Hit(now, mine, school, true, false, unit)
     end
 end
 
@@ -187,8 +207,23 @@ SelfInflicted = function(unit, school, now)
     local live = Channel(unit)
     if type(live) == "table" then return Covers(live.school, school) end
     -- the game hides what a warlock is channelling: their own Fire hits are most likely Hellfire
-    if live == "hidden" and IsWarlock(unit) then return Covers("fire", school) end
+    if live == "hidden" and IsWarlock(unit) then return school == "fire" end
     return false
+end
+
+-- A hit can come in just before the cast that caused it (Life Tap): take back the ones of that
+-- school on that unit from the moment before.
+local function TakeBack(unit, school, now)
+    local log = S.log
+    for i = #log, 1, -1 do
+        local ev = log[i]
+        if now - ev.t > 0.5 then break end
+        if ev.kind == "hit" and ev.unit == unit and Covers(school, ev.school) then
+            table.remove(log, i)
+            S.stats.hits = S.stats.hits - 1
+            S.stats.selfHarm = S.stats.selfHarm + 1
+        end
+    end
 end
 
 -- UNIT_SPELLCAST_CHANNEL_START / UNIT_SPELLCAST_SUCCEEDED from you or your party
@@ -201,7 +236,9 @@ function S.OnFriendlyCast(unit, spellID, channel)
     end
     if not harm then return end
     -- a channel lasts until it stops (Hellfire: 15 s at most); an instant hurts once, now
-    S.selfHarm[unit] = { school = harm.school, untilT = Now() + ((channel and harm.channel) and 20 or 0.6) }
+    local now = Now()
+    S.selfHarm[unit] = { school = harm.school, untilT = now + ((channel and harm.channel) and 20 or 0.6) }
+    if not (channel and harm.channel) then TakeBack(unit, harm.school, now) end
 end
 
 -- UNIT_SPELLCAST_CHANNEL_STOP: the last tick can land a moment after the channel ends
@@ -229,6 +266,18 @@ local function Fighting(unit)
     return ok and Plain(v) == true
 end
 
+-- Is the enemy's target you or someone in your party? Only when the game says so.
+local GROUP = { "player", "party1", "party2", "party3", "party4" }
+local function AimedAtUs(unit)
+    if not UnitIsUnit then return false end
+    local target = unit .. "target"
+    for _, u in ipairs(GROUP) do
+        local ok, same = pcall(UnitIsUnit, target, u)
+        if ok and Plain(same) == true then return true end
+    end
+    return false
+end
+
 -- UNIT_SPELLCAST_START / UNIT_SPELLCAST_CHANNEL_START
 function S.OnCastStart(unit, spellID)
     unit = Plain(unit)
@@ -237,6 +286,7 @@ function S.OnCastStart(unit, spellID)
     if not plate and unit ~= "target" and unit ~= "focus" then return end
     if not Fighting("player") or not Hostile(unit) then return end
     if not plate and HasPlate(unit) then return end     -- its nameplate reports the same cast
+    if not AimedAtUs(unit) then return end              -- at someone else: no aura of yours helps
 
     local name
     spellID = Plain(spellID)
@@ -250,7 +300,7 @@ function S.OnCastStart(unit, spellID)
         end
     end
     if type(name) ~= "string" then name = nil end
-    S.EnemyCast(Now(), name and Data.SchoolOfSpellName(name) or nil, name)
+    S.EnemyCast(Now(), name and Data.SchoolOfSpellName(name) or nil, name, unit)
 end
 
 ----------------------------------------------------------------------
@@ -306,15 +356,24 @@ function S.Summary(now)
         castName = {},                      -- school -> the latest spell name seen
         count = { physical = 0, fire = 0, frost = 0, shadow = 0, other = 0, unknown = 0,
                   pushMine = 0, pushParty = 0, casts = 0 },          -- plain counts, last 10 s
+        spread = { fire = 0, frost = 0, shadow = 0 },  -- how many of you that school hit, last 10 s
         enemies = S.enemies,
         pressure = 0,                       -- everything together: 0 means nothing is going on
     }
+    local hitBy = { fire = {}, frost = {}, shadow = {} }
     local log, keep = S.log, {}
     for i = 1, #log do
         local ev = log[i]
         local age = now - ev.t
         if age < 0 then age = 0 end
-        if age <= KEEP then
+        if age <= KEEP and not ev.dropped then
+            if ev.kind == "hit" and age <= RECENT and hitBy[ev.school] then
+                local who = ev.unit or ("pretend" .. i)
+                if not hitBy[ev.school][who] then
+                    hitBy[ev.school][who] = true
+                    sum.spread[ev.school] = sum.spread[ev.school] + 1
+                end
+            end
             keep[#keep + 1] = ev
             local recent = age <= RECENT
             if ev.kind == "hit" then

@@ -1,7 +1,7 @@
 ## Interface: 16001, 16002
 ## Title: Aura Advisor
-## Notes: Tells a Paladin when another aura fits the fight better, from the damage your party takes, pushed-back casts and enemy casters. /aura for options.
-## Version: 1.2.5
+## Notes: Tells a Paladin when another aura fits the fight better, from the damage your party takes, pushed-back casts and enemy casters. Reminds a tank of Righteous Fury and tracks your blessings on the party. /aura for options.
+## Version: 1.3.0
 ## SavedVariables: AuraAdvisorDB
 ## IconTexture: Interface\Icons\Spell_Holy_DevotionAura
 ## AddonCompartmentFunc: AuraAdvisor_OnAddonCompartmentClick
@@ -11,5 +11,6 @@ Signals.lua
 Advisor.lua
 Core.lua
 UI.lua
+Reminders.lua
 Kit.lua
 Options.lua

@@ -70,18 +70,24 @@ end
 local BARS = { "ActionButton", "MultiBarBottomLeftButton", "MultiBarBottomRightButton", "MultiBarRightButton",
                "MultiBarLeftButton", "MultiBar5Button", "MultiBar6Button", "MultiBar7Button" }
 
--- The aura an action slot holds: the spell itself, or a macro that casts it.
-local function KeyOfAction(slot)
+-- The spell an action slot holds: the spell itself, or the one a macro casts.
+local function SpellOfAction(slot)
     slot = Plain(slot)
     if type(slot) ~= "number" or not GetActionInfo then return nil end
     local ok, kind, id = pcall(GetActionInfo, slot)
     if not ok then return nil end
     kind, id = Plain(kind), Plain(id)
-    if kind == "spell" then return ns.KeyFromSpell(id) end
+    if kind == "spell" then return id end
     if kind == "macro" and GetMacroSpell then
         local got, spell = pcall(GetMacroSpell, id)
-        if got then return ns.KeyFromSpell(Plain(spell)) end
+        if got then return Plain(spell) end
     end
+end
+
+-- The aura an action slot holds.
+local function KeyOfAction(slot)
+    local spell = SpellOfAction(slot)
+    if spell then return ns.KeyFromSpell(spell) end
 end
 UI.KeyOfAction = KeyOfAction
 
@@ -111,6 +117,28 @@ local function Targets(key)
 end
 UI.Targets = Targets
 
+-- The action bar buttons for a reminder (Righteous Fury, a blessing). For a blessing, its normal
+-- form when one is on your bars, else the Greater one: one spell glows, not two side by side.
+local function ReminderTargets(pick)
+    local R = ns.Reminders
+    local normal, greater = {}, {}
+    if not (R and pick) then return normal end
+    for _, prefix in ipairs(BARS) do
+        for i = 1, 12 do
+            local b = _G[prefix .. i]
+            if type(b) == "table" then
+                local spell = SpellOfAction(b.action)
+                if spell and R.Matches(pick, spell) then
+                    local list = R.IsGreater(spell) and greater or normal
+                    list[#list + 1] = b
+                end
+            end
+        end
+    end
+    return #normal > 0 and normal or greater
+end
+UI.ReminderTargets = ReminderTargets
+
 ----------------------------------------------------------------------
 -- The glow
 ----------------------------------------------------------------------
@@ -123,6 +151,14 @@ local function OnAlertShow(a)
     if a.on and not a.ProcStartAnim:IsPlaying() and not a.ProcLoop:IsPlaying() then a.ProcLoop:Play() end
 end
 
+-- 1.4 x the button, as the game sizes its alerts.
+local function Fit(a, b)
+    local w, h = b:GetSize()
+    w, h = Plain(w), Plain(h)
+    if type(w) ~= "number" or type(h) ~= "number" or w <= 0 or h <= 0 then w, h = 30, 30 end
+    a:SetSize(w * 1.4, h * 1.4)
+end
+
 -- Built the way ActionButtonSpellAlerts.lua's GetAlertFrame builds it.
 local function GlowFrame(b)
     local a = alerts[b]
@@ -132,10 +168,8 @@ local function GlowFrame(b)
         alerts[b] = false
         return nil
     end
-    local w, h = b:GetSize()
-    w, h = Plain(w), Plain(h)
-    if type(w) ~= "number" or type(h) ~= "number" or w <= 0 or h <= 0 then w, h = 30, 30 end
-    f:SetSize(w * 1.4, h * 1.4)
+    f.button = b
+    Fit(f, b)
     f:SetPoint("CENTER", b, "CENTER", 0, 0)
     f:HookScript("OnShow", OnAlertShow)
     f:Hide()
@@ -148,6 +182,8 @@ local function SetGlow(a, on)
     if (a.on and true or false) == on then return end
     a.on = on
     if on then
+        -- the bars may have been rescaled since; sized again outside a fight only
+        if a.button and not (InCombatLockdown and InCombatLockdown()) then Fit(a, a.button) end
         a:Show()
         a.ProcStartAnim:Play()
     else
@@ -163,11 +199,31 @@ function UI.Refresh()
     ns.thinkNow = true
 end
 
+-- One thing glows at a time (the game marks one thing to do, not three): Righteous Fury when a
+-- tank is without it, else the aura to switch to, else a blessing that ran out. One with no
+-- button on your bars passes its turn to the next.
+local function Candidates(res)
+    local order = {}
+    if not (ns.db and res) or res.dead then return order, "" end
+    local rem = res.reminder
+    if rem and rem.kind == "fury" then order[#order + 1] = { rem.id, rem } end
+    if ns.db.glow and res.shown then order[#order + 1] = { "aura:" .. res.shown } end
+    if rem and rem.kind ~= "fury" then order[#order + 1] = { rem.id, rem } end
+    local ids = {}
+    for i, c in ipairs(order) do ids[i] = c[1] end
+    return order, table.concat(ids, ",")
+end
+
 function UI.Update(res)
-    local key = ns.db and ns.db.glow and res and res.shown or nil
-    if key == UI.glowKey and not UI.dirty then return end
-    UI.glowKey, UI.dirty = key, false
-    local list = key and Targets(key) or {}
+    local order, sig = Candidates(res)
+    if sig == UI.sig and not UI.dirty then return end
+    UI.sig, UI.dirty = sig, false
+    local id, list = nil, {}
+    for _, c in ipairs(order) do
+        local found = c[2] and ReminderTargets(c[2]) or Targets(res.shown)
+        if #found > 0 then id, list = c[1], found; break end
+    end
+    UI.glowKey = id
     local want = {}
     for _, b in ipairs(list) do want[b] = true end
     for b, a in pairs(alerts) do
@@ -211,10 +267,28 @@ local function AddAdvice(tt, key)
     tt:Show()
 end
 
+-- Under Righteous Fury's or a blessing's tooltip: what the reminder wants of it.
+local function AddReminder(tt, spell)
+    if spell and ns.Reminders and ns.enabled then ns.Reminders.TooltipSpell(tt, spell, RGB) end
+end
+
+local function AddUnit(tt, unit)
+    if ns.Reminders and ns.enabled then ns.Reminders.TooltipUnit(tt, Plain(unit), RGB) end
+end
+
 local HOOKS = {
     SetShapeshift = function(tt, index) AddAdvice(tt, KeyOfForm(index)) end,
-    SetAction = function(tt, slot) AddAdvice(tt, KeyOfAction(slot)) end,
-    SetSpellByID = function(tt, id) AddAdvice(tt, ns.KeyFromSpell(Plain(id))) end,
+    SetAction = function(tt, slot)
+        local spell = SpellOfAction(slot)
+        AddAdvice(tt, spell and ns.KeyFromSpell(spell))
+        AddReminder(tt, spell)
+    end,
+    SetSpellByID = function(tt, id)
+        id = Plain(id)
+        AddAdvice(tt, ns.KeyFromSpell(id))
+        AddReminder(tt, id)
+    end,
+    SetUnit = function(tt, unit) AddUnit(tt, unit) end,
 }
 
 local function Hook(name)
@@ -242,9 +316,23 @@ function UI.Create()
     UI.events = f
     for _, ev in ipairs(BAR_EVENTS) do pcall(f.RegisterEvent, f, ev) end
     f:SetScript("OnEvent", UI.Refresh)
+    -- A unit's tooltip: this client builds it through TooltipDataProcessor (that covers the party
+    -- frames and units in the world); older ones through SetUnit.
+    local unitHooked = false
+    if TooltipDataProcessor and TooltipDataProcessor.AddTooltipPostCall and Enum and Enum.TooltipDataType
+        and Enum.TooltipDataType.Unit then
+        local onUnit = Hook("SetUnit")
+        unitHooked = pcall(TooltipDataProcessor.AddTooltipPostCall, Enum.TooltipDataType.Unit, function(tt)
+            if tt ~= GameTooltip or not tt.GetUnit then return end
+            local ok, _, unit = pcall(tt.GetUnit, tt)
+            if ok then onUnit(tt, unit) end
+        end)
+    end
     if hooksecurefunc and GameTooltip then
         for name in pairs(HOOKS) do
-            if type(GameTooltip[name]) == "function" then hooksecurefunc(GameTooltip, name, Hook(name)) end
+            if (name ~= "SetUnit" or not unitHooked) and type(GameTooltip[name]) == "function" then
+                hooksecurefunc(GameTooltip, name, Hook(name))
+            end
         end
     end
     UI.dirty = true
