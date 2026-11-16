@@ -1,5 +1,9 @@
 # Changelog
 
+## 1.18.0
+
+- Every third tip jar line counts the jar out loud: "counts the tip jar: 12 tips today.". The count is seeded like a busker's hat: today's real tips plus a head start of a few, picked once a day. It only ever goes up.
+
 ## 1.17.1
 
 - Removed the idle line about tugging a hem down: the shop does not know what you are wearing, and no line should say.

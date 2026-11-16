@@ -860,11 +860,36 @@ end
 
 -- The tip jar line, or the one that did not go out last time.
 local jarTurn, jarOwed, nextJar = 0, nil, nil
+-- Every third jar line counts the jar out loud, and the count is seeded like a busker's hat
+-- (SuccuDev: "we could lie about this lmao", "people do this kind of shit in roleplay all the time"):
+-- today's real tips plus a head start that is picked once a day and only ever grows, so two people
+-- who hear it an hour apart never hear it go down.
+M.JAR_COUNT = "counts the tip jar: %d tips today."
+local COUNT_EVERY = 3
+local jarCount = 0
+function M.TipCount()
+    local db = ns.db
+    if type(db) ~= "table" then return 0 end
+    local day = type(date) == "function" and date("%Y-%m-%d") or "?"
+    local pad = type(db.jarPad) == "table" and db.jarPad.day == day and db.jarPad or { day = day, n = M.Random(3, 6), said = 0 }
+    db.jarPad = pad
+    local real = ns.Stats and tonumber((ns.Stats(0) or {}).tips) or 0
+    local n = math.max(real + pad.n, pad.said or 0)
+    pad.n = pad.n + M.Random(0, 1)      -- a little more by the next time
+    pad.said = n
+    return n
+end
+
 function M.Jar(from)
     local line = jarOwed
     if not line then
-        jarTurn = jarTurn % #M.JAR + 1
-        line = M.JAR[jarTurn]
+        jarCount = jarCount + 1
+        if jarCount % COUNT_EVERY == 0 then
+            line = M.JAR_COUNT:format(M.TipCount())
+        else
+            jarTurn = jarTurn % #M.JAR + 1
+            line = M.JAR[jarTurn]
+        end
     end
     jarOwed = nil
     if Sync then Sync() end
