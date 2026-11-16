@@ -290,13 +290,28 @@ function ns.TwoWords(key)
     return def and def.short or tostring(name)
 end
 
+-- The aura's icon and name, "|T...|t Fire Resistance": nothing else shows in play.
+function ns.IconName(key)
+    local info = ns.known[key]
+    local text = ns.TwoWords(key)
+    local get = (C_Spell and C_Spell.GetSpellTexture) or GetSpellTexture
+    if info and info.spellID and get then
+        local ok, tex = pcall(get, info.spellID)
+        tex = ok and Plain(tex) or nil
+        if type(tex) == "number" or (type(tex) == "string" and tex ~= "") then
+            text = "|T" .. tex .. ":0|t " .. text
+        end
+    end
+    return text
+end
+
 local function Alert(res, now)
     local info = ns.known[res.shown]
     if not info then return end
     if lastAlert[res.shown] and now - lastAlert[res.shown] < REALERT then return end
     lastAlert[res.shown] = now
-    -- Two words, the aura and nothing else; the reason is in /aura.
-    local text = ns.TwoWords(res.shown)
+    -- The aura and nothing else; the cause is in its tooltip.
+    local text = ns.IconName(res.shown)
     if ns.db.banner and UIErrorsFrame and UIErrorsFrame.AddMessage then
         UIErrorsFrame:AddMessage(text, 1, 0.82, 0.2)
     end
@@ -397,7 +412,7 @@ local function OnUpdate(_, dt)
     local ok, err = pcall(ns.Think, now)
     if not ok and not ns.thinkError then
         ns.thinkError = Plain(err) and tostring(err) or "a hidden value"
-        ns.Print("error while working out the aura (said once): " .. ns.thinkError)
+        ns.Print("error (said once): " .. ns.thinkError)
     end
 end
 
@@ -508,11 +523,21 @@ local STYLE_NAME = { damage = "damage", tank = "tank", healer = "healer" }
 -- The numbers behind the advice.
 function ns.PrintWhy()
     local res = ns.result
-    if not res then ns.Print("nothing worked out yet.") return end
-    if res.dead then ns.Print("you're dead: no advice until you're back on your feet.") return end
-    local cur = res.current and ns.known[res.current]
-    ns.Print(("on now: %s. Play style: %s (%s)."):format(cur and cur.name or "no aura",
-        STYLE_NAME[res.style] or tostring(res.style), tostring(res.styleWhy)))
+    if not res then ns.Print("nothing yet") return end
+    if res.dead then ns.Print("dead") return end
+    -- One line: the aura on, and the one to switch to with its cause. The points are in /aura debug.
+    local line = res.current and ns.known[res.current] and ns.TwoWords(res.current) or "No aura"
+    if res.shown and ns.known[res.shown] then
+        line = line .. ". Switch: " .. ns.TwoWords(res.shown)
+        if type(res.reason) == "string" and res.reason ~= "" then line = line .. " (" .. res.reason .. ")" end
+    end
+    ns.Print(line)
+end
+
+function ns.PrintPoints()
+    local res = ns.result
+    if not res or res.dead then return end
+    ns.Print(("play style: %s (%s)"):format(STYLE_NAME[res.style] or tostring(res.style), tostring(res.styleWhy)))
     for _, key in ipairs(Data.ORDER) do
         local info = ns.known[key]
         if info then
@@ -526,11 +551,12 @@ function ns.PrintWhy()
                 res.why[key] and (" (" .. res.why[key] .. ")") or "", mark))
         end
     end
-    if res.quiet then ns.Print("  Nothing is hitting you right now.") end
+    if res.quiet then ns.Print("  nothing is hitting you") end
 end
 
 function ns.PrintDebug()
     local st = Signals.stats
+    ns.PrintPoints()
     ns.Print("version " .. ns.VERSION .. ", client " .. tostring((GetBuildInfo and select(4, GetBuildInfo())) or "?"))
     local list = {}
     for _, key in ipairs(Data.ORDER) do
@@ -570,13 +596,13 @@ function ns.Test(kind)
         ns.testing = nil
         Signals.Reset()
         ns.thinkNow = true
-        ns.Print("test over.")
+        ns.Print("test off")
         return true
     end
     local what = TESTS[kind]
     if not what then return false end
-    if ns.inCombat then ns.Print("the test is for outside a fight.") return true end
-    if ns.IsDead() then ns.Print("the test waits until you're back on your feet.") return true end
+    if ns.inCombat then ns.Print("not in a fight") return true end
+    if ns.IsDead() then ns.Print("not while dead") return true end
     Signals.Reset()
     ns.testing = true
     local now = GetTime()
@@ -589,9 +615,7 @@ function ns.Test(kind)
         end
     end
     ns.thinkNow = true
-    ns.Print("pretending: " .. (what == "push" and "your casts are being pushed back"
-        or (Data.SCHOOL_NAME[what] .. " hits on you and your party"))
-        .. ". It fades by itself in under a minute; /aura test off ends it now.")
+    ns.Print("test: " .. (what == "push" and "pushbacks" or Data.SCHOOL_NAME[what]) .. " (/aura test off)")
     return true
 end
 
@@ -602,13 +626,13 @@ end
 -- before the next /reload), say so instead of erroring.
 local function HasKit()
     if ns.Kit and ns.Options then return true end
-    ns.Print("the options window and the minimap button appear after one more /reload.")
+    ns.Print("/reload once more for the options")
     return false
 end
 
 local function Help()
     ns.Print("commands:")
-    ns.Print("  /aura  - what the advisor thinks right now, and why")
+    ns.Print("  /aura  - the aura on, the one to switch to and why")
     ns.Print("  /aura config  - the options window")
     ns.Print("  /aura style auto|damage|tank|healer  (now: " .. ns.db.style .. ")")
     ns.Print("  /aura default auto|devotion|retribution|concentration  - your aura between fights (now: " .. ns.db.idle .. ")")
@@ -619,22 +643,21 @@ local function Help()
 end
 
 local TOGGLES = {
-    glow = { "glow", "the glow on the aura to switch to" },
+    glow = { "glow", "glow" },
     sound = { "sound", "sound" },
-    banner = { "banner", "the line in the middle of the screen" },
-    chat = { "chat", "the line in chat" },
-    between = { "betweenFights", "suggesting your default aura between fights" },
+    banner = { "banner", "line on screen" },
+    chat = { "chat", "chat line" },
+    between = { "betweenFights", "default after a fight" },
 }
 
 SLASH_AURAADVISOR1 = "/aura"
 SLASH_AURAADVISOR2 = "/auraadvisor"
 SlashCmdList.AURAADVISOR = function(msg)
     if not ns.db then return end
-    if not ns.enabled then ns.Print("only works on a Paladin.") return end
+    if not ns.enabled then ns.Print("Paladins only") return end
     local cmd, arg = (msg or ""):lower():match("^%s*(%S*)%s*(.-)%s*$")
     if cmd == "" or cmd == "why" or cmd == "report" then
         ns.PrintWhy()
-        if cmd == "" then ns.Print("/aura help lists the commands.") end
     elseif cmd == "help" or cmd == "?" then
         Help()
     elseif cmd == "config" or cmd == "options" or cmd == "opt" then
@@ -645,8 +668,7 @@ SlashCmdList.AURAADVISOR = function(msg)
             ns.Print("minimap button " .. (ns.Kit.MinimapShown() and "on" or "off"))
         end
     elseif cmd == "show" or cmd == "lock" or cmd == "unlock" or cmd == "scale" then
-        ns.Print("there is no bar of its own any more: the aura to switch to glows on your stance bar "
-            .. "and action bars, and its tooltip says why. /aura glow switches the glow off or on.")
+        ns.Print("no bar any more: it glows on your stance bar (/aura glow)")
     elseif cmd == "style" or cmd == "role" then
         if ns.Set("style", arg) then
             ns.Print("play style: " .. arg)

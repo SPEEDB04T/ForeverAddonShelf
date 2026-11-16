@@ -3,7 +3,8 @@
 -- * The aura to switch to gets the game's spell-alert glow (ActionButtonSpellAlertTemplate,
 --   Blizzard_ActionBar/Shared/ActionButtonSpellAlerts.xml) on its button on the game's stance
 --   bar, and on any action bar button that holds that aura, the way the game marks a proc.
--- * An aura's tooltip (stance bar, action bar, spell) gets a two-word line under it.
+-- * An aura's tooltip (stance bar, action bar, spell) gets a two-word line under it, and the
+--   aura to switch to its short cause.
 --
 -- The glow frames are our own, made and run the way ActionButtonSpellAlertManager makes and
 -- runs its own (1.4 x the button, centred), but not through the manager: none of the game's
@@ -188,10 +189,12 @@ end
 local function AddAdvice(tt, key)
     local res = ns.result
     if not (key and res and ns.enabled and ns.known[key]) or res.dead then return end
-    -- Two words at most; the reasons are in /aura.
-    local text, color
+    -- Two words, and on the aura to switch to its cause, as short ("8 Fire hits"). The only
+    -- place a cause shows in play.
+    local text, color, cause
     if key == res.shown then
         text, color = "Switch now", "GREEN_FONT_COLOR"
+        if type(res.reason) == "string" and res.reason ~= "" then cause = res.reason end
     elseif key == res.current and res.shown and ns.known[res.shown] then
         text, color = ns.TwoWords(res.shown), "GREEN_FONT_COLOR"    -- the one to switch to
     elseif ns.OtherAuras()[key] then
@@ -201,6 +204,10 @@ local function AddAdvice(tt, key)
     local r, g, b = RGB(color)
     tt:AddLine(" ")
     tt:AddLine(text, r, g, b, true)
+    if cause then
+        r, g, b = RGB("GRAY_FONT_COLOR")
+        tt:AddLine(cause, r, g, b, true)
+    end
     tt:Show()
 end
 

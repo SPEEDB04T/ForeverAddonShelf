@@ -24,9 +24,9 @@ The play style comes from your group role, or Righteous Fury (tank), or is damag
 ## On your bars
 
 - **The aura to switch to glows** with the game's own proc glow, on its button on the stance bar and on any action bar button that holds it (a macro that casts it counts too). In a fight the glow stays until you switch, another aura takes over or the fight ends; a pause in the hits doesn't take it down.
-- **Hover an aura** on the stance bar or an action bar: under the game's own tooltip, two words at most. "Switch now" on the aura to switch to, that aura's name on the one you have on, "Already up" on one another paladin has.
-- In a fight a sound plays and the aura's name appears in the middle of the screen when a switch is suggested. Each can be turned off, and so can the glow.
-- **Why?** `/aura` prints the reasons in chat, and the options window shows them too.
+- **Hover an aura** on the stance bar or an action bar: under the game's own tooltip, "Switch now" and the cause in grey ("8 Fire hits", "Shadow Bolt, 2 hits", "3 pushbacks") on the aura to switch to; that aura's name on the one you have on; "Already up" on one another paladin has. The tooltip is the only place a cause shows.
+- In a fight a sound plays and the aura's icon and name appear in the middle of the screen when a switch is suggested, nothing more. Each can be turned off, and so can the glow. A chat line only if you turn it on (`/aura chat`).
+- **The minimap button's tooltip** shows the aura on ("Devotion Aura", or "No aura") and, in green, the one to switch to.
 
 ## Setup
 
@@ -38,14 +38,14 @@ The play style comes from your group role, or Righteous Fury (tank), or is damag
 
 | Command | What it does |
 | --- | --- |
-| `/aura` | What the advisor thinks right now, and why |
+| `/aura` | One line: the aura on, the one to switch to and why |
 | `/aura config` | The options window (also: left-click the minimap button, or Options > AddOns) |
 | `/aura style auto\|damage\|tank\|healer` | What the advice is for |
 | `/aura default auto\|devotion\|retribution\|concentration` | Your aura between fights |
 | `/aura sens low\|normal\|high` | How quickly it suggests a switch |
 | `/aura glow` / `sound` / `banner` / `chat` / `between` | Switch the glow, the sound, the line on screen, the chat line, or the between-fights suggestion on or off |
 | `/aura test fire\|frost\|shadow\|melee\|push\|off` | A pretend fight |
-| `/aura minimap` / `reset` / `debug` | The rest |
+| `/aura minimap` / `reset` / `debug` | The rest (`debug` also lists every aura's points) |
 
 ## Notes
 

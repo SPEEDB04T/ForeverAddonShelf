@@ -18,7 +18,7 @@ local function Rows()
         { kind = "header", text = "Advice" },
         { kind = "check", label = "Glow the aura to switch to",
           tip = "The game's spell-alert glow on that aura's stance bar button, and on any action bar button with it. "
-              .. "In a fight it stays until you switch, the advice changes or the fight ends. /aura says why. "
+              .. "In a fight it stays until you switch, the advice changes or the fight ends. Its tooltip says why. "
               .. "Same as /aura glow.",
           get = Get("glow"), set = Set("glow") },
         { kind = "choice", label = "Play style",
@@ -54,9 +54,11 @@ local function Rows()
         { kind = "header", text = "Alerts in a fight" },
         { kind = "check", label = "Play a sound", get = Get("sound"), set = Set("sound") },
         { kind = "check", label = "Show a line on screen",
-          tip = "The aura's name in the middle of the screen when a switch is suggested in a fight. Same as /aura banner.",
+          tip = "The aura's icon and name in the middle of the screen when a switch is suggested in a fight. Same as /aura banner.",
           get = Get("banner"), set = Set("banner") },
-        { kind = "check", label = "Write a line in chat", get = Get("chat"), set = Set("chat") },
+        { kind = "check", label = "Write a line in chat",
+          tip = "The aura's name in chat when a switch is suggested in a fight. Off unless you turn it on. Same as /aura chat.",
+          get = Get("chat"), set = Set("chat") },
 
         { kind = "header", text = "Minimap" },
         Kit.MinimapRow(),
@@ -64,7 +66,7 @@ local function Rows()
         { kind = "header", text = "Actions" },
         { kind = "buttons", buttons = {
             { label = "Why this aura?",
-              tip = "Prints every aura's points and where they come from. Same as /aura.",
+              tip = "Prints the aura on, the one to switch to and why, in one line. Same as /aura; /aura debug has every aura's points.",
               click = function() ns.PrintWhy() end },
             { label = "Pretend Fire damage",
               tip = "Shows what a suggestion looks like without a fight. Same as /aura test fire; /aura test off ends it.",
@@ -79,15 +81,17 @@ Options.Rows = Rows
 
 local function Status()
     local res = ns.result
-    if not res then return { "Nothing worked out yet." } end
-    if res.dead then return { "You're dead: no advice until you're back on your feet." } end
-    local cur = res.current and ns.known[res.current]
-    local lines = { "On now: " .. (cur and cur.name or "no aura") .. "." }
+    if not res then return {} end
+    if res.dead then return { "Dead" } end
+    -- The aura on, then the one to switch to: names only.
+    local lines = { res.current and ns.known[res.current] and ns.TwoWords(res.current) or "No aura" }
     if res.shown and ns.known[res.shown] then
-        lines[#lines + 1] = "Switch to " .. ns.known[res.shown].name .. ": " .. tostring(res.reason) .. "."
+        lines[#lines + 1] = ns.UI.Paint("GREEN_FONT_COLOR", ns.TwoWords(res.shown))
     end
     return lines
 end
+
+Options.Status = Status
 
 local ready
 function Options.Init()
@@ -111,6 +115,6 @@ end
 -- The addon's line in the list of addons next to the minimap.
 function AuraAdvisor_OnAddonCompartmentClick(_, mouseButton)
     if not ns.db then return end
-    if not ns.enabled then ns.Print("only works on a Paladin.") return end
+    if not ns.enabled then ns.Print("Paladins only") return end
     Kit.Click(mouseButton)
 end

@@ -83,12 +83,10 @@ function A.Score(sum, ctx)
     local dev = (phys + sum.swings * 0.5) * style.devotion
     if danger then dev = dev * T.danger end
     scores.devotion = dev
+    -- the causes are short: they show in the aura's tooltip, "8 Fire hits", "3 pushbacks"
     if n.physical > 0 then
-        local line = ("%d physical %s in %d s"):format(n.physical, Plural(n.physical, "hit", "hits"), ns.Signals.RECENT)
-        if danger then
-            line = line .. ", crits or crushing blows among them"
-        end
-        why.devotion = line
+        why.devotion = ("%d %s"):format(n.physical, danger and Plural(n.physical, "hard hit", "hard hits")
+            or Plural(n.physical, "melee hit", "melee hits"))
     end
 
     -- Retribution: only what landed
@@ -96,19 +94,15 @@ function A.Score(sum, ctx)
     if style.crowdRetribution and (e.engaged or 0) >= T.crowd then retFactor = style.crowdRetribution end
     scores.retribution = phys * retFactor
     if n.physical > 0 then
-        local line = ("%d physical %s in %d s"):format(n.physical, Plural(n.physical, "hit", "hits"), ns.Signals.RECENT)
-        if (e.engaged or 0) >= 2 then line = line .. (" from %d enemies"):format(e.engaged) end
-        why.retribution = line .. ": each one hits back"
+        why.retribution = ("%d %s"):format(n.physical, Plural(n.physical, "melee hit", "melee hits"))
     end
 
     -- Concentration: casts a hit actually pushed back
     scores.concentration = sum.pushMine * T.pushMine + sum.pushParty * T.pushParty
     if n.pushMine > 0 then
-        why.concentration = ("your casts were pushed back %d %s in %d s"):format(n.pushMine,
-            Plural(n.pushMine, "time", "times"), ns.Signals.RECENT)
+        why.concentration = ("%d %s"):format(n.pushMine, Plural(n.pushMine, "pushback", "pushbacks"))
     elseif n.pushParty > 0 then
-        why.concentration = ("your party's casts were pushed back %d %s in %d s"):format(n.pushParty,
-            Plural(n.pushParty, "time", "times"), ns.Signals.RECENT)
+        why.concentration = ("%d party %s"):format(n.pushParty, Plural(n.pushParty, "pushback", "pushbacks"))
     end
 
     -- Resistance auras: hits of that school, and enemy spells of that school being cast
@@ -117,14 +111,13 @@ function A.Score(sum, ctx)
         scores[school] = pts
         local name = Data.SCHOOL_NAME[school]
         if n[school] > 0 then
-            local line = ("%d %s %s on you and your party in %d s"):format(n[school], name,
-                Plural(n[school], "hit", "hits"), ns.Signals.RECENT)
             if sum.casts[school] > 0.3 and sum.castName[school] then
-                line = line .. ", and an enemy is casting " .. sum.castName[school]
+                why[school] = ("%s, %d %s"):format(sum.castName[school], n[school], Plural(n[school], "hit", "hits"))
+            else
+                why[school] = ("%d %s %s"):format(n[school], name, Plural(n[school], "hit", "hits"))
             end
-            why[school] = line
         elseif sum.casts[school] > 0.3 and sum.castName[school] then
-            why[school] = ("an enemy is casting %s (%s)"):format(sum.castName[school], name)
+            why[school] = sum.castName[school]          -- "Shadow Bolt": the spell being cast
         end
     end
 
@@ -140,7 +133,7 @@ function A.Score(sum, ctx)
             -- Two paladins with the same aura give the party nothing extra.
             scores[key] = 0
             local who = type(taken[key]) == "string" and taken[key] or "another paladin"
-            why[key] = who .. " already has it up"
+            why[key] = who .. " has it"
         end
     end
     return scores, why, idle
@@ -171,23 +164,22 @@ function A.Advise(sum, ctx)
     local taken = ctx.others or {}
     if not current then
         res.suggest = best
-        res.reason = "no aura is on"
-        if why[best] then res.reason = res.reason .. "; " .. why[best] end
+        res.reason = "No aura"
         return res
     end
     if best == current then return res end
 
     if taken[current] then
         res.suggest = best
-        res.reason = why[current] or "another paladin already has it up"
-        if not res.quiet and why[best] then res.reason = res.reason .. "; " .. why[best] end
+        res.reason = why[current] or "another paladin has it"
+        if not res.quiet and why[best] then res.reason = why[best] end
         return res
     end
 
     if res.quiet then
         if ctx.betweenFights ~= false then
             res.suggest = best
-            res.reason = "nothing is hitting you: back to your default"
+            res.reason = "Fight over"
         end
         return res
     end

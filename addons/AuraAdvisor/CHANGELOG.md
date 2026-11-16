@@ -1,5 +1,10 @@
 # Changelog
 
+## 1.2.5 (2026-11-15)
+
+- Even less text. The line on screen is the aura's icon and name and nothing more. Its cause shows only in the aura's tooltip, short and in grey ("8 Fire hits", "Shadow Bolt, 2 hits", "3 pushbacks", "No aura"). The minimap tooltip shows just the aura on ("Devotion Aura", "No aura") and the one to switch to.
+- Chat: no line unless you turn it on (as before). `/aura` prints one line (the aura on, the one to switch to, the cause); every aura's points moved to `/aura debug`. Other messages are shorter ("Paladins only", "test: Fire", "dead").
+
 ## 1.2.4 (2026-11-15)
 
 - No more suggestions on guesses. Only what actually happens counts: hits taken by you and your party, casts that were pushed back, and enemy spells seen being cast. In a fight, a switch that can't say what caused it isn't suggested.
