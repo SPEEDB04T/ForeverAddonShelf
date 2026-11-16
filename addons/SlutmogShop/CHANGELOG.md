@@ -1,5 +1,10 @@
 # Changelog
 
+## 1.11.3
+
+- Mailbox mode dances again more reliably after its winks and smiles: if the game will not take the dance from the shop's timer, it tries again on the next line of chat that comes in (city chat is never quiet for long), until the game shows the dance or 20 seconds have passed.
+- The shop keeps a short log of the emotes it tried and what the game said, saved with your settings, so problems like this can be looked into.
+
 ## 1.11.2
 
 - Mailbox mode keeps you dancing: any wink or smile from the shop (by itself or on your click) stops the dance in the game, so it now dances again two seconds later instead of five, and after clicked replies too.

@@ -160,35 +160,53 @@ local function Aim(name)
     return name, "name"
 end
 
--- Any other emote stops the dance (SuccuDev: "keeps canceling my dance"), so the shop dances again
--- right after one of its own, unless you stopped dancing yourself.
+-- Any other emote stops the dance (SuccuDev: "keeps canceling my dance", then "fails to resume"), so
+-- the shop dances again a moment after one of its own, unless you stopped dancing yourself. It tries
+-- from a timer and again on any chat line that comes in, until the game echoes the dance: an emote
+-- from a timer has never been seen to work on this client, one from a chat event has.
 local REDANCE = 2                -- seconds after a wink or a smile before dancing again
+local RETRY = 2                  -- seconds between two tries
+local GIVE_UP = 20               -- seconds after which it stops trying
 local dancing = false            -- you are dancing, as far as the shop knows
-local redance = 0                -- only the last emote's re-dance goes
+local due                        -- when the dance should be back, until its echo
+local tried = -1e9
+
+-- What the shop tried and what came of it, the last 40, saved for looking into problems later.
+local function Log(what)
+    local db = ns.db
+    if type(db) ~= "table" then return end
+    db.mailLog = type(db.mailLog) == "table" and db.mailLog or {}
+    local log = db.mailLog
+    log[#log + 1] = string.format("%.1f %s", Now(), what)
+    while #log > 40 do table.remove(log, 1) end
+end
+M.Log = Log
 
 -- Sends an emote from the addon, at somebody if a name is given. Returns false when the game would not have it.
 local Emote
-Emote = function(token, name)
+Emote = function(token, name, from)
     local fn = (C_ChatInfo and C_ChatInfo.PerformEmote) or DoEmote
     if type(fn) ~= "function" then return false end
     local at, how = Aim(name)
     local ok, restricted = pcall(fn, token, at, true)
+    Log(string.format("%s %s at %s (%s): %s", from or "?", token, tostring(at), how or "-",
+        not ok and ("error " .. tostring(restricted)) or (Readable(restricted) and tostring(restricted) or "secret")))
     if not ok or (Readable(restricted) and restricted == true) then return false end
-    redance = redance + 1
     if token == "DANCE" then
         dancing = true
-    elseif dancing and C_Timer and C_Timer.After then
-        local mine = redance
-        C_Timer.After(REDANCE, function()
-            if on and dancing and redance == mine then Emote("DANCE") end
-        end)
+    elseif dancing then
+        due = Now() + REDANCE
+        if C_Timer and C_Timer.After then
+            C_Timer.After(REDANCE + 0.05, function() M.Redance("timer") end)
+        end
     end
-    local mine = { who = name and Short(name) or nil, how = how }
+    local mine = { who = name and Short(name) or nil, how = how, token = token }
     pend = mine
     if C_Timer and C_Timer.After then
         C_Timer.After(ECHO_WAIT, function()
             if pend == mine then
                 pend = nil
+                Log("no echo for " .. token)
                 if Missed then Missed() end
             end
         end)
@@ -196,17 +214,38 @@ Emote = function(token, name)
     return true
 end
 
+-- Dances again if it is time and the last try was a while ago.
+function M.Redance(from)
+    if not (on and dancing and due) then return false end
+    local now = Now()
+    if now < due or now - tried < RETRY then return false end
+    if now - due > GIVE_UP then
+        due = nil
+        Log("gave up dancing again")
+        return false
+    end
+    local done = Emote("DANCE", nil, from)
+    if done then tried = now end           -- refused: the next chat line may try straight away
+    if C_Timer and C_Timer.After then
+        C_Timer.After(RETRY + 0.05, function() M.Redance("timer") end)
+    end
+    return done
+end
+
 -- Your own emote came back from the game: the last one went out. If it was meant for somebody and
 -- does not name them, it went nowhere, so the other way of aiming is tried next time.
 local function Echo(text)
+    Log("echo " .. text)
     if not pend then
         -- one you did yourself: dancing or not is your call
         dancing = text:lower():find("danc", 1, true) ~= nil
+        due = nil
         return
     end
     if pend.who and not text:find(pend.who, 1, true) then
         aimBy = pend.how == "unit" and "name" or "unit"
     end
+    if pend.token == "DANCE" then due = nil end
     pend, misses = nil, 0
 end
 M.AimBy = function() return aimBy end
@@ -438,7 +477,7 @@ function M.Reply(v)
     if not (v and v.token) then return false end
     local now = Now()
     if now - lastSend < SEND_GAP or not CanReply(v, now) then return false end
-    if not Emote(v.token, v.name) then
+    if not Emote(v.token, v.name, "click") then
         ns.Print("the game refused the emote.")
         return false
     end
@@ -472,7 +511,7 @@ local function Auto(v, gap)
     if manual or not v.reply then return false end
     local now = Now()
     if now - lastAuto < GLOBAL_GAP or (v.emotedAt and now - v.emotedAt < gap) then return false end
-    if not Emote(v.reply[2], v.name) then
+    if not Emote(v.reply[2], v.name, "event") then
         Missed()
         return false
     end
@@ -732,7 +771,7 @@ local function Build()
     if f.status.SetWordWrap then f.status:SetWordWrap(true) end
     f.dance = Button(f, "Dance", 72)
     f.dance:SetPoint("BOTTOMRIGHT", f, "BOTTOMRIGHT", -12, 12)
-    f.dance:SetScript("OnClick", function() Emote("DANCE") end)
+    f.dance:SetScript("OnClick", function() Emote("DANCE", nil, "click") end)
     f:Hide()
     return f
 end
@@ -752,14 +791,18 @@ function M.Start()
         events = CreateFrame("Frame")
         events:SetScript("OnEvent", function(_, event, text, sender, ...)
             if not on then return end
-            if event == "CHAT_MSG_TEXT_EMOTE" then OnEmote(text, sender, (select(10, ...))) else OnWhisper(text, sender) end
+            if event == "CHAT_MSG_TEXT_EMOTE" then OnEmote(text, sender, (select(10, ...)))
+            elseif event == "CHAT_MSG_WHISPER" then OnWhisper(text, sender) end
+            M.Redance(event)
         end)
     end
-    pcall(events.RegisterEvent, events, "CHAT_MSG_TEXT_EMOTE")
-    pcall(events.RegisterEvent, events, "CHAT_MSG_WHISPER")
-    on, manual, misses, pend, dancing = true, false, 0, nil, false
+    for _, e in ipairs({ "CHAT_MSG_TEXT_EMOTE", "CHAT_MSG_WHISPER", "CHAT_MSG_CHANNEL", "CHAT_MSG_SAY", "CHAT_MSG_YELL",
+        "CHAT_MSG_EMOTE", "CHAT_MSG_GUILD", "CHAT_MSG_PARTY", "CHAT_MSG_SYSTEM" }) do
+        pcall(events.RegisterEvent, events, e)
+    end
+    on, manual, misses, pend, dancing, due = true, false, 0, nil, false, nil
     frame:Show()
-    Emote("DANCE")
+    Emote("DANCE", nil, "start")
     Tick()
     ns.Print("mailbox mode is on. The big button winks or smiles at whoever is waiting. Close the window to turn it off.")
     return true
@@ -769,8 +812,7 @@ function M.Stop(fromHide)
     if not on then return end
     on = false
     if events then
-        pcall(events.UnregisterEvent, events, "CHAT_MSG_TEXT_EMOTE")
-        pcall(events.UnregisterEvent, events, "CHAT_MSG_WHISPER")
+        pcall(events.UnregisterAllEvents, events)
     end
     if frame and not fromHide then
         frame:Hide()
