@@ -355,6 +355,7 @@ local function Done(why)
     pre = nil
     if not early then Say(owed) end
     Watch(owed, "said")
+    if ns.Mailbox and ns.Mailbox.DanceFor then ns.Mailbox.DanceFor(tip.who) end
     Whisper(owed)
 end
 

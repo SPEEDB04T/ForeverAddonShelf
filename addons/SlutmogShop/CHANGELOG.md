@@ -1,5 +1,16 @@
 # Changelog
 
+## 1.17.0
+
+Emotes written for dancing on top of the mailbox, all in the game's own emote style.
+
+- Now and then while people are around, a line at nobody: "does a little spin on the mailbox.", "strikes a pose on top of the mailbox.", "blows a kiss to the crowd below.", "tugs the hem down. It doesn't help.", "looks down from the mailbox and waves.", "balances on tiptoe on the mailbox.". Every 7 to 13 minutes.
+- Somebody who keeps you targeted for half a minute gets one "glances at the tip jar, then down at Bob.", once an hour at most.
+- A tipper gets "dances for Bob." a few seconds after the thank-you, while the shop is open.
+- New replies for people who flirted, kissed or whistled first: "does a little spin for Bob.", "bats eyelashes at Bob.", "crooks a finger at Bob.", "blows a kiss down to Bob.". If the game does not let the line out, a fitting game emote goes instead.
+- The common replies have other wordings that take turns with the game's own: "winks at Bob.", "gives Bob a slow wink.", "smiles down at Bob.", "gives Bob a little wave.", "blushes and looks away from Bob." and more.
+- Tip jar lines reworded for standing on the mailbox ("taps the tip jar with a toe.", "holds out the tip jar.").
+
 ## 1.16.0
 
 - Post to has a new choice, "Trade and Yell by turns": one ad goes to Trade, the next is yelled, and so on. Outside a capital city, where there is no Trade, every ad is yelled. The counter's button says where the next one goes ("Post ad to Yell"). Also `/slutshop channel turns`.

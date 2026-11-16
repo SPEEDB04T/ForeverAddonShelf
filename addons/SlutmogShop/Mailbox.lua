@@ -61,10 +61,10 @@ M.EMOTES = {
     -- short and sweet, doesnt stand out"). All of them are in the game's own emote list
     -- (ChatEmoteConstants.lua, Gethe/wow-ui-source branch forever) and old enough for this client.
     look = { "WINK", "SMILE", "GIGGLE", "SHY", "WAVE", "GRIN", "SMIRK", "BASHFUL", "NOD", "CHUCKLE", "BLINK" },   -- only targeted you: slight
-    kiss = { "BLUSH", "KISS", "BASHFUL", "PURR" },
+    kiss = { "BLUSH", "KISS", "BASHFUL", "PURR", "KISSDOWN", "LASHES" },
     wink = { "WINK", "SMIRK", "GRIN", "CHUCKLE" },
-    flirt = { "GIGGLE", "FLIRT", "TEASE", "SMIRK", "PURR", "BECKON" },
-    show = { "CURTSEY", "THANK", "BOW", "WELCOME" },
+    flirt = { "GIGGLE", "FLIRT", "TEASE", "SMIRK", "PURR", "BECKON", "LASHES", "FINGER", "SPIN" },
+    show = { "CURTSEY", "THANK", "BOW", "WELCOME", "SPIN" },
     hug = { "HUG", "BLUSH", "BASHFUL", "CUDDLE" },
     wave = { "WAVE", "GREET", "NOD", "HELLO", "WELCOME" },
     dance = { "DANCE" },
@@ -80,7 +80,13 @@ M.LABEL = {
     CHUCKLE = "Chuckle", BLINK = "Blink", PURR = "Purr", BECKON = "Beckon", WELCOME = "Welcome", CUDDLE = "Cuddle",
     HELLO = "Say hello", CRY = "Cry", POUT = "Pout", FROWN = "Frown", SIGH = "Sigh",
     WELCOMEBACK = "Welcome back",
+    SPIN = "Spin", LASHES = "Bat eyelashes", FINGER = "Crook a finger", KISSDOWN = "Blow a kiss down",
 }
+-- The shop's own emotes, from on top of the mailbox (SuccuDev: "im dancing on TOP of the mailbox,
+-- classic WoW style, you have to design around that"; "more clever emotes, more enticing emotes").
+-- They only exist as /e lines; when /e does not go out, the game's emote here goes instead. Only for
+-- people who flirted, kissed or whistled first.
+M.FALLBACK = { SPIN = "CURTSEY", LASHES = "FLIRT", FINGER = "BECKON", KISSDOWN = "KISS" }
 
 -- What the game's emote says when aimed at somebody (warcraft.wiki.gg, List of emotes), said in /e
 -- instead, so the dance goes on. %s is their name.
@@ -92,20 +98,66 @@ M.SAY = {
     FLIRT = "flirts with %s.", TEASE = "teases %s.", BECKON = "beckons %s over.", CURTSEY = "curtseys before %s.",
     THANK = "thanks %s.", BOW = "bows before %s.", WELCOME = "welcomes %s.", HUG = "hugs %s.",
     CUDDLE = "cuddles up against %s.", GREET = "greets %s warmly.", HELLO = "greets %s with a hearty hello!",
+    SPIN = "does a little spin for %s.", LASHES = "bats eyelashes at %s.", FINGER = "crooks a finger at %s.",
+    KISSDOWN = "blows a kiss down to %s.",
     CRY = "cries on %s's shoulder.", POUT = "pouts at %s.", FROWN = "frowns with disappointment at %s.", SIGH = "sighs at %s.",
 }
+
+-- Other wordings of the common ones, taking turns with the game's own, so the same line does not
+-- come every time (SuccuDev: "better variant wordings on common emotes. for example slightly
+-- different winks, smiles"). Same style: short, third person, nothing said out loud.
+M.VARIANTS = {
+    WINK = { "winks at %s.", "gives %s a wink.", "gives %s a slow wink." },
+    SMILE = { "smiles down at %s.", "gives %s a little smile.", "smiles warmly at %s." },
+    WAVE = { "waves down at %s.", "gives %s a little wave." },
+    GIGGLE = { "giggles behind a hand at %s." },
+    GRIN = { "grins at %s.", "grins down at %s." },
+    SMIRK = { "smirks at %s." },
+    NOD = { "nods down at %s.", "gives %s a little nod." },
+    BLUSH = { "blushes and looks away from %s.", "blushes a little at %s." },
+    KISS = { "blows %s a kiss." },
+    CURTSEY = { "curtseys for %s.", "does a little curtsey for %s." },
+    SHY = { "gives %s a shy smile." },
+    POUT = { "pouts down at %s." },
+}
+local sayTurn = {}
+-- The line for a token this time: the game's wording first, then the others, in turn.
+function M.Wording(token)
+    local base = M.SAY[token]
+    if not base then return nil end
+    local more = M.VARIANTS[token]
+    if not more then return base end
+    sayTurn[token] = (sayTurn[token] or 0) % (#more + 1) + 1
+    return sayTurn[token] == 1 and base or more[sayTurn[token] - 1]
+end
 
 -- The tip jar: now and then, while somebody is around, one line in /e, so people know you take tips
 -- (SuccuDev picked this to get more tips). Short and quiet, in the shop owner's voice.
 M.JAR = {
-    "jingles the little tip jar on the mailbox.",
-    "polishes the tip jar.",
+    "jingles the tip jar.",
+    "taps the tip jar with a toe.",
     "drops a coin in the tip jar to get it started.",
     "gives the tip jar a little shake.",
-    "nudges the tip jar a bit closer to the edge of the mailbox.",
+    "nudges the tip jar toward the edge of the mailbox with a toe.",
     "counts the coins in the tip jar and pouts.",
-    "sets the tip jar down where everybody can see it.",
+    "holds out the tip jar.",
 }
+-- Now and then while somebody is around, at nobody: something to look at. You stand on the mailbox.
+M.IDLE = {
+    "does a little spin on the mailbox.",
+    "strikes a pose on top of the mailbox.",
+    "blows a kiss to the crowd below.",
+    "tugs the hem down. It doesn't help.",
+    "looks down from the mailbox and waves.",
+    "balances on tiptoe on the mailbox.",
+}
+-- Somebody who has kept you targeted this long gets one look at the tip jar, once an hour at most.
+M.NUDGE = "glances at the tip jar, then down at %s."
+local NUDGE_HOLD, NUDGE_AGAIN = 30, 3600
+local IDLE_MIN, IDLE_MAX = 420, 780             -- seconds between two idle lines, picked at random
+local IDLE_FIRST_MIN, IDLE_FIRST_MAX = 120, 300 -- ... and before the first one
+-- A tipper gets a dance to their name a few seconds after the thank-you, where everybody sees it.
+M.DANCE_FOR = "dances for %s."
 -- Somebody who tipped you before comes by again: one of these, in /e (SuccuDev: "just a welcome back emote").
 -- Worded like the game's own emotes, nothing said in Smuttanie's voice (SuccuDev: "dont add text as if
 -- smuttanie's writing in emotes. it has to be clean, minimalistic, feel similar to ingame emotes").
@@ -295,13 +347,13 @@ end
 local function Stat(key, n) if ns.Stat then ns.Stat(key, n) end end
 
 -- Sends an emote from the addon, at somebody if a name is given. Returns false when the game would not have it.
-local Emote, Game
+local Emote, Game, Nudge
 local useSay = true              -- replies go in /e; false once /e by itself has twice not gone out
 local sayMisses = 0
 M.UsesSay = function() return useSay end
 M.SetSay = function(yes) useSay, sayMisses = yes and true or false, 0 end
 Emote = function(token, name, from)
-    local line = useSay and token ~= "DANCE" and name and M.SAY[token]
+    local line = useSay and token ~= "DANCE" and name and M.Wording(token)
     if not line then return Game(token, name, from) end
     local who = Short(name)
     line = line:format(who)
@@ -327,6 +379,7 @@ Emote = function(token, name, from)
 end
 
 Game = function(token, name, from)
+    token = M.FALLBACK[token] or token
     local fn = (C_ChatInfo and C_ChatInfo.PerformEmote) or DoEmote
     if type(fn) ~= "function" then return false end
     local at, how = Aim(name)
@@ -764,6 +817,16 @@ local function Welcome(name, now)
     return true
 end
 
+-- Still looking after half a minute: one glance at the tip jar and at them.
+local nudged = {}
+Nudge = function(v, now)
+    if manual or Away() or not v.since or now - v.since < NUDGE_HOLD or now - lastAuto < GLOBAL_GAP then return false end
+    if nudged[v.name] and now - nudged[v.name] < NUDGE_AGAIN then return false end
+    nudged[v.name] = now
+    lastAuto = now
+    return Say(M.NUDGE:format(Short(v.name)), "nudge", nil, function() Stat("nudges") end)
+end
+
 -- Who has you targeted: read off the nameplates in view (they must be shown for this to see anybody).
 -- Returns how many players are in view.
 local function Look()
@@ -789,6 +852,7 @@ local function Look()
                 if not (v.seen and now - v.seen <= TICK + 0.6) then v.since = now end   -- a new look starts
                 v.seen = now
                 if now - (v.since or now) >= HOLD then Auto(v, LOOK_GAP) end
+                Nudge(v, now)
             end
         end
     end
@@ -812,6 +876,26 @@ function M.Jar(from)
 end
 function M.JarOwed() return jarOwed end
 function M.NextJar(t) if t then nextJar = t end return nextJar end
+
+-- An idle line, at nobody.
+local idleTurn, nextIdle = 0, nil
+function M.Idle(from)
+    idleTurn = idleTurn % #M.IDLE + 1
+    return Say(M.IDLE[idleTurn], from, nil, function() Stat("idle") end)
+end
+function M.NextIdle(t) if t then nextIdle = t end return nextIdle end
+
+-- For a tip: a dance to their name, a few seconds after the thank-you. Only while the shop is open.
+function M.DanceFor(name)
+    if not (on and name) or Away() or not (C_Timer and C_Timer.After) then return false end
+    C_Timer.After(M.Random(4, 7), function()
+        if on and not Away() then
+            lastAuto = Now()
+            Say(M.DANCE_FOR:format(Short(name)), "tip", nil, function() Stat("emotes") end)
+        end
+    end)
+    return true
+end
 
 -- AFK while the mailbox is on: a big prompt, so you come back (SuccuDev: "I need a big prompt telling
 -- me to un-afk"): the game's raid warning text, a dialog with a button that ends it, the taskbar icon.
@@ -860,6 +944,12 @@ local function Tick()
         nextJar = now + M.Random(JAR_MIN, JAR_MAX)
         lastAuto = now
         M.Jar("timer")
+    end
+    nextIdle = nextIdle or (now + M.Random(IDLE_FIRST_MIN, IDLE_FIRST_MAX))
+    if now >= nextIdle and near > 0 and not away and now - lastAuto >= GLOBAL_GAP then
+        nextIdle = now + M.Random(IDLE_MIN, IDLE_MAX)
+        lastAuto = now
+        M.Idle("timer")
     end
     Prune()
     Sync()
@@ -1093,7 +1183,7 @@ function M.Start()
         pcall(events.RegisterEvent, events, e)
     end
     on, manual, misses, pend, dancing, due = true, false, 0, nil, false, nil
-    nextJar, wasAway = nil, false
+    nextJar, nextIdle, wasAway = nil, nil, false
     frame:Show()
     Emote("DANCE", nil, "start")
     Tick()
