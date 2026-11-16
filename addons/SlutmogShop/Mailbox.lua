@@ -142,17 +142,54 @@ local function UnitFor(name)
     return nil
 end
 
--- Sends an emote from the addon. Returns false when the game would not have it.
-local function Emote(token, name)
-    local at = name and (UnitFor(name) or name) or nil
-    local fn = C_ChatInfo and C_ChatInfo.PerformEmote
-    if type(fn) == "function" then
-        local ok, res = pcall(fn, token, at)
-        return ok and res ~= false
-    end
-    if type(DoEmote) == "function" then return (pcall(DoEmote, token, at)) end
-    return false
+-- Whether an emote really went out is told by the game's echo ("You wink at Bob."), not by what
+-- PerformEmote returns: the game's own chat box reads that as "restricted" (ChatFrameEditBox.lua,
+-- Gethe/wow-ui-source branch forever), so false means it went out. Reading it the other way round
+-- turned the shop to buttons-only after its first emote, which is why it emoted only sometimes.
+local ECHO_WAIT = 2              -- seconds to wait for the echo
+local MISSES = 3                 -- emotes in a row with no echo before the shop stops emoting by itself
+local aimBy = "unit"             -- how an emote is aimed: at their unit (target, nameplate), or by name
+local misses = 0
+local pend                       -- the emote sent last, until its echo
+local Missed                     -- set below, once Sync is known
+
+local function Aim(name)
+    if not name then return nil end
+    local unit = aimBy == "unit" and UnitFor(name) or nil
+    if unit then return unit, "unit" end
+    return name, "name"
 end
+
+-- Sends an emote from the addon, at somebody if a name is given. Returns false when the game would not have it.
+local function Emote(token, name)
+    local fn = (C_ChatInfo and C_ChatInfo.PerformEmote) or DoEmote
+    if type(fn) ~= "function" then return false end
+    local at, how = Aim(name)
+    local ok, restricted = pcall(fn, token, at)
+    if not ok or (Readable(restricted) and restricted == true) then return false end
+    local mine = { who = name and Short(name) or nil, how = how }
+    pend = mine
+    if C_Timer and C_Timer.After then
+        C_Timer.After(ECHO_WAIT, function()
+            if pend == mine then
+                pend = nil
+                if Missed then Missed() end
+            end
+        end)
+    end
+    return true
+end
+
+-- Your own emote came back from the game: the last one went out. If it was meant for somebody and
+-- does not name them, it went nowhere, so the other way of aiming is tried next time.
+local function Echo(text)
+    if not pend then return end
+    if pend.who and not text:find(pend.who, 1, true) then
+        aimBy = pend.how == "unit" and "name" or "unit"
+    end
+    pend, misses = nil, 0
+end
+M.AimBy = function() return aimBy end
 
 local SEND_GAP = 2               -- seconds between two replies, against a double click
 
@@ -400,14 +437,23 @@ function M.Another(v)
     return true
 end
 
+-- No echo, or the game said no. A few of those in a row: the shop stops emoting by itself.
+Missed = function()
+    misses = misses + 1
+    if misses >= MISSES and on and not manual then
+        manual = true
+        ns.Print("the game does not let the shop emote by itself here. The buttons in the mailbox window do it with a click.")
+        Sync()
+    end
+end
+
 -- An emote by itself, if the limits allow. The dance comes back a few seconds later.
 local function Auto(v, gap)
     if manual or not v.reply then return false end
     local now = Now()
     if now - lastAuto < GLOBAL_GAP or (v.emotedAt and now - v.emotedAt < gap) then return false end
     if not Emote(v.reply[2], v.name) then
-        manual = true
-        ns.Print("the game does not let the shop emote by itself here. The buttons in the mailbox window do it with a click.")
+        Missed()
         return false
     end
     lastAuto, v.emotedAt = now, now
@@ -448,6 +494,7 @@ local function OnEmote(text, sender, guid)
     if not (Readable(text) and Readable(sender) and type(text) == "string" and type(sender) == "string") then return end
     if sender == "" then return end
     if Mine(text, sender, guid) then
+        Echo(text)
         -- your own emote, as the game showed it: whoever it names has their answer ("You wink at Bob.")
         local hit = false
         for _, v in ipairs(visitors) do
@@ -695,7 +742,7 @@ function M.Start()
     end
     pcall(events.RegisterEvent, events, "CHAT_MSG_TEXT_EMOTE")
     pcall(events.RegisterEvent, events, "CHAT_MSG_WHISPER")
-    on, manual = true, false
+    on, manual, misses, pend = true, false, 0, nil
     frame:Show()
     Emote("DANCE")
     Tick()

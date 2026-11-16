@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.11.1
+
+- Mailbox mode emotes back by itself every time now, not just once. The shop misread the game's answer to its first emote as a refusal and went buttons-only for the rest of the session.
+- It checks the game's echo ("You wink at Bob.") instead: only three emotes in a row that never show up make it stop. If an emote goes out without their name in it, it aims the next one the other way (by nameplate or by name).
+- The limits are unchanged: one emote back per person every two minutes, one every six seconds at most.
+
 ## 1.11.0
 
 - Mailbox replies are the game's own emotes again, done at the person: Wink, Smile, Giggle, Shy, Wave, Blush, Curtsey and the like. No more custom emote text.
