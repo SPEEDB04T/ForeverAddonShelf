@@ -12,7 +12,7 @@
 -- from the shop is what you had saved there (tips, tippers, numbers), copied once.
 local ADDON, ns = ...
 
-ns.VERSION = "1.2.0"
+ns.VERSION = "1.2.1"
 ns.TITLE = "Mailbox Slutting"
 ns.ICON = "Interface\\Icons\\INV_Letter_15"
 

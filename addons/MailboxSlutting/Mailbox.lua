@@ -202,6 +202,7 @@ local frame, events
 local visitors = {}
 local lastAuto = -1e9
 local lastEngage = -1e9         -- somebody last emoted at you, whispered or tipped
+local Queue, Flush
 local lastAlert = -1e9
 local manual = false            -- the game refused an emote from the addon: buttons only
 local Sync
@@ -827,7 +828,9 @@ Nudge = function(v, now)
     if nudged[v.name] and now - nudged[v.name] < NUDGE_AGAIN then return false end
     nudged[v.name] = now
     lastAuto = now
-    return Say(M.NUDGE:format(Short(v.name)), "nudge", nil, function() Stat("nudges") end)
+    local line = M.NUDGE:format(Short(v.name))
+    Queue(function(from) Say(line, from or "nudge", nil, function() Stat("nudges") end) end)
+    return true
 end
 
 -- Who has you targeted: read off the nameplates in view (they must be shown for this to see anybody).
@@ -863,6 +866,31 @@ local function Look()
 end
 
 -- The tip jar line, or the one that did not go out last time.
+-- A /e line sent from a timer does not go out: the game only lets it through while it is handling
+-- something that happened (in the saved log every "timer /e" has "no echo", and the one thank-you sent
+-- again on somebody's chat line did go out). So a line by itself waits here for the next chat line or
+-- emote from anybody around, and goes out on that. After WAIT_EVENT seconds without one it is tried
+-- from the timer anyway.
+M.WAIT_EVENT = 15
+local QUEUE_KEEP, QUEUE_OLD, FLUSH_GAP = 3, 60, 2
+local queue, lastFlush = {}, -1e9
+Flush = function(from)
+    local now = Now()
+    while queue[1] and M.WAIT_EVENT > 0 and now - queue[1].at > QUEUE_OLD do table.remove(queue, 1) end
+    if not (on and queue[1]) or Away() then return false end
+    if from == "event" and now - lastFlush < FLUSH_GAP then return false end
+    lastFlush = now
+    local q = table.remove(queue, 1)
+    q.fn(from)
+    return true
+end
+Queue = function(fn)
+    queue[#queue + 1] = { fn = fn, at = Now() }
+    while #queue > QUEUE_KEEP do table.remove(queue, 1) end
+    if M.WAIT_EVENT <= 0 then Flush() end
+end
+M.Queued = function() return #queue end
+
 local jarTurn, jarOwed, nextJar = 0, nil, nil
 -- Every third jar line counts the jar out loud, and the count is seeded like a busker's hat
 -- (SuccuDev: "we could lie about this lmao", "people do this kind of shit in roleplay all the time"):
@@ -909,7 +937,18 @@ function M.NextJar(t) if t then nextJar = t end return nextJar end
 local idleTurn, nextIdle = 0, nil
 function M.Idle(from)
     idleTurn = idleTurn % #M.IDLE + 1
-    return Say(M.IDLE[idleTurn], from, nil, function() Stat("idle") end)
+    local line = M.IDLE[idleTurn]
+    local function done() Stat("idle") end
+    if from ~= "timer" then return Say(line, from, nil, done) end
+    local tries = 0
+    local function send(f)
+        Say(line, f or "timer", function()
+            tries = tries + 1
+            if tries < 2 and M.WAIT_EVENT > 0 then Queue(send) end     -- once more, on the next chat line
+        end, done)
+    end
+    Queue(send)
+    return true
 end
 function M.NextIdle(t) if t then nextIdle = t end return nextIdle end
 
@@ -920,7 +959,8 @@ function M.DanceFor(name)
     C_Timer.After(M.Random(4, 7), function()
         if on and not Away() then
             lastAuto = Now()
-            Say(M.DANCE_FOR:format(Short(name)), "tip", nil, function() Stat("emotes") end)
+            local line = M.DANCE_FOR:format(Short(name))
+            Queue(function(from) Say(line, from or "tip", nil, function() Stat("emotes") end) end)
         end
     end)
     return true
@@ -970,10 +1010,10 @@ local function Tick()
     local now = Now()
     nextJar = nextJar or (now + M.Random(JAR_FIRST_MIN, JAR_FIRST_MAX))
     local quiet = now - lastEngage >= ENGAGE_HOLD
-    if now >= nextJar and near > 0 and not away and quiet and not jarOwed and now - lastAuto >= GLOBAL_GAP then
+    if now >= nextJar and near > 0 and not away and quiet and now - lastAuto >= GLOBAL_GAP then
         nextJar = now + M.Random(JAR_MIN, JAR_MAX)
         lastAuto = now
-        M.Jar("timer")
+        Queue(function(from) M.Jar(from or "timer") end)
     end
     nextIdle = nextIdle or (now + M.Random(IDLE_FIRST_MIN, IDLE_FIRST_MAX))
     if now >= nextIdle and near > 0 and not away and quiet and now - lastAuto >= GLOBAL_GAP then
@@ -981,6 +1021,7 @@ local function Tick()
         lastAuto = now
         M.Idle("timer")
     end
+    if queue[1] and now - queue[1].at >= M.WAIT_EVENT then Flush() end     -- no chat line came: try it anyway
     Prune()
     Sync()
     C_Timer.After(TICK, Tick)
@@ -1166,6 +1207,12 @@ function M.Start()
                 if Readable(text) and type(text) == "string" and Readable(sender) and type(sender) == "string"
                     and Mine(text, sender, (select(10, ...))) then SaidEcho(text) end
             elseif event == "PLAYER_FLAGS_CHANGED" then AwayPrompt(Away()) end
+            -- somebody else's chat line or emote: a line that was waiting goes out on it
+            if queue[1] and event ~= "PLAYER_FLAGS_CHANGED"
+                and not (type(text) == "string" and type(sender) == "string" and Readable(text) and Readable(sender)
+                    and Mine(text, sender, (select(10, ...)))) then
+                Flush("event")
+            end
             M.Redance(event)
         end)
     end
@@ -1175,6 +1222,7 @@ function M.Start()
     end
     on, manual, misses, pend, dancing, due = true, false, 0, nil, false, nil
     nextJar, nextIdle, wasAway, lastEngage = nil, nil, false, -1e9
+    for i = #queue, 1, -1 do queue[i] = nil end
     frame:Show()
     Emote("DANCE", nil, "start")
     Tick()

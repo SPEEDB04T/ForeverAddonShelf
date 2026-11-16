@@ -1,5 +1,10 @@
 # Changelog
 
+## 1.2.1
+
+- The lines by itself (at nobody, the tip jar, the glance at the tip jar, the dance for a tipper) did not go out: the game drops a /e line sent from a timer. They now wait for the next chat line or emote from anybody around and go out on that. In a city that is a few seconds at most. With no chat at all for 15 seconds the line is tried from the timer anyway.
+- A line at nobody that still did not show is sent once more on the next chat line.
+
 ## 1.2.0
 
 - Much louder when the crowd does nothing: while people are around and nobody is emoting at you, whispering or tipping, a line at nobody goes out every 10 to 30 seconds (it was every 7 to 13 minutes), and a tip jar line every 2 to 3 minutes (it was every 20 to 30).
