@@ -15,7 +15,7 @@
 -- works too). A reminder in your own chat says when it is time for the next one.
 local ADDON, ns = ...
 
-ns.VERSION = "1.14.0"
+ns.VERSION = "1.15.0"
 ns.TITLE = "Slutmog Shop"
 ns.ICON = "Interface\\Icons\\INV_Misc_Coin_02"
 ns.ACCENT = { 0.96, 0.55, 0.78 }
@@ -1483,6 +1483,51 @@ local function Log(channel, text, result)
     return entry
 end
 
+-- The counter's numbers: per day (the last 30 kept) and all time. db.stats = { days = { [day] = {...} }, all = {...} }.
+-- Keys: tips, tipCopper, ads, visitors, emotes, jar, welcomes, open (seconds the shop was open).
+local STAT_DAYS = 30
+local function DayKey(t)
+    t = t or time()
+    if type(date) == "function" then
+        local ok, d = pcall(date, "%Y-%m-%d", t)
+        if ok and type(d) == "string" then return d end
+    end
+    return ("%08d"):format(math.floor(t / 86400))
+end
+
+function ns.Stat(key, n)
+    if not db then return end
+    db.stats = type(db.stats) == "table" and db.stats or {}
+    local s = db.stats
+    s.days = type(s.days) == "table" and s.days or {}
+    s.all = type(s.all) == "table" and s.all or {}
+    local d = DayKey()
+    if type(s.days[d]) ~= "table" then
+        s.days[d] = {}
+        local keys = {}
+        for k in pairs(s.days) do keys[#keys + 1] = k end
+        table.sort(keys)
+        for i = 1, #keys - STAT_DAYS do s.days[keys[i]] = nil end
+    end
+    n = n or 1
+    s.days[d][key] = (tonumber(s.days[d][key]) or 0) + n
+    s.all[key] = (tonumber(s.all[key]) or 0) + n
+end
+
+-- days nil: all time; 0: today; n: the last n days, today in.
+function ns.Stats(days)
+    local s = db and type(db.stats) == "table" and db.stats or {}
+    if days == nil then return type(s.all) == "table" and s.all or {} end
+    local out, now = {}, time()
+    for i = 0, math.max(0, days - 1) do
+        local t = type(s.days) == "table" and s.days[DayKey(now - i * 86400)]
+        if type(t) == "table" then
+            for k, v in pairs(t) do out[k] = (out[k] or 0) + (tonumber(v) or 0) end
+        end
+    end
+    return out
+end
+
 function ns.Wait()
     if not (db and ns.lastPostAt and db.gap and db.gap > 0) then return 0 end
     return max(0, db.gap - (Now() - ns.lastPostAt))
@@ -1513,7 +1558,13 @@ local function Sound(kit, fallback) ns.AlertSound(kit, fallback) end
 
 -- The prompt waits for the end of a fight: a window in the middle of the screen has no place in one.
 local function ShowPrompt(token)
-    if token ~= remindToken or not db.prompt then return end
+    if token ~= remindToken then return end
+    -- the counter is up: its Post button lights up instead of a window in the middle of the screen
+    if ns.Counter and ns.Counter.IsShown and ns.Counter.IsShown() then
+        pcall(ns.Counter.Remind)
+        return
+    end
+    if not db.prompt then return end
     if type(InCombatLockdown) == "function" and InCombatLockdown() then
         C_Timer.After(3, function() ShowPrompt(token) end)
         return
@@ -1586,6 +1637,8 @@ function ns.Post()
     end
     ns.lastPostAt = Now()
     db.posts = (db.posts or 0) + 1
+    ns.Stat("ads")
+    if ns.Counter and ns.Counter.Posted then pcall(ns.Counter.Posted) end
     if p.src then db.sent[p.src] = (tonumber(db.sent[p.src]) or 0) + 1 end
     sent.entry = Log(label, p.text, awaiting == sent and "sent" or "seen")
     Commit(p)
@@ -1801,6 +1854,8 @@ local function Slash(msg)
         end
     elseif cmd == "mailbox" then
         if ns.Mailbox then ns.Mailbox.Toggle() else Print("mailbox mode did not load.") end
+    elseif cmd == "counter" then
+        if ns.Counter then ns.Counter.Toggle() else Print("the counter did not load.") end
     elseif cmd == "prompt" then
         if not (ns.UI and ns.UI.ShowPrompt and ns.UI.ShowPrompt(true)) then
             Print("nothing to post: " .. tostring(select(2, ns.Next())))

@@ -60,7 +60,8 @@ Openers and ad lines take turns, each used once before any repeats. If an ad is 
 | `/slutshop scan` | look through your bags for pieces from the slutmog list and put them on the shelf |
 | `/slutshop reroll` | another ad for the same ware |
 | `/slutshop prompt` | the Post button in the middle of the screen, now |
-| `/slutshop mailbox` or `/smog mailbox` | mailbox mode on or off (below) |
+| `/slutshop counter` | the counter up or away (below) |
+| `/slutshop mailbox` or `/smog mailbox` | the shop open or closed: dancing and replies (below) |
 | `/slutshop set [top] [bottom]` | sell two of your wares as a set, one ad for both (`/slutshop unset [item]` undoes it) |
 | `/slutshop ads [item]` | a piece's ready-made ads (without an item: which wares have them) |
 | `/slutshop channel Trade` | where ads go |
@@ -73,9 +74,22 @@ Openers and ad lines take turns, each used once before any repeats. If an ad is 
 
 Shortest gap between ads (60 seconds), the reminder and its sound, which ads (ready-made, by turns with yours, or only yours), whether pieces from your bags go on the shelf by themselves, whether only wares you still have go in, the order of wares, how prices read, and the minimap button.
 
+## The counter
+
+The window that stays on screen while you stand at the mailbox, up from login:
+
+- **The ad**: the next ad with its item (hover it for the tooltip), a big **Post ad** button and **Reroll**. While you have to wait the button counts down ("Next ad in 3:40"); when the next ad is due it lights up.
+- **The mailbox panel** (below).
+- **The numbers**: today's tips and their gold, ads posted, visitors and time open. Hover for the last 7 days and all time.
+- **Open shop / Close shop**, **Wares** (the shop window) and **Options**.
+
+It gets out of the way in a fight and comes back after. Its close button puts it away and closes the shop; `/slutshop counter` brings it back.
+
 ## Mailbox mode
 
-For standing around a city mailbox in your wares. `/slutshop mailbox` (or `/smog mailbox`) opens a small window and starts you dancing; closing the window turns the mode off. Whoever is waiting for an answer is on the big button at the top: it does one of the game's own emotes at them (Wink at Bob, Smile at Bob...), Other emote picks a different one, Whisper price whispers them your ware and its price.
+For standing around a city mailbox in your wares. **Open shop** on the counter (or `/slutshop mailbox`, `/smog mailbox`) starts you dancing and answering; **Close shop** stops it. Whoever is waiting for an answer is on the big button: it emotes at them (Wink at Bob, Smile at Bob...), Other emote picks a different one, Whisper price whispers them your ware and its price.
+
+Replies go out in /e with the game's own words ("winks slyly at Bob."), because the game's emotes play an animation that stops your dance. If the game does not let a line out, the real emote goes instead.
 
 - **Emotes back by itself.** Somebody winks, whistles, kisses, flirts, dances or waves at you and the fitting emote goes back (a kiss gets a blush, a whistle a curtsey). Rude emotes get nothing. Somebody who targets you gets one wink. At most one emote per person in two minutes and one in six seconds overall, then you go back to dancing.
 - **The list** shows who emoted at you, who whispered you (with what they said) and who has you targeted (this needs nameplates shown). Nothing is saved; the list is gone when you log out.

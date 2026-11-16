@@ -3,7 +3,11 @@
 -- answer on a big button at the top, and gives everybody a one-click reply. /slutshop mailbox (or
 -- /smog mailbox) turns it on; closing its window turns it off.
 --
--- A reply is one of the game's own emotes (wink, smile, giggle...) done at them, on your click.
+-- It lives in the counter (Counter.lua), the window that stays up while you stand there; Open shop
+-- turns it on. A reply says what the game's own emote would ("winks slyly at Bob."), in /e: the
+-- game's emote stops the dance, a line in /e does not (SuccuDev: "do custom /emotes cancel dance
+-- animation? couldnt we replace all of them with the same wording"). If /e from the shop does not
+-- go out, the game's own emote is done instead.
 -- By itself the shop only dances and tries the game's emote back, and few of those: one per person
 -- every two minutes, one every six seconds at most. It never says, emotes text or whispers without a click.
 local ADDON, ns = ...
@@ -74,6 +78,18 @@ M.LABEL = {
     CHUCKLE = "Chuckle", BLINK = "Blink", PURR = "Purr", BECKON = "Beckon", WELCOME = "Welcome", CUDDLE = "Cuddle",
     HELLO = "Say hello",
     WELCOMEBACK = "Welcome back",
+}
+
+-- What the game's emote says when aimed at somebody (warcraft.wiki.gg, List of emotes), said in /e
+-- instead, so the dance goes on. %s is their name.
+M.SAY = {
+    WINK = "winks slyly at %s.", SMILE = "smiles at %s.", GIGGLE = "giggles at %s.", SHY = "smiles shyly at %s.",
+    WAVE = "waves at %s.", GRIN = "grins wickedly at %s.", SMIRK = "smirks slyly at %s.",
+    BASHFUL = "is so bashful...too bashful to get %s's attention.", NOD = "nods at %s.", CHUCKLE = "chuckles at %s.",
+    BLINK = "blinks at %s.", BLUSH = "blushes at %s.", KISS = "blows a kiss to %s.", PURR = "purrs at %s.",
+    FLIRT = "flirts with %s.", TEASE = "teases %s.", BECKON = "beckons %s over.", CURTSEY = "curtseys before %s.",
+    THANK = "thanks %s.", BOW = "bows before %s.", WELCOME = "welcomes %s.", HUG = "hugs %s.",
+    CUDDLE = "cuddles up against %s.", GREET = "greets %s warmly.", HELLO = "greets %s with a hearty hello!",
 }
 
 -- The tip jar: now and then, while somebody is around, one line in /e, so people know you take tips
@@ -233,8 +249,8 @@ M.Away = Away
 -- One line in /e. Whether it went out is told by the game's echo (CHAT_MSG_EMOTE); without one
 -- in time, miss() is called.
 local SAY_WAIT = 2
-local said
-local function Say(text, from, miss)
+local saying = {}                -- lines sent, until their echo: { text, miss, done }
+local function Say(text, from, miss, done)
     local send = (C_ChatInfo and C_ChatInfo.SendChatMessage) or SendChatMessage
     local ok, err = false, "no SendChatMessage"
     if type(send) == "function" then ok, err = pcall(send, text, "EMOTE") end
@@ -243,14 +259,17 @@ local function Say(text, from, miss)
         if miss then miss() end
         return false
     end
-    local mine = { text = text }
-    said = mine
+    local mine = { text = text, miss = miss, done = done }
+    saying[#saying + 1] = mine
     if C_Timer and C_Timer.After then
         C_Timer.After(SAY_WAIT, function()
-            if said == mine then
-                said = nil
-                Log("no echo for /e")
-                if miss then miss() end
+            for i, w in ipairs(saying) do
+                if w == mine then
+                    table.remove(saying, i)
+                    Log("no echo for /e")
+                    if miss then miss() end
+                    return
+                end
             end
         end)
     end
@@ -258,15 +277,51 @@ local function Say(text, from, miss)
 end
 
 local function SaidEcho(text)
-    if said and text == said.text then
-        said = nil
-        Log("echo /e")
+    for i, w in ipairs(saying) do
+        if w.text == text then
+            table.remove(saying, i)
+            Log("echo /e")
+            if w.done then w.done() end
+            return true
+        end
     end
+    return false
 end
+local function Stat(key, n) if ns.Stat then ns.Stat(key, n) end end
 
 -- Sends an emote from the addon, at somebody if a name is given. Returns false when the game would not have it.
-local Emote
+local Emote, Game
+local useSay = true              -- replies go in /e; false once /e by itself has twice not gone out
+local sayMisses = 0
+M.UsesSay = function() return useSay end
+M.SetSay = function(yes) useSay, sayMisses = yes and true or false, 0 end
 Emote = function(token, name, from)
+    local line = useSay and token ~= "DANCE" and name and M.SAY[token]
+    if not line then return Game(token, name, from) end
+    local who = Short(name)
+    line = line:format(who)
+    return Say(line, from, function()
+        sayMisses = sayMisses + 1
+        if sayMisses >= 2 and useSay then
+            useSay = false
+            Log("/e from the shop does not go out: the game's emotes from now on")
+        end
+        Game(token, name, from)     -- the game's own emote instead (it stops the dance; the dance comes back)
+    end, function()
+        sayMisses, misses = 0, 0
+        Stat("emotes")
+        local hit = false
+        for _, v in ipairs(visitors) do
+            if Short(v.name) == who and not (v.doneAt and v.doneAt >= v.at) then
+                v.doneAt = Now()
+                hit = true
+            end
+        end
+        if hit and Sync then Sync() end
+    end)
+end
+
+Game = function(token, name, from)
     local fn = (C_ChatInfo and C_ChatInfo.PerformEmote) or DoEmote
     if type(fn) ~= "function" then return false end
     local at, how = Aim(name)
@@ -330,7 +385,7 @@ local function Echo(text)
     if pend.who and not text:find(pend.who, 1, true) then
         aimBy = pend.how == "unit" and "name" or "unit"
     end
-    if pend.token == "DANCE" then due = nil end
+    if pend.token == "DANCE" then due = nil else Stat("emotes") end
     pend, misses = nil, 0
 end
 M.AimBy = function() return aimBy end
@@ -398,7 +453,10 @@ end
 -- Somebody did something: to the top of the list, waiting for an answer again.
 local function Visit(name, kind, what, reply, pitch)
     local v, i = Find(name)
-    if v then table.remove(visitors, i) else v = { name = name } end
+    if v then table.remove(visitors, i) else
+        v = { name = name }
+        Stat("visitors")
+    end
     v.kind, v.what, v.at = kind, what, Now()
     if reply ~= nil then v.reply = reply or nil end
     v.pitch = v.pitch or pitch or false
@@ -517,7 +575,7 @@ Sync = function()
     frame.empty:SetShown(#visitors == 0)
 
     -- the big button: whoever is waiting
-    local cta, v = frame.cta, Next(now)
+    local cta, v = frame.cta, on and Next(now) or nil
     if v then
         local who = Short(v.name)
         cta.text:SetText(v.kind == "emote" and v.what or (who .. " " .. What(v, now)))
@@ -540,7 +598,8 @@ Sync = function()
         SetReply(cta.emote, v)
         cta.emote:Show()
     else
-        cta.text:SetText(#visitors == 0 and "Nobody yet. Stand where they can see you." or "Nobody is waiting for an answer.")
+        cta.text:SetText(not on and "The shop is closed. Open shop to dance and greet whoever comes by."
+            or (#visitors == 0 and "Nobody yet. Stand where they can see you." or "Nobody is waiting for an answer."))
         cta.text:SetFontObject(GameFontDisableLarge or GameFontDisable)
         SetReply(cta.emote, nil)
         cta.emote:Hide()
@@ -573,7 +632,7 @@ function M.Reply(v)
     local now = Now()
     if now - lastSend < SEND_GAP or not CanReply(v, now) then return false end
     if v.say then
-        if not Say(v.say, "click") then
+        if not Say(v.say, "click", nil, function() Stat("welcomes") end) then
             ns.Print("the game refused the emote.")
             return false
         end
@@ -696,7 +755,7 @@ local function Welcome(name, now)
         local v = Visit(name, "back", "is back. Tipped you before", BACK_REPLY, true)
         v.token, v.say = "WELCOMEBACK", line
         Sync()
-    end)
+    end, function() Stat("welcomes") end)
     return true
 end
 
@@ -744,7 +803,7 @@ function M.Jar(from)
     return Say(line, from, function()
         jarOwed = line
         if Sync then Sync() end
-    end)
+    end, function() Stat("jar") end)
 end
 function M.JarOwed() return jarOwed end
 function M.NextJar(t) if t then nextJar = t end return nextJar end
@@ -788,6 +847,7 @@ local function Tick()
     if not on then return end
     local away = Away()
     AwayPrompt(away)
+    if not away then Stat("open", TICK) end
     local near = Look()
     local now = Now()
     nextJar = nextJar or (now + M.Random(JAR_FIRST_MIN, JAR_FIRST_MAX))
@@ -867,28 +927,40 @@ end
 
 local TOP = 96                  -- title, who is waiting, the big button
 
-local function Build()
+local embedded = false
+local DY = 0                    -- how much higher everything sits inside the counter (no title bar)
+local function Build(host)
     if frame then return frame end
-    local ok, f = pcall(CreateFrame, "Frame", "SlutmogShopMailbox", UIParent, "BasicFrameTemplateWithInset")
-    if not (ok and f) then f = CreateFrame("Frame", "SlutmogShopMailbox", UIParent) end
-    frame = f
-    f:SetSize(430, TOP + ROWS * ROW_H + 46)
-    f:SetPoint("RIGHT", UIParent, "RIGHT", -120, 60)
-    f:SetClampedToScreen(true)
-    f:SetMovable(true)
-    f:EnableMouse(true)
-    f:RegisterForDrag("LeftButton")
-    f:SetScript("OnDragStart", function(self) self:StartMoving() end)
-    f:SetScript("OnDragStop", function(self) self:StopMovingOrSizing() end)
-    if type(f.TitleText) == "table" then f.TitleText:SetText("On the mailbox") end
-    if type(f.CloseButton) ~= "table" then
-        local okc, close = pcall(CreateFrame, "Button", nil, f, "UIPanelCloseButton")
-        if okc and close then
-            close:SetPoint("TOPRIGHT", 0, 0)
-            close:SetScript("OnClick", function() f:Hide() end)
+    local f
+    if host then
+        embedded, DY = true, 30
+        f = CreateFrame("Frame", "SlutmogShopMailbox", host)
+        f:SetSize(430, TOP - DY + ROWS * ROW_H + 40)
+    else
+        local ok, w = pcall(CreateFrame, "Frame", "SlutmogShopMailbox", UIParent, "BasicFrameTemplateWithInset")
+        f = (ok and w) or CreateFrame("Frame", "SlutmogShopMailbox", UIParent)
+        f:SetSize(430, TOP + ROWS * ROW_H + 46)
+        f:SetPoint("RIGHT", UIParent, "RIGHT", -120, 60)
+        f:SetClampedToScreen(true)
+        f:SetMovable(true)
+        f:EnableMouse(true)
+        f:RegisterForDrag("LeftButton")
+        f:SetScript("OnDragStart", function(self) self:StartMoving() end)
+        f:SetScript("OnDragStop", function(self) self:StopMovingOrSizing() end)
+        if type(f.TitleText) == "table" then f.TitleText:SetText("On the mailbox") end
+        if type(f.CloseButton) ~= "table" then
+            local okc, close = pcall(CreateFrame, "Button", nil, f, "UIPanelCloseButton")
+            if okc and close then
+                close:SetPoint("TOPRIGHT", 0, 0)
+                close:SetScript("OnClick", function() f:Hide() end)
+            end
         end
     end
-    f:SetScript("OnHide", function() M.Stop(true) end)
+    frame = f
+    -- hidden: the shop closes, unless the counter only stepped aside for a fight
+    f:SetScript("OnHide", function()
+        if not (ns.Counter and ns.Counter.Hiding and ns.Counter.Hiding()) then M.Stop(true) end
+    end)
     local since = 0
     f:SetScript("OnUpdate", function(_, elapsed)
         since = since + (elapsed or 0)
@@ -901,10 +973,10 @@ local function Build()
     local cta = {}
     f.cta = cta
     cta.text = Text(f, "GameFontNormalLarge")
-    cta.text:SetPoint("TOPLEFT", f, "TOPLEFT", 16, -34)
+    cta.text:SetPoint("TOPLEFT", f, "TOPLEFT", 16, -34 + DY)
     cta.text:SetPoint("RIGHT", f, "RIGHT", -16, 0)
     cta.emote = ReplyButton(f, "Wink", 190, 30)
-    cta.emote:SetPoint("TOPLEFT", f, "TOPLEFT", 14, -58)
+    cta.emote:SetPoint("TOPLEFT", f, "TOPLEFT", 14, -58 + DY)
     cta.emote:SetScript("OnEnter", ReplyTip)
     cta.emote:SetScript("OnLeave", HideTip)
     cta.again = Button(f, "Other emote", 100, 30)
@@ -923,8 +995,8 @@ local function Build()
     for r = 1, ROWS do
         local row = CreateFrame("Frame", nil, f)
         row:SetHeight(ROW_H)
-        row:SetPoint("TOPLEFT", f, "TOPLEFT", 12, -TOP - (r - 1) * ROW_H)
-        row:SetPoint("TOPRIGHT", f, "TOPRIGHT", -12, -TOP - (r - 1) * ROW_H)
+        row:SetPoint("TOPLEFT", f, "TOPLEFT", 12, -TOP + DY - (r - 1) * ROW_H)
+        row:SetPoint("TOPRIGHT", f, "TOPRIGHT", -12, -TOP + DY - (r - 1) * ROW_H)
         row.pitch = Button(row, "Whisper", 72)
         row.pitch:SetPoint("RIGHT", row, "RIGHT", 0, 0)
         row.emote = ReplyButton(row, "Emote", 62)
@@ -953,16 +1025,16 @@ local function Build()
         f.rows[r] = row
     end
     f.empty = Text(f, "GameFontDisable")
-    f.empty:SetPoint("TOPLEFT", f, "TOPLEFT", 16, -TOP - 6)
+    f.empty:SetPoint("TOPLEFT", f, "TOPLEFT", 16, -TOP + DY - 6)
     f.empty:SetPoint("RIGHT", f, "RIGHT", -16, 0)
     if f.empty.SetWordWrap then f.empty:SetWordWrap(true) end
     f.empty:SetText("Whoever emotes at you, whispers you or targets you shows up here.")
     f.status = Text(f, "GameFontHighlightSmall")
-    f.status:SetPoint("BOTTOMLEFT", f, "BOTTOMLEFT", 14, 16)
+    f.status:SetPoint("BOTTOMLEFT", f, "BOTTOMLEFT", 14, embedded and 10 or 16)
     f.status:SetPoint("RIGHT", f, "RIGHT", -170, 0)
     if f.status.SetWordWrap then f.status:SetWordWrap(true) end
     f.dance = Button(f, "Dance", 72)
-    f.dance:SetPoint("BOTTOMRIGHT", f, "BOTTOMRIGHT", -12, 12)
+    f.dance:SetPoint("BOTTOMRIGHT", f, "BOTTOMRIGHT", -12, embedded and 6 or 12)
     f.dance:SetScript("OnClick", function() Emote("DANCE", nil, "click") end)
     f.jar = Button(f, "Tip jar", 72)
     f.jar:SetPoint("RIGHT", f.dance, "LEFT", -6, 0)
@@ -976,8 +1048,14 @@ local function Build()
         GameTooltip:Show()
     end)
     f.jar:SetScript("OnLeave", HideTip)
-    f:Hide()
+    if not embedded then f:Hide() end
     return f
+end
+
+-- The counter puts mailbox mode inside itself: the panel, and how tall it is.
+function M.Embed(host)
+    Build(host)
+    return frame, frame:GetHeight()
 end
 
 function M.Start()
@@ -986,6 +1064,7 @@ function M.Start()
         ns.Print("mailbox mode needs the game's timers, and this client has none.")
         return false
     end
+    if ns.Counter and ns.Counter.Show then ns.Counter.Show() end
     local ok, err = pcall(Build)
     if not ok then
         ns.Print("the mailbox window could not be built: " .. tostring(err))
@@ -1013,7 +1092,7 @@ function M.Start()
     frame:Show()
     Emote("DANCE", nil, "start")
     Tick()
-    ns.Print("mailbox mode is on. The big button winks or smiles at whoever is waiting. Close the window to turn it off.")
+    ns.Print("the shop is open: you dance, and the big button winks or smiles at whoever is waiting. Close shop on the counter ends it.")
     return true
 end
 
@@ -1025,10 +1104,12 @@ function M.Stop(fromHide)
     if events then
         pcall(events.UnregisterAllEvents, events)
     end
-    if frame and not fromHide then
+    if frame and not fromHide and not embedded then
         frame:Hide()
     end
-    ns.Print("mailbox mode is off.")
+    Sync()
+    if ns.Counter and ns.Counter.Sync then ns.Counter.Sync() end
+    ns.Print("the shop is closed.")
 end
 
 function M.Toggle()

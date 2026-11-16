@@ -257,6 +257,10 @@ local function Done()
     if type(db) == "table" then
         db.tips = (tonumber(db.tips) or 0) + tip.amount
         db.tipCount = (tonumber(db.tipCount) or 0) + 1
+        if ns.Stat then
+            ns.Stat("tips")
+            ns.Stat("tipCopper", tip.amount)
+        end
         -- who tipped, so mailbox mode can welcome them back when they come by again
         if tip.who then
             db.tippers = type(db.tippers) == "table" and db.tippers or {}

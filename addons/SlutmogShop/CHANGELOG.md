@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.15.0
+
+- The counter: one window, up from login, that holds everything you use while you stand there. At the top the next ad with its item and a big Post ad button (it shows "Next ad in 3:40" while you wait, and lights up when it is time instead of the prompt popping up), Reroll beside it. Under it the mailbox panel: whoever is waiting, the big reply button and the list. At the bottom Open shop / Close shop (dancing and replies on or off), Wares and Options. It steps aside in a fight and comes back after. Its close button puts it away and closes the shop; `/slutshop counter` brings it back.
+- Replies no longer stop your dance. The game's own emotes play an animation that ends the dance; the shop now answers in /e with the game's exact words ("winks slyly at Bob Baker."), which reads the same in chat and keeps you dancing. If the game does not let a line out, the real emote goes instead, and after two such misses the shop sticks to the real emotes.
+- Numbers: the counter shows today's tips and their gold, ads posted, visitors and time open. Hover it for the last 7 days and all time, with gold per hour open.
+
 ## 1.14.0
 
 - Mailbox mode has a tip jar: every 20 to 30 minutes, while somebody is around, one short line in /e ("jingles the little tip jar on the mailbox."), so people know you take tips. The new Tip jar button says one yourself, and lights up when the game did not let the shop's own line out.
