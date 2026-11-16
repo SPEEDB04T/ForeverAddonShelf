@@ -26,7 +26,7 @@ Points toward keeping: progress made, big XP, in your current zone, a zone holdi
 
 ## In a group
 
-When a group member abandons a quest that is also in your log, Abandon Advisor says so in chat, asks whether you want to abandon it too (Abandon / Keep), and adds 30 points to that quest until you answer Keep or leave the group. Nothing is asked for a finished or pinned quest, and the question waits until you are out of combat.
+When a group member abandons a quest that is also in your log, Abandon Advisor says so in chat, asks whether you want to abandon it too (Abandon / Keep), showing the quest the way the quest log lists it (title, level, type, zone and objectives), and adds 30 points to that quest until you answer Keep or leave the group. Nothing is asked for a finished or pinned quest, and the question waits until you are out of combat.
 
 The game does not tell addons when someone else abandons a quest, so this works through Abandon Advisor itself: each copy tells the group when its player abandons a quest (an addon message, nothing appears in chat). A group member without Abandon Advisor is not noticed. Either half can be turned off in the options.
 

@@ -1,3 +1,6 @@
+## 1.7.0
+- When a group member abandons a quest you also have, the question shows the quest before you answer: its title, level, type and zone, and its objectives as the quest log lists them (finished ones in grey). The chat line names it with the game's quest link, so hovering it shows the quest's tooltip.
+
 ## 1.6.1
 - Raid markers and invites work again. Abandon Advisor no longer blocks `/tm` (skull and the other markers, from a macro or typed) or `/invite` with an "AbandonAdvisor tried to call the protected function" error. Loading it re-set the game's list of slash commands, which made the game treat every slash command as the addon's.
 

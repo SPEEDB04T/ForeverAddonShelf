@@ -2,7 +2,7 @@
 local ADDON, ns = ...
 
 ns.ADDON = ADDON
-ns.VERSION = "1.6.1"
+ns.VERSION = "1.7.0"
 
 local defaults = {
     point = nil,
@@ -237,6 +237,36 @@ end
 
 local ShowSuggestion
 
+-- The game's quest link ([Title], with the quest tooltip on hover in chat), or nil without one.
+function ns.QuestLink(questID)
+    local link = ns.Call(GetQuestLink, questID)
+    if type(link) == "string" and link:find("|Hquest:", 1, true) then return link end
+end
+
+-- What the question shows of the quest, the way the quest log lists it: the title in gold, its
+-- level, type and zone, then its objectives (done ones in grey), so you see what you would drop.
+function ns.QuestPreview(row)
+    local lines = { ns.ColorCode("NORMAL_FONT_COLOR", 1, 0.82, 0) .. row.title .. "|r" }
+    local facts = {}
+    if row.level then facts[#facts + 1] = ("Level %d"):format(row.level) end
+    if row.tagName then facts[#facts + 1] = row.tagName end
+    if row.zone then facts[#facts + 1] = row.zone end
+    if #facts > 0 then lines[#lines + 1] = table.concat(facts, ", ") end
+    local dash = type(QUEST_DASH) == "string" and QUEST_DASH or "- "
+    local grey, shown = ns.ColorCode("GRAY_FONT_COLOR", 0.5, 0.5, 0.5), 0
+    for _, objective in ipairs(row.objectives or {}) do
+        if objective.text and shown < 5 then
+            shown = shown + 1
+            if objective.done then
+                lines[#lines + 1] = grey .. dash .. objective.text .. "|r"
+            else
+                lines[#lines + 1] = dash .. objective.text
+            end
+        end
+    end
+    return table.concat(lines, "\n")
+end
+
 local function EnsureSuggestPopup()
     if StaticPopupDialogs[SUGGEST_POPUP] then return end
     StaticPopupDialogs[SUGGEST_POPUP] = {
@@ -277,7 +307,7 @@ function ShowSuggestion()
         local who = ns.partner[id]
         local row = who and FindRow(id)
         if row and not row.locked then            -- still in the log, not finished, not pinned meanwhile
-            local text = ("%s abandoned \"%s\".\n\nAbandon it too?"):format(who, row.title)
+            local text = ("%s abandoned this quest. Abandon it too?\n\n%s"):format(who, ns.QuestPreview(row))
             if row.progress and row.progress > 0 then
                 text = text .. ("\n\nYou are %d%% done with it. Progress and its quest items are lost."):format(
                     math.floor(row.progress * 100 + 0.5))
@@ -458,7 +488,8 @@ local function OnAddonMessage(prefix, text, channel, sender)
     local known = ns.partner[questID]
     if known and (", " .. known .. ", "):find(", " .. who .. ", ", 1, true) then return end
     ns.partner[questID] = known and (known .. ", " .. who) or who
-    ns.Print(("%s abandoned \"%s\", which is in your quest log too."):format(who, row.title))
+    ns.Print(("%s abandoned %s, which is in your quest log too."):format(who,
+        ns.QuestLink(questID) or ('"' .. row.title .. '"')))
     local queued = false
     for _, id in ipairs(suggestions) do queued = queued or id == questID end
     if not queued then suggestions[#suggestions + 1] = questID end
