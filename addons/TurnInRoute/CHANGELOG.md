@@ -1,3 +1,6 @@
+## 1.0.2
+- Never blocks `/tm` raid markers or `/invite`: loading the addon no longer re-sets the game's list of slash commands, which made the game blame protected slash commands on it.
+
 ## 1.0.1
 - Dungeon, raid, group and elite quests are on the route again: a finished quest goes where its turn-in NPC stands, whatever its tag (the Deadmines quests are handed in at Sentinel Hill, not inside). Their row shows the quest log's tag ("Dungeon", "Group", "Elite").
 - Only quests handed in inside a dungeon or raid are left off the route, in a list called "Hand in inside a dungeon" that names the dungeon. A cave the game draws as a dungeon map but that lies in the open world stays on the route.

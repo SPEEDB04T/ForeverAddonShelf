@@ -2,7 +2,7 @@
 local ADDON, ns = ...
 
 ns.ADDON = ADDON
-ns.VERSION = "1.0.1"
+ns.VERSION = "1.0.2"
 ns.NAME = "Turn-in Route"
 ns.ICON = "Interface\\Icons\\INV_Misc_Map_01"
 
@@ -299,7 +299,8 @@ end
 SLASH_TURNINROUTE1 = "/turnin"
 SLASH_TURNINROUTE2 = "/turnins"
 SLASH_TURNINROUTE3 = "/turninroute"
-SlashCmdList = SlashCmdList or {}
+-- Only add our key: assigning the SlashCmdList global itself (even to the same table) taints it,
+-- and the game then forbids /tm, /invite and other protected slash commands in our name.
 SlashCmdList["TURNINROUTE"] = Slash
 
 -- The addon's line in the list of addons next to the minimap: left-click the window,
