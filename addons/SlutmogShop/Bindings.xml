@@ -5,4 +5,7 @@
 	<Binding name="SLUTMOGSHOP_TOGGLE" category="ADDONS">
 		SlutmogShop_Toggle()
 	</Binding>
+	<Binding name="SLUTMOGSHOP_ACCEPTTIP" category="ADDONS">
+		SlutmogShop_AcceptTip()
+	</Binding>
 </Bindings>

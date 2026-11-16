@@ -1,5 +1,12 @@
 # Changelog
 
+## 1.12.0
+
+- Tips: when somebody opens a trade and puts in gold while you put in nothing, an "Accept tip" button shows under the trade window, with a coin sound. One click takes it; it lights up once they have accepted. There is also an "Accept a tip" key binding (Key Bindings, AddOns).
+- It never accepts a trade where you give gold or any item, or where the shop can't tell.
+- When it goes through the shop thanks them with /thank and keeps count: "Bob tipped you 5g. Tips so far: 23g."
+- Fully automatic is not possible: the game takes a trade only on a click or a key press.
+
 ## 1.11.3
 
 - Mailbox mode dances again more reliably after its winks and smiles: if the game will not take the dance from the shop's timer, it tries again on the next line of chat that comes in (city chat is never quiet for long), until the game shows the dance or 20 seconds have passed.

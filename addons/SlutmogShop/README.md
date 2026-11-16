@@ -82,3 +82,7 @@ For standing around a city mailbox in your wares. `/slutshop mailbox` (or `/smog
 - **One-click replies.** Each row has the emote as a button, and **Pitch** for people who emoted at you or whispered you first: one whisper in the shop owner's voice with the ware whose turn it is and its price ("Staring is free. [item] is 10 gold pieces."). Once per person in ten minutes. The shop never whispers or speaks without your click, and never pitches somebody who only looked.
 - If the game refuses emotes from addons, the window says so and the emote buttons do the same with a click.
 - It reads emotes in English.
+
+## Tips
+
+When somebody opens a trade and gives you gold while you give nothing, an "Accept tip" button shows under the trade window. One click (or the "Accept a tip" key binding) takes it, and the shop thanks them once it goes through. The game does not let an addon accept a trade without a click or a key press, so it can't be fully automatic.

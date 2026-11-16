@@ -249,6 +249,8 @@ local function Echo(text)
     pend, misses = nil, 0
 end
 M.AimBy = function() return aimBy end
+-- For the rest of the shop (a thank-you for a tip): an emote at somebody, and the dance comes back after.
+function M.EmoteAt(token, name) return Emote(token, name, "tip") end
 
 local SEND_GAP = 2               -- seconds between two replies, against a double click
 
