@@ -1,5 +1,10 @@
 # Changelog
 
+## 1.5.2
+
+- The lines at nobody are plainer, the way players type an emote. Gone: "licks a lip and looks over the crowd.", "bites a lip and keeps dancing.", "sways those hips a little slower.", "runs a slow look over the crowd.", "takes the next step slow, for the view." and the like. In: "winks at the crowd.", "enjoys the attention.", "grins at the ones staring.", "eyes somebody in the crowd."
+- The tip jar line with the toe is gone; two tip jar lines are left.
+
 ## 1.5.1
 
 - "glances over a shoulder at the crowd." is gone: somebody in the dance animation does not turn and look back. In its place: "takes it slow for the ones staring." The giggle "behind a hand" is now "gives Bob a little giggle.", since the hands are busy dancing.

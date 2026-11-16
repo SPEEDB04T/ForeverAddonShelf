@@ -122,7 +122,6 @@ M.VARIANTS = {
     KISS = { "blows %s a kiss." },
     CURTSEY = { "curtseys for %s.", "does a little curtsey for %s." },
     SHY = { "gives %s a shy smile." },
-    POUT = { "gives %s a pout." },
 }
 local sayTurn = {}
 -- The line for a token this time: the game's wording first, then the others, in turn.
@@ -143,7 +142,6 @@ end
 -- No looking for an audience, no eyeing the jar. The jar is mentioned seldom and never asked for.
 M.JAR = {
     "dances a little slower beside the tip jar.",
-    "taps the tip jar with a toe, then looks away.",
     "leaves the tip jar where everybody can reach it.",
 }
 -- Now and then while somebody is around, at nobody: something to look at.
@@ -156,29 +154,32 @@ M.JAR = {
 -- Picture it: the dance animation loops, the body never holds still or turns, the arms are busy. So no
 -- line turns the body or uses a hand either (SuccuDev, 2026-11-16: "looks over her shoulder is dumb
 -- please visualize what WOW mailbox dancing looks like").
+-- And plain (SuccuDev, 2026-11-16: "'licks a lip' is not the kind of phrasing that ever works. you are
+-- claudeing this shit up"): short lines the way players type an emote. Nothing writerly, and no body
+-- part with "a" or "those" in place of a pronoun (a lip, a toe, those hips).
 M.IDLE = {
     "dances a little slower for whoever is watching.",
     "catches somebody staring and smiles.",
-    "bites a lip and keeps dancing.",
+    "winks at the crowd.",
     "gives the crowd something to look at.",
     "knows exactly who is watching.",
     "winks at whoever is staring.",
     "puts a little more hip into it.",
-    "runs a slow look over the crowd.",
-    "moves a little slower every time somebody looks over.",
-    "meets a stare and does not look away.",
+    "smirks at the crowd.",
+    "enjoys the attention.",
+    "smiles at whoever is looking.",
     "dances just out of reach.",
     "lets the crowd look.",
-    "smiles at whoever is looking.",
-    "takes it slow for the ones staring.",
+    "catches somebody staring and winks.",
     "enjoys being watched.",
     "does not mind the staring at all.",
-    "licks a lip and looks over the crowd.",
-    "takes the next step slow, for the view.",
+    "grins at the ones staring.",
     "pretends not to notice the staring.",
-    "dances with eyes on somebody in the crowd.",
-    "sways those hips a little slower.",
-    "looks the crowd over, slow and smug.",
+    "eyes somebody in the crowd.",
+    "sways a little slower for the crowd.",
+    "likes being stared at.",
+    "smiles at the crowd.",
+    "grins at the crowd.",
 }
 -- Somebody who has kept you targeted this long gets one look at the tip jar, once an hour at most.
 M.NUDGE = "glances at the tip jar, then at %s."
