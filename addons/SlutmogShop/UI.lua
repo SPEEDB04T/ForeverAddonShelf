@@ -330,8 +330,8 @@ local function SyncRows()
         r.icon:SetTexture(texture or EMPTY_SLOT)
         local n = ns.Count(w)
         local onAH = n ~= nil and n <= 0 and ns.OnAH(w.id) ~= nil
-        local under = onAH and ns.Undercut(w.id)
-        local out = n ~= nil and n <= 0 and (not onAH or under)
+        local under = n ~= nil and (n > 0 or onAH) and ns.WareUndercut(w)
+        local out = (n ~= nil and n <= 0 and not onAH) or under
         local partner = ns.SetWith(i)
         local with = partner and ("  |cff808080+ " .. ns.WareName(db.wares[partner]) .. "|r") or ""
         if w.link then
@@ -351,7 +351,7 @@ local function SyncRows()
         if n == nil then
             r.stock:SetText("")
         elseif under then
-            r.stock:SetText("Undercut on the AH")
+            r.stock:SetText(onAH and "Undercut on the AH" or "Cheaper on the AH")
             r.stock:SetTextColor(Color(RED_FONT_COLOR, 1, 0.1, 0.1))
         elseif onAH then
             r.stock:SetText("On the auction house")

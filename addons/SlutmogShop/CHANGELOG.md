@@ -1,5 +1,9 @@
 # Changelog
 
+## 1.13.1
+
+- Wares in your bags are checked too: each time you open the auction house the shop looks up their listings, and a ware somebody sells there for less than your asking price is left out of the ads (the shop window says "Cheaper on the AH") until that changes.
+
 ## 1.13.0
 
 - Undercuts are found by the shop itself: each time you open the auction house it looks up the other listings of every piece you have up, one at a time when the auction house is free, and leaves out of the ads any piece somebody else sells for less. Before, it only had Slutmog Scout's Sell tab to go by, and that reading could be from before your auctions went up. The newest reading counts, from either; one older than 6 hours says nothing.

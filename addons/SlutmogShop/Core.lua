@@ -15,7 +15,7 @@
 -- works too). A reminder in your own chat says when it is time for the next one.
 local ADDON, ns = ...
 
-ns.VERSION = "1.13.0"
+ns.VERSION = "1.13.1"
 ns.TITLE = "Slutmog Shop"
 ns.ICON = "Interface\\Icons\\INV_Misc_Coin_02"
 ns.ACCENT = { 0.96, 0.55, 0.78 }
@@ -444,17 +444,32 @@ function ns.MarketLow(id)
     return low, at
 end
 
-function ns.Undercut(id)
-    local a = ns.OnAH(id)
-    if not a or type(a.price) ~= "number" or a.price <= 0 then return false end
+-- Undercut at `price` (default: your buyout on the auction house).
+function ns.Undercut(id, price)
+    if price == nil then
+        local a = ns.OnAH(id)
+        price = a and a.price
+    end
+    if type(price) ~= "number" or price <= 0 then return false end
     local low, at = ns.MarketLow(id)
     if not at or time() - at > MARKET_LIFE then return false end
-    return type(low) == "number" and low > 0 and low < a.price
+    return type(low) == "number" and low > 0 and low < price
+end
+
+-- A ware is undercut where the buyer would get it: in your bags at its asking price (SuccuDev
+-- agreed to leave those out too, 2026-11-15), or on the auction house at your buyout.
+function ns.WareUndercut(w)
+    if not (w and w.id) then return false end
+    local n = ns.Count(w)
+    if n and n > 0 then return not w.unpriced and ns.Undercut(w.id, w.price) end
+    return ns.Undercut(w.id)
 end
 
 local function InStock(w)
     local n = ns.Count(w)
-    return n == nil or n > 0 or (w ~= nil and ns.OnAH(w.id) ~= nil and not ns.Undercut(w.id))
+    if n == nil then return true end
+    if n > 0 then return not ns.WareUndercut(w) end
+    return w ~= nil and ns.OnAH(w.id) ~= nil and not ns.Undercut(w.id)
 end
 ns.InStock = InStock
 
@@ -752,6 +767,17 @@ function ns.ScanAuctions()
     local keys = {}
     for _, r in ipairs(rows) do
         if not r.sold and r.key and found[r.id] then keys[r.id] = r.key end
+    end
+    -- and the wares in your bags, whose buyers could buy cheaper on the auction house
+    local AH = C_AuctionHouse
+    if type(AH) == "table" and type(AH.MakeItemKey) == "function" then
+        for _, w in ipairs(db.wares) do
+            local n = ns.Count(w)
+            if w.id and not keys[w.id] and not w.unpriced and n and n > 0 then
+                local ok, k = pcall(AH.MakeItemKey, w.id)
+                if ok and type(k) == "table" then keys[w.id] = k end
+            end
+        end
     end
     if ns.QueueMarket then ns.QueueMarket(keys) end
     if #added > 0 then
@@ -1840,7 +1866,8 @@ local function Slash(msg)
         Print("your wares:")
         for i, w in ipairs(db.wares) do
             local n = ns.Count(w)
-            local stock = n == nil and "" or (n > 0 and (" (" .. n .. " in stock)")
+            local stock = n == nil and "" or (n > 0 and (" (" .. n .. " in stock"
+                    .. (ns.WareUndercut(w) and ", cheaper on the auction house, not advertised)" or ")"))
                 or (ns.Undercut(w.id) and " (undercut on the auction house, not advertised)"
                     or (ns.OnAH(w.id) and " (on the auction house)" or " (none left)")))
             if DEFAULT_CHAT_FRAME and DEFAULT_CHAT_FRAME.AddMessage then
@@ -1913,7 +1940,7 @@ function SlutmogShop_Toggle() ToggleWindow() end
 local stockSeen
 local function StockKey()
     local parts = {}
-    for i, w in ipairs(db.wares) do parts[i] = InStock(w) and ns.Where(w):sub(1, 1) or (ns.Undercut(w.id) and "u" or "0") end
+    for i, w in ipairs(db.wares) do parts[i] = InStock(w) and ns.Where(w):sub(1, 1) or (ns.WareUndercut(w) and "u" or "0") end
     return table.concat(parts)
 end
 
