@@ -1,0 +1,16 @@
+## Interface: 16001, 16002
+## Title: SkillPath
+## Notes: A profession leveling guide built from the game's own recipe data and your auction house scans: for every skill point to your target, which known recipe to craft, how many times, and what it costs. Says plainly when a price is missing or old.
+## Version: 1.0.0
+## SavedVariables: SkillPathDB
+## IconTexture: Interface\Icons\INV_Misc_Note_01
+## AddonCompartmentFunc: SkillPath_Toggle
+
+Core.lua
+Data.lua
+Recipes.lua
+Prices.lua
+Planner.lua
+UI.lua
+Kit.lua
+Options.lua

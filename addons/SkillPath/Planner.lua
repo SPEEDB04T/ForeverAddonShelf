@@ -1,0 +1,367 @@
+-- SkillPath: the guide. For every skill point from now to the target it picks the known recipe
+-- with the lowest expected cost for that point, from:
+--   * the chance a craft gives a point (orange always; yellow and green by the classic formula
+--     from the recipe's yellow and grey levels: (grey - skill) / (grey - yellow));
+--   * what its reagents cost at that point of the guide: what you hold first (and what earlier
+--     steps made), then auction listings cheapest first, or a vendor when that is cheaper.
+-- A recipe whose levels the game didn't confirm is only used where the game itself shows it orange.
+local _, ns = ...
+local Pl = {}
+ns.Planner = Pl
+
+local EPS = 1e-9
+
+-- The chance that one craft at this skill gives a point.
+function Pl.Chance(yellow, grey, skill)
+    if skill >= grey then return 0 end
+    if skill < yellow or grey <= yellow then return 1 end
+    return (grey - skill) / (grey - yellow)
+end
+
+----------------------------------------------------------------------
+-- What n crafts of a recipe cost, given what earlier steps used
+----------------------------------------------------------------------
+-- Returns cost (of the priced reagents), whether every reagent is priced, the item chosen for
+-- each slot, the missing items (with the reason) and the items priced from an old scan.
+local function CraftCost(ctx, r, crafts)
+    local cost, priced = 0, true
+    local choice, missing, stale = {}, nil, nil
+    if r.currency then
+        priced = false
+        missing = { { why = "it also costs a currency, which has no gold price" } }
+    end
+    if r.unreadable then
+        priced = false
+        missing = missing or {}
+        missing[#missing + 1] = { why = "the game didn't name one of its reagents" }
+    end
+    for i, slot in ipairs(r.slots or {}) do
+        local need = slot.qty * crafts
+        local bestCost, bestItem, bestSup
+        for _, item in ipairs(slot.items) do
+            local sup = ctx.supply(item)
+            local c = ctx.marginal(sup, ctx.used[item] or 0, need, ctx.made[item] or 0)
+            if c and (not bestCost or c < bestCost) then bestCost, bestItem, bestSup = c, item, sup end
+        end
+        if bestCost then
+            cost = cost + bestCost
+            choice[i] = bestItem
+            -- An auction price was part of it, and that scan is old.
+            if bestCost > EPS and bestSup.stale and bestSup.listed > 0 then
+                stale = stale or {}
+                stale[#stale + 1] = bestItem
+            end
+        else
+            priced = false
+            choice[i] = slot.items[1]
+            missing = missing or {}
+            missing[#missing + 1] = { item = slot.items[1], why = ns.Prices.Missing(ctx.supply(slot.items[1])) }
+        end
+    end
+    return cost, priced, choice, missing, stale
+end
+Pl.CraftCost = CraftCost
+
+local function Commit(ctx, r, crafts, choice)
+    for i, slot in ipairs(r.slots or {}) do
+        local item = choice[i]
+        if item then ctx.used[item] = (ctx.used[item] or 0) + slot.qty * crafts end
+    end
+    if r.out and r.outQty and r.outQty > 0 then
+        ctx.made[r.out] = (ctx.made[r.out] or 0) + crafts * r.outQty
+    end
+end
+
+-- How a recipe does at one skill: chance, points per craft and expected crafts for those points.
+local function AtSkill(ctx, r, s, limit)
+    local chance
+    if r.trust then
+        chance = Pl.Chance(r.y, r.g, s + ctx.offset)
+    elseif r.known and s == ctx.seenSkill and r.colour == ns.Recipes.OPTIMAL then
+        chance = 1          -- the game shows it orange right now
+    else
+        chance = 0
+    end
+    if chance <= 0 then return nil end
+    local orange = chance >= 1 and (not r.trust or s + ctx.offset < r.y)
+    if orange then
+        return 1, math.max(1, math.min(r.ups or 1, limit - s)), 1, true
+    end
+    return chance, 1, 1 / chance, false
+end
+
+local function Better(a, b)
+    if not b then return true end
+    if math.abs(a.perPoint - b.perPoint) > 0.5 then return a.perPoint < b.perPoint end
+    if math.abs(a.craftsPerPoint - b.craftsPerPoint) > EPS then return a.craftsPerPoint < b.craftsPerPoint end
+    return a.r.id < b.r.id
+end
+
+local function BetterUnpriced(a, b)
+    if not b then return true end
+    if math.abs(a.craftsPerPoint - b.craftsPerPoint) > EPS then return a.craftsPerPoint < b.craftsPerPoint end
+    if math.abs(a.perPoint - b.perPoint) > 0.5 then return a.perPoint < b.perPoint end
+    return a.r.id < b.r.id
+end
+
+----------------------------------------------------------------------
+-- The whole guide
+----------------------------------------------------------------------
+-- args: skill, max, target, offset, seenSkill, recipes, supply(item), marginal(sup, used, k, extra)
+function Pl.Build(args)
+    local ctx = {
+        offset = args.offset or 0, seenSkill = args.seenSkill or args.skill,
+        supply = args.supply, marginal = args.marginal, used = {}, made = {},
+    }
+    local plan = { ok = true, from = args.skill, to = args.target, max = args.max, points = {}, steps = {},
+        total = 0, totalComplete = true, missing = {}, stale = {}, notes = {}, untrusted = 0 }
+    local candidates = {}
+    for _, r in ipairs(args.recipes) do
+        if r.known then
+            if r.trust or r.colour == ns.Recipes.OPTIMAL then candidates[#candidates + 1] = r end
+            if not r.trust then plan.untrusted = plan.untrusted + 1 end
+        end
+    end
+
+    local s = args.skill
+    local trained = false
+    while s < args.target do
+        if s >= args.max and not trained then
+            plan.steps[#plan.steps + 1] = { kind = "train", at = s }
+            trained = true
+        end
+        local limit = s < args.max and math.min(args.max, args.target) or args.target
+        local best, bestUnpriced
+        local unpriced = {}
+        for _, r in ipairs(candidates) do
+            local chance, gain, crafts, orange = AtSkill(ctx, r, s, limit)
+            if chance then
+                local cost, priced, choice, missing, stale = CraftCost(ctx, r, crafts)
+                local c = { r = r, chance = chance, gain = gain, crafts = crafts, orange = orange, cost = cost,
+                    priced = priced, choice = choice, missing = missing, stale = stale,
+                    perPoint = cost / gain, craftsPerPoint = crafts / gain }
+                if priced then
+                    if Better(c, best) then best = c end
+                else
+                    unpriced[#unpriced + 1] = c
+                    if BetterUnpriced(c, bestUnpriced) then bestUnpriced = c end
+                end
+            end
+        end
+        local pick = best or bestUnpriced
+        if not pick then
+            plan.steps[#plan.steps + 1] = { kind = "gap", from = s, to = args.target,
+                why = ("None of your recipes gives skill at %d. Learn a new one%s."):format(s,
+                    ns.db and ns.db.showOptions and " (see below)" or "") }
+            plan.gapAt = s
+            plan.totalComplete = false
+            break
+        end
+        -- Recipes that might be cheaper but have a reagent with no price.
+        local alts
+        if best then
+            for _, c in ipairs(unpriced) do
+                if c.perPoint < best.perPoint - 0.5 then
+                    alts = alts or {}
+                    alts[#alts + 1] = c
+                end
+            end
+        end
+        Commit(ctx, pick.r, pick.crafts, pick.choice)
+        local point = { s = s, to = s + pick.gain, r = pick.r, chance = pick.chance, gain = pick.gain,
+            crafts = pick.crafts, orange = pick.orange, cost = pick.priced and pick.cost or nil, known = pick.cost,
+            priced = pick.priced, missing = pick.missing, stale = pick.stale, alts = alts }
+        plan.points[#plan.points + 1] = point
+        if pick.priced then
+            plan.total = plan.total + pick.cost
+        else
+            plan.totalComplete = false
+        end
+        for _, m in ipairs(pick.missing or {}) do
+            if m.item then plan.missing[m.item] = m.why end
+        end
+        -- A reagent with no price that keeps a maybe-cheaper recipe out is missing too: a scan could change the guide.
+        for _, c in ipairs(alts or {}) do
+            for _, m in ipairs(c.missing or {}) do
+                if m.item then plan.missing[m.item] = m.why end
+            end
+        end
+        for _, item in ipairs(pick.stale or {}) do plan.stale[item] = true end
+
+        local last = plan.steps[#plan.steps]
+        if last and last.kind == "craft" and last.r == pick.r and last.priced == pick.priced then
+            last.to = point.to
+            last.crafts = last.crafts + pick.crafts
+            last.cost = last.cost + (pick.cost or 0)
+            last.points[#last.points + 1] = point
+            if alts then
+                for _, c in ipairs(alts) do last.alts[c.r.id] = c end
+            end
+            if pick.stale then last.stale = true end
+        else
+            local step = { kind = "craft", r = pick.r, name = pick.r.name, from = s, to = point.to,
+                crafts = pick.crafts, cost = pick.cost or 0, priced = pick.priced, points = { point },
+                stale = pick.stale and true or false, alts = {} }
+            for _, c in ipairs(alts or {}) do step.alts[c.r.id] = c end
+            plan.steps[#plan.steps + 1] = step
+        end
+        s = point.to
+    end
+    plan.reached = s
+    plan.used, plan.made = ctx.used, ctx.made
+    plan.ctx = ctx
+    return plan
+end
+
+----------------------------------------------------------------------
+-- What to buy, and the recipes worth learning
+----------------------------------------------------------------------
+function Pl.Shopping(plan)
+    local list = {}
+    local Prices = ns.Prices
+    for item, need in pairs(plan.used) do
+        if need > EPS then
+            local sup = Prices.Supply(item)
+            local made = plan.made[item] or 0
+            local free = sup.have + made
+            local buy = math.max(0, math.ceil(need - free - EPS))
+            local cost = Prices.Cost(sup, buy)
+            local from
+            if buy > 0 then
+                local fromAH = sup.listed > 0
+                if fromAH and sup.vendor then
+                    from = "auction house and vendor"
+                elseif fromAH then
+                    from = "auction house"
+                elseif sup.vendor then
+                    from = sup.vendorFrom == "vendor" and "vendor" or "vendor (item-data price)"
+                end
+            end
+            list[#list + 1] = { item = item, need = need, have = sup.have, made = made, buy = buy, cost = cost,
+                from = from, missing = buy > 0 and not cost and Prices.Missing(sup) or nil, stale = sup.stale
+                    and sup.listed > 0 and buy > 0 }
+        end
+    end
+    table.sort(list, function(a, b)
+        local ca, cb = a.cost or -1, b.cost or -1
+        if ca ~= cb then return ca > cb end
+        return a.item < b.item
+    end)
+    return list
+end
+
+-- Recipes you don't know that would make the guide cheaper, or reach past where it stops.
+function Pl.Options(plan, prof, limit)
+    local out = {}
+    local ctx = { offset = prof.offset or 0, seenSkill = prof.seenSkill, used = {}, made = {},
+        supply = ns.Prices.Supply, marginal = ns.Prices.Marginal }
+    for _, r in ipairs(prof.recipes or {}) do
+        if not r.known and r.trust then
+            local o = { r = r, learnAt = r.rank, source = r.source, covers = 0, saving = 0 }
+            local function Try(s, lim)
+                if o.learnAt and s < o.learnAt then return nil end
+                local chance, gain, crafts = AtSkill(ctx, r, s, lim)
+                if not chance then return nil end
+                local cost, priced = CraftCost(ctx, r, crafts)
+                return gain, cost, priced
+            end
+            for _, p in ipairs(plan.points) do
+                local gain, cost, priced = Try(p.s, p.to)
+                if gain and priced and p.priced then
+                    local diff = (p.cost / p.gain - cost / gain) * p.gain
+                    if diff >= 1 then
+                        o.saving = o.saving + diff
+                        o.from = o.from or p.s
+                        o.to = p.to
+                    end
+                end
+            end
+            if plan.gapAt then
+                for s = plan.gapAt, plan.to - 1 do
+                    if Try(s, plan.to) then
+                        o.covers = o.covers + 1
+                        o.from = o.from and math.min(o.from, s) or s
+                        o.to = math.max(o.to or 0, s + 1)
+                    end
+                end
+            end
+            if o.covers > 0 or o.saving >= 1 then out[#out + 1] = o end
+        end
+    end
+    table.sort(out, function(a, b)
+        if a.covers ~= b.covers then return a.covers > b.covers end
+        if math.abs(a.saving - b.saving) >= 1 then return a.saving > b.saving end
+        return a.r.id < b.r.id
+    end)
+    while #out > (limit or 5) do table.remove(out) end
+    return out
+end
+
+----------------------------------------------------------------------
+-- The guide for a saved profession, with its notes
+----------------------------------------------------------------------
+function Pl.ForProfession(prof)
+    if not prof then
+        return { ok = false, why = "Open a profession window once and its guide appears here." }
+    end
+    local R = ns.Recipes
+    local ceiling = R.Ceiling(prof.line)
+    local skill, max = prof.skill or 0, prof.max or prof.skill or 0
+    local target = (ns.db.target or 0) > 0 and ns.db.target or max
+    local capped = false
+    if ceiling > 0 and target > ceiling then target, capped = ceiling, true end
+    local base = { ok = false, name = prof.name, from = skill, to = target, max = max, prof = prof }
+    if skill >= target then
+        if (ns.db.target or 0) == 0 and skill >= max then
+            base.why = ("%s is at %d, the most your rank allows. Train the next rank, or set a higher target."):format(
+                prof.name, skill)
+        else
+            base.why = ("%s is at %d: the target (%d) is reached."):format(prof.name, skill, target)
+        end
+        return base
+    end
+    local plan = Pl.Build({
+        skill = skill, max = max, target = target, offset = prof.offset or 0, seenSkill = prof.seenSkill,
+        recipes = prof.recipes or {}, supply = ns.Prices.Supply, marginal = ns.Prices.Marginal,
+    })
+    plan.name, plan.prof, plan.line = prof.name, prof, prof.line
+    plan.shopping = Pl.Shopping(plan)
+    plan.options = ns.db.showOptions and Pl.Options(plan, prof, 5) or {}
+
+    local notes = plan.notes
+    if capped then
+        notes[#notes + 1] = ("No %s recipe gives skill past %d, so the guide stops there."):format(prof.name, ceiling)
+    end
+    local nMissing, nStale = 0, 0
+    for _ in pairs(plan.missing) do nMissing = nMissing + 1 end
+    for _ in pairs(plan.stale) do nStale = nStale + 1 end
+    plan.nMissing, plan.nStale = nMissing, nStale
+    if nMissing > 0 then
+        local has = nMissing == 1 and "reagent has" or "reagents have"
+        if plan.totalComplete then
+            notes[#notes + 1] = ("%d %s no price, so recipes that use %s were left out where they might be "
+                .. "cheaper: scan at the auction house."):format(nMissing, has, nMissing == 1 and "it" or "them")
+        else
+            notes[#notes + 1] = ("%d %s no price, so %s isn't counted in the cost: scan at the auction house.")
+                :format(nMissing, has, nMissing == 1 and "it" or "they")
+        end
+    end
+    if nStale > 0 then
+        notes[#notes + 1] = ("%d %s auction prices older than %d h: scan again for today's."):format(nStale,
+            nStale == 1 and "reagent uses" or "reagents use", ns.db.staleHours or 3)
+    end
+    if plan.untrusted > 0 then
+        notes[#notes + 1] = ("%d known %s didn't match the game's colours, so %s only used while the game shows %s orange (/skillpath debug)."):format(
+            plan.untrusted, plan.untrusted == 1 and "recipe" or "recipes", plan.untrusted == 1 and "it is" or "they are",
+            plan.untrusted == 1 and "it" or "them")
+    end
+    local build = prof.build
+    if build and ns.Data and build ~= ns.Data.BUILD then
+        notes[#notes + 1] = ("The recipe table is from game build %s, the game is %s; each recipe is checked against the game before use."):format(
+            ns.Data.BUILD, build)
+    end
+    if not ns.Recipes.WindowOpen() and prof.t then
+        notes[#notes + 1] = ("Recipes as of when you last opened %s (%s)."):format(prof.name, ns.Age(ns.Clock() - prof.t))
+    end
+    return plan
+end
