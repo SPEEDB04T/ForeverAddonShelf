@@ -21,6 +21,8 @@ exit /b %ERRORLEVEL%
 # to the console. FOREVER_SNAPSHOT=<dir> runs the window off-screen, saves pictures of it (ready, installing, done) and timings, closes.
 # FOREVER_SHELF_FILE=<tsv> stands in for GitHub's answer, and the list built into this file for what was known before,
 # so a shelf that has grown since can be tried. FOREVER_SCREEN=<height> makes a snapshot run pretend the screen is that high.
+# FOREVER_CONFIG=<dir> keeps the saved folder, cache and log somewhere other than %LOCALAPPDATA%\ForeverAddons.
+# FOREVER_AUTO=1 is the auto-update run (the scheduled task starts it): no window, updates the addons you already have.
 $ErrorActionPreference = 'Stop'
 $ProgressPreference = 'SilentlyContinue'
 [Net.ServicePointManager]::SecurityProtocol = [Net.ServicePointManager]::SecurityProtocol -bor [Net.SecurityProtocolType]::Tls12
@@ -32,7 +34,7 @@ $InstallerUrl = '__INSTALLER_URL__'
 # The shelf as it was when this installer was built (UTF-8 TSV, base64 so this file stays plain ASCII).
 $FallbackShelf = [Text.Encoding]::UTF8.GetString([Convert]::FromBase64String('__SHELF_B64__'))
 $Flavor = '_forever_'
-$ConfigDir = Join-Path $env:LOCALAPPDATA 'ForeverAddons'
+$ConfigDir = $(if ($env:FOREVER_CONFIG) { $env:FOREVER_CONFIG } else { Join-Path $env:LOCALAPPDATA 'ForeverAddons' })
 $SavedPath = Join-Path $ConfigDir 'wow-path.txt'
 $CacheFile = Join-Path $ConfigDir 'addons-cache.tsv'
 $LocalCopy = Join-Path $ConfigDir 'Install-ForeverAddons.bat'
@@ -328,6 +330,95 @@ function Invoke-Console {
 
 if ($env:FOREVER_SELECT) { Invoke-Console }
 
+# ---------------------------------------------------------------- auto-update
+
+$AutoFlag = Join-Path $ConfigDir 'auto-update.txt'
+$AutoLog = Join-Path $ConfigDir 'auto-update.log'
+
+function Get-AutoSetting {
+    try { if (Test-Path -LiteralPath $AutoFlag) { return ([IO.File]::ReadAllText($AutoFlag)).Trim() } } catch { }
+    return ''
+}
+
+# A Windows scheduled task, only for this Windows user and needing no admin rights: one minute after signing in, then
+# every hour. It runs the copy of this installer kept in %LOCALAPPDATA%\ForeverAddons through a small script that
+# starts PowerShell hidden, so no window ever shows. Turning it off removes the task.
+function Set-AutoUpdate([bool]$On, [string]$Self) {
+    $task = 'Forever Addons auto-update'
+    $flag = Join-Path $ConfigDir 'auto-update.txt'
+    $vbs = Join-Path $ConfigDir 'auto-update.vbs'
+    New-Item -ItemType Directory -Force $ConfigDir | Out-Null
+    if ($On) {
+        if ($Self -and -not [string]::Equals($Self, $LocalCopy, [StringComparison]::OrdinalIgnoreCase)) {
+            Copy-Item -LiteralPath $Self -Destination $LocalCopy -Force
+        }
+        $q = [char]34
+        $run = 'powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -WindowStyle Hidden -Command ' + $q + $q +
+            '& ([scriptblock]::Create([IO.File]::ReadAllText($env:FOREVER_SELF)))' + $q + $q
+        # UTF-16 with a byte order mark, so a user name with any letters in it survives.
+        [IO.File]::WriteAllLines($vbs, @(
+            'Set sh = CreateObject("WScript.Shell")',
+            'Set env = sh.Environment("Process")',
+            ('env("FOREVER_SELF") = "' + $LocalCopy + '"'),
+            'env("FOREVER_AUTO") = "1"',
+            ('sh.Run "' + $run + '", 0, False')), [Text.Encoding]::Unicode)
+        $me = [Security.Principal.WindowsIdentity]::GetCurrent().Name
+        $action = New-ScheduledTaskAction -Execute (Join-Path $env:SystemRoot 'System32\wscript.exe') -Argument ('//B //Nologo "' + $vbs + '"')
+        $logon = New-ScheduledTaskTrigger -AtLogOn -User $me
+        $logon.Delay = 'PT1M'
+        $hourly = New-ScheduledTaskTrigger -Once -At ((Get-Date).AddMinutes(10)) -RepetitionInterval (New-TimeSpan -Hours 1)
+        $settings = New-ScheduledTaskSettingsSet -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries -StartWhenAvailable -MultipleInstances IgnoreNew -ExecutionTimeLimit (New-TimeSpan -Minutes 15)
+        $principal = New-ScheduledTaskPrincipal -UserId $me -LogonType Interactive -RunLevel Limited
+        Register-ScheduledTask -TaskName $task -Action $action -Trigger $logon, $hourly -Settings $settings -Principal $principal -Force `
+            -Description 'Keeps your WoW Forever addons up to date (Forever Addons installer). Turn it off in the installer.' | Out-Null
+        [IO.File]::WriteAllText($flag, 'on')
+    } else {
+        try { Unregister-ScheduledTask -TaskName $task -Confirm:$false -ErrorAction Stop } catch { }
+        Remove-Item -LiteralPath $vbs -Force -ErrorAction SilentlyContinue
+        [IO.File]::WriteAllText($flag, 'off')
+    }
+}
+
+function Write-AutoLog([string]$line) {
+    try {
+        New-Item -ItemType Directory -Force $ConfigDir | Out-Null
+        $old = @()
+        if (Test-Path -LiteralPath $AutoLog) { $old = @([IO.File]::ReadAllLines($AutoLog) | Select-Object -Last 199) }
+        [IO.File]::WriteAllLines($AutoLog, [string[]]($old + @("$((Get-Date).ToString('yyyy-MM-dd HH:mm'))  $line")))
+    } catch { }
+}
+
+# The scheduled task's run: update every addon you already have that has a newer version, quietly, then exit.
+# Addons you never installed are left alone. If the game is open, the new version loads on /reload.
+function Invoke-Auto {
+    $mutex = New-Object Threading.Mutex($false, 'Local\ForeverAddonsAuto')
+    $mine = $false
+    try { $mine = $mutex.WaitOne(0) } catch [Threading.AbandonedMutexException] { $mine = $true }
+    if (-not $mine) { return }
+    try {
+        $wow = Find-Forever
+        if (-not $wow) { Write-AutoLog "WoW Forever not found, nothing checked."; return }
+        $items = @(Update-Shelf (Get-KnownShelf))
+        if (-not @($items | Where-Object { $_.Fresh }).Count) { Write-AutoLog "Couldn't reach GitHub."; return }
+        foreach ($it in $items) { Update-Status $it $wow }
+        $todo = @($items | Where-Object { $_.Status -eq 'Update available' })
+        if ($todo.Count) {
+            $tmp = New-TempDir
+            try {
+                $jobs = @(foreach ($it in $todo) { Start-AddonDownload $it $tmp })
+                foreach ($j in $jobs) {
+                    $was = $j.It.Installed
+                    try { Complete-AddonInstall $j $wow; Write-AutoLog "Updated $($j.It.Title) $was to $($j.It.Latest)" }
+                    catch { Write-AutoLog "$($j.It.Title) didn't update: $(Get-ErrorText $_)" }
+                }
+            } finally { Remove-Item -LiteralPath $tmp -Recurse -Force -ErrorAction SilentlyContinue }
+        }
+        Update-LocalCopy
+    } finally { $mutex.ReleaseMutex(); $mutex.Dispose() }
+}
+
+if ($env:FOREVER_AUTO) { Invoke-Auto; exit 0 }
+
 # ---------------------------------------------------------------- background work
 
 # The stone behind the panel: a small tile made by build.ps1 (our own noise, not game art).
@@ -362,7 +453,7 @@ function Get-WowIcon([string]$wow) {
 
 # The network runs on its own thread so the window never waits for it.
 $WorkerInit = (@('Test-Forever', 'New-WebClient', 'Get-ErrorText', 'Read-Shelf', 'Save-ShelfCache', 'Update-Shelf',
-        'Start-AddonDownload', 'Complete-AddonInstall', 'New-TempDir', 'Update-LocalCopy', 'New-RockBrush', 'Get-WowIcon') |
+        'Start-AddonDownload', 'Complete-AddonInstall', 'New-TempDir', 'Update-LocalCopy', 'New-RockBrush', 'Get-WowIcon', 'Set-AutoUpdate') |
     ForEach-Object { "function $_ {`n$((Get-Command $_).Definition)`n}" }) -join "`n"
 
 function Start-Work([string]$script, [hashtable]$vars) {
@@ -764,7 +855,29 @@ $WindowXaml = @'
           <ColumnDefinition Width="*"/>
           <ColumnDefinition Width="Auto"/>
         </Grid.ColumnDefinitions>
-        <Grid x:Name="ShortcutRow" Background="Transparent" HorizontalAlignment="Left" VerticalAlignment="Center" Visibility="Collapsed">
+        <StackPanel x:Name="Ticks" HorizontalAlignment="Left" VerticalAlignment="Center">
+        <Grid x:Name="AutoRow" Background="Transparent" HorizontalAlignment="Left" Visibility="Collapsed"
+              ToolTip="Checks for new versions when you sign in to Windows and every hour after, and installs them for the addons you have. No window opens. If the game is running, type /reload to load them.">
+          <Grid.ColumnDefinitions>
+            <ColumnDefinition Width="Auto"/>
+            <ColumnDefinition Width="Auto"/>
+          </Grid.ColumnDefinitions>
+          <Grid Width="26" Height="26">
+            <Border CornerRadius="4" Background="#000000"/>
+            <Border Margin="1" CornerRadius="3.5" Background="{StaticResource Metal}"/>
+            <Border Margin="3" CornerRadius="2" Background="#0B0907"/>
+            <Border Margin="3" CornerRadius="2" BorderThickness="1" BorderBrush="#C0000000"/>
+            <Grid x:Name="AutoTick" Opacity="0" Margin="-1,-5,-6,0">
+              <Path Data="M7,17 L13,25 L29,5" Stroke="#000000" StrokeThickness="6.4" StrokeStartLineCap="Round" StrokeEndLineCap="Round" StrokeLineJoin="Round"/>
+              <Path Data="M7,17 L13,25 L29,5" Stroke="{StaticResource Gold}" StrokeThickness="3.6" StrokeStartLineCap="Round" StrokeEndLineCap="Round" StrokeLineJoin="Round"/>
+            </Grid>
+          </Grid>
+          <Grid Grid.Column="1" Margin="10,0,0,0" VerticalAlignment="Center">
+            <TextBlock Text="Update automatically" Foreground="#000000" Margin="1,1,-1,-1"/>
+            <TextBlock Text="Update automatically" Foreground="#FFFFFF"/>
+          </Grid>
+        </Grid>
+        <Grid x:Name="ShortcutRow" Background="Transparent" HorizontalAlignment="Left" Visibility="Collapsed" Margin="0,6,0,0">
           <Grid.ColumnDefinitions>
             <ColumnDefinition Width="Auto"/>
             <ColumnDefinition Width="Auto"/>
@@ -784,6 +897,7 @@ $WindowXaml = @'
             <TextBlock Text="Desktop shortcut" Foreground="#FFFFFF"/>
           </Grid>
         </Grid>
+        </StackPanel>
         <Grid x:Name="StatusRow" VerticalAlignment="Center" Margin="2,0,14,0" Visibility="Collapsed">
           <TextBlock x:Name="StatusShadow" Foreground="#000000" Margin="1,1,-1,-1" FontFamily="{StaticResource Friz}" FontWeight="Bold" FontSize="14.5" TextWrapping="Wrap"/>
           <TextBlock x:Name="StatusText" FontFamily="{StaticResource Friz}" FontWeight="Bold" FontSize="14.5" TextWrapping="Wrap"/>
@@ -1137,7 +1251,16 @@ function Show-Footer {
     $Cast.Visibility = $(if ($busy) { 'Visible' } else { 'Collapsed' })
     $StatusRow.Visibility = $(if (-not $busy -and $hasStatus) { 'Visible' } else { 'Collapsed' })
     $ShortcutRow.Visibility = $(if (-not $busy -and -not $hasStatus -and $S.OfferShortcut -and $n -gt 0) { 'Visible' } else { 'Collapsed' })
+    $AutoRow.Visibility = $(if (-not $busy -and -not $hasStatus -and $S.Wow) { 'Visible' } else { 'Collapsed' })
     if ($S.ShortOn -ne $S.WantShortcut) { $S.ShortOn = $S.WantShortcut; Start-Fade $ShortTick $(if ($S.WantShortcut) { 1.0 } else { 0.0 }) 70 }
+    if ($S.AutoOn -ne $S.WantAuto) { $S.AutoOn = $S.WantAuto; Start-Fade $AutoTick $(if ($S.WantAuto) { 1.0 } else { 0.0 }) 70 }
+}
+
+# Sets the scheduled task up or takes it away, on a thread of its own so the window doesn't wait for it.
+# A test run never touches the computer's scheduled tasks.
+function Save-AutoUpdate([bool]$on) {
+    if ($env:FOREVER_SNAPSHOT) { return }
+    [void](Start-Work 'Set-AutoUpdate $On $Self' @{ On = $on; Self = $env:FOREVER_SELF })
 }
 
 function Show-Folder {
@@ -1172,7 +1295,8 @@ function Show-Idle {
     $n = @($S.Items | Where-Object { $_.Want }).Count
     if (-not $S.Wow) { Set-Status 'Choose your World of Warcraft folder.' $Gold }
     elseif ($S.Phase -eq 'ready' -and -not $S.Fresh) { Set-Status "Can't reach GitHub. Check your connection." $Red }
-    elseif ($S.Phase -eq 'ready' -and $n -eq 0 -and -not $S.Touched) { Set-Status 'Everything is up to date.' $Green }
+    # With updates on, the tick says it instead (each row already says "Up to date").
+    elseif ($S.Phase -eq 'ready' -and $n -eq 0 -and -not $S.Touched -and -not $S.WantAuto) { Set-Status 'Everything is up to date.' $Green }
     else { Set-Status '' $null }
 }
 
@@ -1348,6 +1472,8 @@ function Complete-Install([string]$err) {
     if ($done.Count -and $S.WantShortcut -and $S.OfferShortcut) {
         try { Install-Shortcut $S.Wow; $S.OfferShortcut = $false } catch { }
     }
+    # The first install turns updates on (unless the tick was taken off), and a later one refreshes the task's copy.
+    if ($done.Count -and $S.WantAuto) { Save-AutoUpdate $true }
     foreach ($it in $S.Items) { $it.Want = [bool]$it.Error }
     $S.Touched = $true
     foreach ($it in $S.Items) { Show-Row $it }
@@ -1383,9 +1509,14 @@ function Complete-Install([string]$err) {
 
 try {
     $S.OfferShortcut = -not (Test-Path -LiteralPath (Get-ShortcutPath)); $S.WantShortcut = $true; $S.ShortOn = $false
+    # Updates are on unless someone took the tick off. Someone who already has addons from an earlier installer gets
+    # the task as soon as this one opens; someone new gets it with their first install.
+    $S.AutoSetting = Get-AutoSetting
+    $S.WantAuto = ($S.AutoSetting -ne 'off'); $S.AutoOn = $false
+    if ($S.WantAuto -and $S.AutoSetting -ne 'on' -and $S.Wow -and @($S.Items | Where-Object { $_.Installed }).Count) { Save-AutoUpdate $true }
     $window = [Windows.Markup.XamlReader]::Parse($WindowXaml)
     Add-Timing 'window parsed'
-    foreach ($n in 'Rock', 'DragZone', 'Plaque', 'FolderText', 'FolderShadow', 'ChangeButton', 'CloseX', 'RowsScroll', 'RowsPanel', 'MoreAbove', 'MoreBelow', 'ShortcutRow', 'ShortTick',
+    foreach ($n in 'Rock', 'DragZone', 'Plaque', 'FolderText', 'FolderShadow', 'ChangeButton', 'CloseX', 'RowsScroll', 'RowsPanel', 'MoreAbove', 'MoreBelow', 'ShortcutRow', 'ShortTick', 'AutoRow', 'AutoTick',
         'StatusRow', 'StatusText', 'StatusShadow', 'Cast', 'Bar', 'CastText', 'CastShadow', 'Go', 'CloseButton2') {
         Set-Variable -Name $n -Value $window.FindName($n)
     }
@@ -1425,6 +1556,15 @@ try {
     })
 
     $ShortcutRow.Add_MouseLeftButtonDown({ $S.WantShortcut = -not $S.WantShortcut; Show-Footer })
+    # Taking the tick off removes the task at once. Putting it back sets it up at once if there is anything to keep
+    # current; otherwise the next install does.
+    $AutoRow.Add_MouseLeftButtonDown({
+        if ($S.Phase -eq 'installing' -or $S.Phase -eq 'finishing') { return }
+        $S.WantAuto = -not $S.WantAuto
+        if (-not $S.WantAuto) { Save-AutoUpdate $false }
+        elseif (@($S.Items | Where-Object { $_.Installed }).Count) { Save-AutoUpdate $true }
+        Show-Footer
+    })
     $RowsScroll.Add_ScrollChanged({ try { Show-ScrollHints } catch { } })
     $window.Add_SizeChanged({ Set-OnScreen })
 
