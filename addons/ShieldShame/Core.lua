@@ -18,7 +18,7 @@ local ADDON, ns = ...
 
 local floor, max, min = math.floor, math.max, math.min
 
-ns.VERSION = "1.2.1"
+ns.VERSION = "1.2.2"
 
 ----------------------------------------------------------------------
 -- The shields on WoW Forever (talentsforever.com data.json, beta client 1.60.1.70755,
@@ -1008,7 +1008,6 @@ ns.Slash = Slash
 
 SLASH_SHIELDSHAME1 = "/shame"
 SLASH_SHIELDSHAME2 = "/shieldshame"
-SlashCmdList = SlashCmdList or {}
 SlashCmdList.SHIELDSHAME = function(msg)
     local ok, err = pcall(Slash, msg)
     if not ok then ns.Print("error: " .. tostring(err)) end

@@ -1,7 +1,7 @@
 ## Interface: 16001, 16002
 ## Title: Shield Shame
 ## Notes: Counts the damage and mana you throw away fighting without Lightning Shield or Water Shield, and mocks you for it. /shame
-## Version: 1.2.1
+## Version: 1.2.2
 ## SavedVariables: ShieldShameDB
 ## SavedVariablesPerCharacter: ShieldShameCharDB
 ## IconTexture: Interface\Icons\Spell_Nature_LightningShield

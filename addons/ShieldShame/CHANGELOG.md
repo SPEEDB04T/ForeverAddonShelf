@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.2.2 (2026-11-15)
+
+- Fix: ShieldShame no longer stops `/tm` raid marking and `/invite` from working. It used to
+  reassign the game's slash command table, and the game blocked those commands in its name.
+  It now only adds its own `/shame` command. A `/reload` is enough.
+
 ## 1.2.1 (2026-11-15)
 
 - When the options window or minimap button is missing after an update, the message now says
