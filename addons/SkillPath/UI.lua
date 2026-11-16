@@ -1105,6 +1105,8 @@ local function TextBox(parent)
     return scroll, box
 end
 
+local GUIDE_HINT = "Ctrl+C copies the selected text. /skillpath send <player> whispers it."
+
 local function BuildGuide()
     local f = FromTemplate("Frame", UIParent, "BasicFrameTemplateWithInset", "SkillPathGuideFrame")
         or CreateFrame("Frame", "SkillPathGuideFrame", UIParent)
@@ -1125,11 +1127,18 @@ local function BuildGuide()
     f.Hint:SetPoint("BOTTOMLEFT", f, "BOTTOMLEFT", 12, 10)
     f.Hint:SetPoint("RIGHT", f, "RIGHT", -120, 0)
     f.Hint:SetJustifyH("LEFT")
-    f.Hint:SetText("Ctrl+C copies the selected text. /skillpath send <player> whispers it.")
+    f.Hint:SetText(GUIDE_HINT)
     f.Select = CreateFrame("Button", nil, f, "UIPanelButtonTemplate")
     f.Select:SetSize(100, 22)
     f.Select:SetPoint("BOTTOMRIGHT", f, "BOTTOMRIGHT", -10, 6)
     f.Select:SetText("Select all")
+    -- There while a plan being sent goes out on your clicks (see ns.Send).
+    f.Next = CreateFrame("Button", nil, f, "UIPanelButtonTemplate")
+    f.Next:SetSize(150, 22)
+    f.Next:SetPoint("RIGHT", f.Select, "LEFT", -6, 0)
+    f.Next:SetText("Send next")
+    f.Next:SetScript("OnClick", function() ns.SendNext() end)
+    f.Next:Hide()
 
     local holder, box = TextBox(f)
     holder:SetPoint("TOPLEFT", f, "TOPLEFT", 14, -32)
@@ -1185,7 +1194,33 @@ function UI.ShowGuide()
     guide.frame:Show()
     guide.box:SetFocus()
     guide.box:HighlightText()
+    UI.SendChanged()
     return true
+end
+
+-- The guide window's "Send next" button: there while the plan being sent goes out on your clicks,
+-- and ready once the last lines have come back. With open, the window is brought up for it.
+-- Returns whether the button is there to click.
+function UI.SendChanged(open)
+    local state = ns.SendState()
+    local click = state and state.click
+    if open and click and state.ask and not UI.GuideShown() then UI.ShowGuide() end
+    local f = guide.frame
+    if not (f and f.Next) then return false end
+    f.Hint:ClearAllPoints()
+    f.Hint:SetPoint("BOTTOMLEFT", f, "BOTTOMLEFT", 12, 10)
+    if click then
+        f.Next:SetText(("Send next (%d/%d)"):format(state.sent, state.total))
+        f.Next:SetEnabled(state.ask)
+        f.Next:Show()
+        f.Hint:SetPoint("RIGHT", f.Next, "LEFT", -8, 0)
+        f.Hint:SetText("The game sends chat only on your own click.")
+    else
+        f.Next:Hide()
+        f.Hint:SetPoint("RIGHT", f, "RIGHT", -120, 0)
+        f.Hint:SetText(GUIDE_HINT)
+    end
+    return click and UI.GuideShown() or false
 end
 
 -- Where the path stops for want of a recipe: the trainer recipe that may be taught there already.

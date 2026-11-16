@@ -2,7 +2,7 @@
 local ADDON, ns = ...
 
 ns.ADDON = ADDON
-ns.VERSION = "1.3.0"
+ns.VERSION = "1.3.1"
 ns.NAME = "SkillPath"
 ns.ICON = "Interface\\Icons\\INV_Misc_Note_01"
 
@@ -183,6 +183,7 @@ function ns.ResetSettings()
     local db = ns.db
     for key, value in pairs(defaults) do db[key] = value end
     db.targets = {}
+    db.timerChat = nil      -- how plans are sent is found out again
     db.minimap = nil
     if ns.Kit then ns.Kit.RefreshMinimap() end
     ns.Changed()
@@ -282,8 +283,151 @@ local function Wrap(lines, width)
 end
 ns.Wrap = Wrap
 
--- The written guide to another player, a line a second (the chat server drops faster ones).
+-- The written guide to another player. On this client only chat sent inside your own key press
+-- or click is sure to go out: what an addon sends by itself (from a timer) can be dropped with no
+-- error. The game shows you every line you sent, so each line is checked against that echo. The
+-- first line goes with the command. The rest go a line a second from a timer while their echoes
+-- come back; once one doesn't, your clicks on "Send next" send them, a few lines a click.
+local ECHO_WAIT = 3       -- seconds a line may take to come back
+local CLICK_LINES = 3     -- lines one click sends
 local sending, held
+
+-- A line as the game may hand it back: without the spaces around it, runs of spaces as one.
+local function Plain(text)
+    return (text:gsub("%s+", " "):gsub("^ ", ""):gsub(" $", ""))
+end
+
+local function SendChanged(open)
+    if ns.UI and ns.UI.SendChanged then return ns.UI.SendChanged(open) end
+    return false
+end
+
+local function StopSend(text)
+    sending = nil
+    if text then ns.Print(text) end
+    SendChanged()
+end
+
+-- Waits for your click (or /skillpath send next).
+local function Ask(job)
+    job.ask = true
+    job.token = job.token + 1
+    local button = SendChanged(true)
+    if not job.told then
+        job.told = true
+        ns.Print(button and "Click \"Send next\" in the guide window for the next lines (or /skillpath send next)."
+            or "/skillpath send next sends the next lines.")
+    end
+end
+
+local function NoEcho(job, blocked)
+    local missing, total = job.acked + 1, #job.lines
+    if not job.fromKey then
+        -- A line the addon sent by itself didn't come back. Where such lines have come back before,
+        -- that is this one line's trouble (the other player left, say), not the game's rule.
+        local rule = blocked or ns.db.timerChat ~= true
+        if rule then ns.db.timerChat = false end
+        job.mode, job.i, job.fails = "click", job.acked, 0
+        ns.Print(("Line %d of %d didn't go out%s. Your clicks send the rest."):format(missing, total,
+            rule and ": the game drops chat an addon sends by itself" or ""))
+        Ask(job)
+    elseif job.acked == 0 then
+        StopSend(job.channel == "PARTY" and "The first line didn't go out: are you in a party? Stopped."
+            or ("%s didn't get the first line: offline, or the name is wrong? Stopped."):format(job.who))
+    elseif job.fails >= 1 and job.failed == missing then
+        StopSend(("Line %d of %d didn't go out twice. Stopped: %d lines reached %s."):format(missing, total, job.acked, job.who))
+    else
+        -- Too many at once, perhaps: one line a click from here, starting with the lost one.
+        job.fails, job.failed = 1, missing
+        job.i, job.batch = job.acked, 1
+        ns.Print(("Line %d of %d didn't go out. One line a click from here."):format(missing, total))
+        Ask(job)
+    end
+end
+
+local Tick
+-- Sends the next n lines now: inside your key press or click (fromKey), or from a timer.
+local function Push(job, n, fromKey)
+    job.fromKey, job.pushed, job.waited, job.ask = fromKey, 0, 0, nil
+    job.token = job.token + 1
+    for _ = 1, n do
+        local line = job.lines[job.i + 1]
+        if not line then break end
+        -- Counted first: the echo may come back before the call returns.
+        job.i = job.i + 1
+        job.pushed = job.pushed + 1
+        if not pcall(job.send, line, job.channel, nil, job.target) then
+            StopSend("The game didn't take the message. Stopped.")
+            return false
+        end
+        if sending ~= job then return false end
+        if job.ask then return true end     -- the game said at once that it blocked the line
+    end
+    SendChanged()
+    local token = job.token
+    ns.After(1, function() Tick(job, token) end)
+    return true
+end
+
+-- A second after the last lines went: on with the next once every echo is back.
+Tick = function(job, token)
+    if sending ~= job or token ~= job.token then return end
+    if job.acked >= job.i then
+        if job.mode == "timer" and not job.fromKey then ns.db.timerChat = true end
+        if job.i >= #job.lines then
+            StopSend(("Sent the plan to %s."):format(job.who))
+        elseif job.mode == "timer" then
+            Push(job, 1, false)
+        else
+            Ask(job)
+        end
+        return
+    end
+    job.waited = job.waited + 1
+    if job.waited < ECHO_WAIT then
+        ns.After(1, function() Tick(job, token) end)
+    else
+        NoEcho(job)
+    end
+end
+
+-- The game showing you a line you sent (CHAT_MSG_WHISPER_INFORM, or your own party line).
+function ns.SendEcho(channel, text)
+    local job = sending
+    if not job or job.channel ~= channel or job.acked >= job.i then return end
+    -- Text the game won't let an addon read can't be compared: it counts.
+    text = ns.Str(text)
+    if text and Plain(text) ~= Plain(job.lines[job.acked + 1]) then return end
+    job.acked = job.acked + 1
+    if job.failed and job.acked >= job.failed then job.fails, job.failed = 0, nil end
+end
+
+-- The game saying it blocked something this addon did: a line sent from a timer.
+function ns.SendBlocked(addon)
+    local job = sending
+    if job and not job.fromKey and not job.ask and job.acked < job.i and ns.Str(addon) == ADDON then NoEcho(job, true) end
+end
+
+-- The "Send next" button and /skillpath send next: the next lines, inside your click.
+function ns.SendNext()
+    local job = sending
+    if not job then
+        ns.Print("Nothing is being sent.")
+        return false
+    elseif not job.ask then
+        ns.Print("The last lines are still going out.")
+        return false
+    end
+    return Push(job, job.batch, true)
+end
+
+-- nil, or what the guide window shows of the plan being sent.
+function ns.SendState()
+    local job = sending
+    if not job then return nil end
+    return { click = job.mode == "click", ask = job.ask == true, sent = job.acked, total = #job.lines }
+end
+
 function ns.Send(to)
     to = ns.Str(to)
     if not to then
@@ -291,11 +435,11 @@ function ns.Send(to)
         return false
     end
     if to:lower() == "stop" then
-        ns.Print(sending and "Stopped sending." or "Nothing is being sent.")
         held = nil
-        sending = nil
+        StopSend(sending and "Stopped sending." or "Nothing is being sent.")
         return false
     end
+    if to:lower() == "next" then return ns.SendNext() end
     if sending then
         ns.Print("Still sending the last plan. /skillpath send stop ends it.")
         return false
@@ -312,7 +456,9 @@ function ns.Send(to)
     end
     local channel, target, who = "WHISPER", to, to
     if to:lower() == "party" then channel, target, who = "PARTY", nil, "your party" end
-    local job = { lines = Wrap(ns.UI.Guide(p, true), 240), i = 0 }
+    local click = ns.db.timerChat == false
+    local job = { lines = Wrap(ns.UI.Guide(p, true), 240), i = 0, acked = 0, token = 0, fails = 0, send = send,
+        channel = channel, target = target, who = who, mode = click and "click" or "timer", batch = CLICK_LINES }
     -- A plan with names the game is still loading is held back once; asked again, it goes as it is.
     local unnamed = ns.UI.Unnamed(job.lines)
     if unnamed > 0 and held ~= to then
@@ -324,24 +470,7 @@ function ns.Send(to)
     held = nil
     sending = job
     ns.Print(("Sending %d lines to %s."):format(#job.lines, who))
-    local function Next()
-        if sending ~= job then return end
-        job.i = job.i + 1
-        local line = job.lines[job.i]
-        if not line then
-            sending = nil
-            ns.Print(("Sent the plan to %s."):format(who))
-            return
-        end
-        if not pcall(send, line, channel, nil, target) then
-            sending = nil
-            ns.Print("The game didn't take the message. Stopped.")
-            return
-        end
-        ns.After(1, Next)
-    end
-    Next()
-    return true
+    return Push(job, click and CLICK_LINES or 1, true)
 end
 function ns.Sending() return sending ~= nil end
 
@@ -496,7 +625,8 @@ ns.eventFrame = frame
 local EVENTS = { "PLAYER_LOGIN", "TRADE_SKILL_SHOW", "TRADE_SKILL_LIST_UPDATE", "TRADE_SKILL_DATA_SOURCE_CHANGED",
     "TRADE_SKILL_CLOSE", "SKILL_LINES_CHANGED", "CHAT_MSG_SKILL", "NEW_RECIPE_LEARNED", "BAG_UPDATE_DELAYED",
     "MERCHANT_SHOW", "TRAINER_SHOW", "TRAINER_UPDATE", "AUCTION_HOUSE_SHOW", "AUCTION_HOUSE_CLOSED", "AUCTION_HOUSE_THROTTLED_SYSTEM_READY",
-    "ITEM_SEARCH_RESULTS_UPDATED", "COMMODITY_SEARCH_RESULTS_UPDATED", "GET_ITEM_INFO_RECEIVED" }
+    "ITEM_SEARCH_RESULTS_UPDATED", "COMMODITY_SEARCH_RESULTS_UPDATED", "GET_ITEM_INFO_RECEIVED",
+    "CHAT_MSG_WHISPER_INFORM", "CHAT_MSG_PARTY", "CHAT_MSG_PARTY_LEADER", "ADDON_ACTION_BLOCKED" }
 for _, event in ipairs(EVENTS) do pcall(frame.RegisterEvent, frame, event) end
 
 local snapshotQueued = false
@@ -585,6 +715,12 @@ frame:SetScript("OnEvent", function(_, event, a, b)
         if ns.Recipes.WindowOpen() then QueueSnapshot(false) end
     elseif event == "BAG_UPDATE_DELAYED" then
         ns.Changed()
+    elseif event == "CHAT_MSG_WHISPER_INFORM" then
+        ns.SendEcho("WHISPER", a)
+    elseif event == "CHAT_MSG_PARTY" or event == "CHAT_MSG_PARTY_LEADER" then
+        ns.SendEcho("PARTY", a)
+    elseif event == "ADDON_ACTION_BLOCKED" then
+        ns.SendBlocked(a)
     elseif event == "MERCHANT_SHOW" then
         if ns.Prices.ReadMerchant() > 0 then ns.Changed() end
     elseif event == "TRAINER_SHOW" or event == "TRAINER_UPDATE" then

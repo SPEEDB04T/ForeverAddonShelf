@@ -1,3 +1,8 @@
+## 1.3.1
+- Sending a plan checks that every line arrives. The game can drop chat an addon sends by itself, with no error, so the plan could stop after its first line while the addon said it was sent. Now each line is checked against the game's own echo of it.
+- When a line doesn't come back, the guide window opens with a "Send next" button: each click sends the next three lines (`/skillpath send next` does the same). The addon remembers this and starts the next plan on clicks.
+- A whisper to someone offline, or a plan sent to a party you aren't in, now says so and stops.
+
 ## 1.3.0
 - Trainer steps. A recipe you don't know is no longer left out: the path says "Trainer at skill 97: learn Copper Modulator" and goes on with the steps after it. Recipes taught by a recipe item become a "buy and learn" step when the item has a price.
 - Open a profession's trainer once and the addon reads its list: the real skill each recipe is taught at, and its fee. Fees are then part of the cost. Until then a trainer recipe is taken to be learnable at its yellow skill (the latest it can be), with no fee in the cost, and the path says how many recipes that is.

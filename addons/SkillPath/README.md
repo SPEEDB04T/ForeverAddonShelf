@@ -38,6 +38,7 @@ Rank training fees (Journeyman, Expert, Artisan) aren't in the cost.
 
 - **Copy guide** (`/skillpath guide`) opens the plan as text to copy.
 - `/skillpath send <player>` whispers it line by line, one a second; `/skillpath send party` posts it to your party; `/skillpath send stop` ends it. The notes about your own addon (what isn't read yet) stay out of what is sent.
+- Every line is checked against the game's echo of it. The game can drop chat an addon sends by itself: when a line doesn't come back, the guide window opens with a **Send next** button, and each click sends the next three lines (`/skillpath send next` does the same). The addon remembers that and starts the next plan on clicks. `/skillpath reset` makes it find out again.
 - **My path** (`/skillpath for me`) goes back to your own profession.
 
 ## At the auction house
@@ -71,7 +72,7 @@ The addon also scans when you open the auction house: a few seconds later, one s
 | `/skillpath target <skill>` | Where the open profession's path stops, up to 300; 0 is your rank's cap, or the next rank's once you are at it. |
 | `/skillpath for <profession> <from> <to>` | A plan for someone else, like `/skillpath for engineering 75 225`. `/skillpath for me` goes back. |
 | `/skillpath guide` | The written plan in a window, to copy. |
-| `/skillpath send <player>` | Whisper the plan. `send party` posts it to your party, `send stop` ends it. |
+| `/skillpath send <player>` | Whisper the plan. `send party` posts it to your party, `send next` sends the next lines where the game wants a click, `send stop` ends it. |
 | `/skillpath forget` | Forget every auction and vendor price. |
 | `/skillpath config` | Options. |
 | `/skillpath minimap` | Show or hide the minimap button. |

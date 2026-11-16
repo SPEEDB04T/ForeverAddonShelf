@@ -1,7 +1,7 @@
 ## Interface: 16001, 16002
 ## Title: SkillPath
 ## Notes: Levels a profession the cheapest way from your own recipes and auction prices: what to buy, what to craft and how many, what to sell. A tab in the professions window and in the auction house.
-## Version: 1.3.0
+## Version: 1.3.1
 ## SavedVariables: SkillPathDB
 ## IconTexture: Interface\Icons\INV_Misc_Note_01
 ## AddonCompartmentFunc: SkillPath_Toggle
