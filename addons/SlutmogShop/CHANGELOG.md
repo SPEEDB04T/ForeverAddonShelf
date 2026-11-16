@@ -1,5 +1,10 @@
 # Changelog
 
+## 1.11.2
+
+- Mailbox mode keeps you dancing: any wink or smile from the shop (by itself or on your click) stops the dance in the game, so it now dances again two seconds later instead of five, and after clicked replies too.
+- If you stop dancing yourself (/sit, your own emote), the shop leaves it that way until you dance again.
+
 ## 1.11.1
 
 - Mailbox mode emotes back by itself every time now, not just once. The shop misread the game's answer to its first emote as a refusal and went buttons-only for the rest of the session.

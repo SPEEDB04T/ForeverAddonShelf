@@ -160,13 +160,29 @@ local function Aim(name)
     return name, "name"
 end
 
+-- Any other emote stops the dance (SuccuDev: "keeps canceling my dance"), so the shop dances again
+-- right after one of its own, unless you stopped dancing yourself.
+local REDANCE = 2                -- seconds after a wink or a smile before dancing again
+local dancing = false            -- you are dancing, as far as the shop knows
+local redance = 0                -- only the last emote's re-dance goes
+
 -- Sends an emote from the addon, at somebody if a name is given. Returns false when the game would not have it.
-local function Emote(token, name)
+local Emote
+Emote = function(token, name)
     local fn = (C_ChatInfo and C_ChatInfo.PerformEmote) or DoEmote
     if type(fn) ~= "function" then return false end
     local at, how = Aim(name)
-    local ok, restricted = pcall(fn, token, at)
+    local ok, restricted = pcall(fn, token, at, true)
     if not ok or (Readable(restricted) and restricted == true) then return false end
+    redance = redance + 1
+    if token == "DANCE" then
+        dancing = true
+    elseif dancing and C_Timer and C_Timer.After then
+        local mine = redance
+        C_Timer.After(REDANCE, function()
+            if on and dancing and redance == mine then Emote("DANCE") end
+        end)
+    end
     local mine = { who = name and Short(name) or nil, how = how }
     pend = mine
     if C_Timer and C_Timer.After then
@@ -183,7 +199,11 @@ end
 -- Your own emote came back from the game: the last one went out. If it was meant for somebody and
 -- does not name them, it went nowhere, so the other way of aiming is tried next time.
 local function Echo(text)
-    if not pend then return end
+    if not pend then
+        -- one you did yourself: dancing or not is your call
+        dancing = text:lower():find("danc", 1, true) ~= nil
+        return
+    end
     if pend.who and not text:find(pend.who, 1, true) then
         aimBy = pend.how == "unit" and "name" or "unit"
     end
@@ -457,11 +477,6 @@ local function Auto(v, gap)
         return false
     end
     lastAuto, v.emotedAt = now, now
-    if C_Timer and C_Timer.After and v.reply[2] ~= "DANCE" then
-        C_Timer.After(5, function()
-            if on and not manual then Emote("DANCE") end
-        end)
-    end
     return true
 end
 
@@ -742,7 +757,7 @@ function M.Start()
     end
     pcall(events.RegisterEvent, events, "CHAT_MSG_TEXT_EMOTE")
     pcall(events.RegisterEvent, events, "CHAT_MSG_WHISPER")
-    on, manual, misses, pend = true, false, 0, nil
+    on, manual, misses, pend, dancing = true, false, 0, nil, false
     frame:Show()
     Emote("DANCE")
     Tick()
