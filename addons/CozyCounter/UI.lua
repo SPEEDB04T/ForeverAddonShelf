@@ -124,7 +124,7 @@ local function MakeButton(key)
     b:SetScript("OnLeave", function() GameTooltip:Hide() end)
     b:SetScript("OnClick", function(_, mouseButton)
         if mouseButton == "RightButton" then
-            if HasKit() then ns.Kit.Open() else ns.Print("the options window appears after you restart the game once.") end
+            if HasKit() then ns.Kit.Open() else ns.Print("the options window appears after a /reload.") end
         else
             ns.PrintSummary()
         end
@@ -152,7 +152,7 @@ end
 
 -- LookShots (a helper only on the author's machine) shoots each listed frame the first time it
 -- shows. Harmless without it. Keep VERSION equal to the TOC's.
-UI.VERSION = "1.1.2"
+UI.VERSION = "1.1.3"
 LookShotsTargets = type(LookShotsTargets) == "table" and LookShotsTargets or {}
 LookShotsTargets["CozyCounter"] = {
     version = UI.VERSION,

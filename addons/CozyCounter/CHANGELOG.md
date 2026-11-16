@@ -1,5 +1,10 @@
 # Changelog
 
+## 1.1.3 (2026-11-15)
+
+- Fixed: the addon no longer replaces the game's slash command table, which made the game block other slash commands, such as raid target marking from a macro and /invite, in Cozy Counter's name.
+- The options window needs only a /reload, not a game restart; the messages now say so.
+
 ## 1.1.2 (2026-11-14)
 
 - Lists the reminder icons for LookShots, the author's screenshot helper, so they can be checked against the game's buff icons. Does nothing without it.

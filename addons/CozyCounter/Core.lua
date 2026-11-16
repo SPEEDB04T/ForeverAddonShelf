@@ -601,7 +601,7 @@ ns.QueueRefresh = QueueRefresh
 ----------------------------------------------------------------------
 local function HasKit()
     if ns.Kit and ns.Options and ns.Options.Ready and ns.Options.Ready() then return true end
-    ns.Print("the options window and the minimap button appear after you restart the game once.")
+    ns.Print("the options window and the minimap button appear after a /reload.")
     return false
 end
 
@@ -661,7 +661,6 @@ ns.Slash = Slash
 
 SLASH_COZYCOUNTER1 = "/cozy"
 SLASH_COZYCOUNTER2 = "/cozycounter"
-SlashCmdList = SlashCmdList or {}
 SlashCmdList.COZYCOUNTER = function(msg)
     local ok, err = pcall(Slash, msg)
     if not ok then ns.Print("error: " .. tostring(err)) end

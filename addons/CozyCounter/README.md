@@ -44,4 +44,4 @@ In a fight the game can hide auras, XP and chat text. The addon reads the buffs 
 
 `Core.lua` (buffs, counting, slash command), `UI.lua` (the reminder), `Kit.lua` (shared options window and minimap button, a copy of `shared/Kit.lua`), `Options.lua`. Tests: `python tests/CozyCounter/run.py`.
 
-A new addon needs a full game restart, not `/reload`.
+A new addon needs only a `/reload` on WoW Forever.
