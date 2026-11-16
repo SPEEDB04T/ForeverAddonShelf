@@ -546,7 +546,7 @@ function ns.PrintDebug()
     ns.Print(("casts pushed back: %d. Enemy casts seen: %d (name readable: %d, school known: %d)"):format(
         st.pushes, st.enemyCasts, st.namedCasts, st.schoolCasts))
     local e = Signals.enemies
-    ns.Print(("enemies in the fight: %d%s"):format(e.engaged or 0, e.hard and ", an elite or boss among them" or ""))
+    ns.Print(("enemies in the fight: %d"):format(e.engaged or 0))
     local taken = {}
     for key, who in pairs(ns.OtherAuras()) do
         taken[#taken + 1] = Data.AURAS[key].short .. " (" .. (type(who) == "string" and who or "another paladin") .. ")"

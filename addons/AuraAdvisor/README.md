@@ -8,10 +8,12 @@ For WoW Forever (Interface 16001).
 
 | Aura | Gets suggested when |
 | --- | --- |
-| Devotion | Physical hits land on you and your party, more so from elites, bosses, crits and crushing blows. A tank's and healer's usual aura. |
+| Devotion | Physical hits land on you and your party, more so when crits and crushing blows land. A tank's and healer's usual aura. |
 | Retribution | Physical hits land (each one hits back). A damage paladin's usual aura; a tank's pick against three or more enemies. |
 | Concentration | Your casts, or your party's, are pushed back by hits. |
-| Fire / Frost / Shadow Resistance | Hits of that school land on you and your party; an enemy is casting a spell of that school; an enemy Mage, Warlock or Priest is in the fight. |
+| Fire / Frost / Shadow Resistance | Hits of that school land on you and your party; an enemy is casting a spell of that school (the game shows its name). |
+
+Only what actually happens counts: hits taken, casts pushed back, enemy spells seen being cast. What an enemy is (its class, an elite or a boss) and what it might cast count for nothing, and in a fight no switch is suggested that can't say what caused it (`/aura` shows it).
 
 Hits on you count more than hits on your party. A party member's hits on themselves (a warlock's own Hellfire, Life Tap) don't count. Everything fades over a few seconds, so the advice follows the fight. A switch costs a global cooldown, so another aura has to be clearly ahead before it is suggested, and one stray Fire hit changes nothing.
 
@@ -47,7 +49,7 @@ The play style comes from your group role, or Righteous Fury (tank), or is damag
 
 ## Notes
 
-- **What the game lets an addon see.** WoW Forever hides the combat log from addons and hides damage numbers in fights. The damage school of each hit on you and your party is still shown, and so are pushed-back casts; those are what the advice mostly rests on. Enemy spell names are often hidden too: then a cast counts as "an enemy is casting something" and is shared out among the schools that have hit you so far. `/aura debug` shows how much of each the game let through.
+- **What the game lets an addon see.** WoW Forever hides the combat log from addons and hides damage numbers in fights. The damage school of each hit on you and your party is still shown, and so are pushed-back casts; those are what the advice mostly rests on. Enemy spell names are often hidden too: such a cast counts for no aura, only the hits it lands do. `/aura debug` shows how much of each the game let through.
 - **Only the game's own bars.** The glow goes on the stance bar and the game's action bars. Bars from other addons (Bartender, Dominos and the like) don't get it; the tooltip line, the sound and the line on screen still work there.
 - **Dead or a ghost?** It says nothing until you're back on your feet.
 - **Hidden stance bar?** Then the glow shows only on action bar buttons that hold the aura.

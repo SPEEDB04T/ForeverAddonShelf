@@ -7,14 +7,14 @@
 --   * UNIT_SPELLCAST_DELAYED on you and your party: a cast that a hit pushed back;
 --   * UNIT_SPELLCAST_START on enemies (target, focus, nameplates): an enemy is casting, and
 --     when the game shows the spell's name, which school it is;
---   * the enemies in the fight: how many, elites or bosses, enemy players and their class.
+--   * how many enemies are in the fight.
 -- Every value read from the game is checked for being hidden before it is used.
 local _, ns = ...
 local Data = ns.Data
 local S = {}
 ns.Signals = S
 
-local HALF_LIFE = { hit = 5, magic = 12, push = 8, cast = 6, mycast = 8 }  -- seconds
+local HALF_LIFE = { hit = 5, magic = 12, push = 8, cast = 6 }  -- seconds
 local KEEP = 60             -- seconds an event is remembered at all
 local RECENT = 10           -- seconds counted for "5 Fire hits in 10 s"
 local SCAN_EVERY = 1        -- seconds between looks at the enemies
@@ -23,10 +23,8 @@ S.RECENT = RECENT
 local MINE = { player = true, party1 = false, party2 = false, party3 = false, party4 = false }
 local AVOIDED = { DODGE = true, PARRY = true, MISS = true, EVADE = true, DEFLECT = true }
 local SOAKED = { RESIST = true, IMMUNE = true, REFLECT = true, ABSORB = true }
-local HARD = { elite = true, worldboss = true, rareelite = true }
-
 S.log = {}
-S.enemies = { engaged = 0, hard = false, hints = {}, hintClass = {} }
+S.enemies = { engaged = 0 }
 S.selfHarm = {}             -- unit -> { school, untilT }: that unit is hurting itself (Hellfire, Life Tap)
 S.stats = { combat = 0, hits = 0, hiddenSchool = 0, hiddenEvent = 0, pushes = 0,
             enemyCasts = 0, namedCasts = 0, schoolCasts = 0, selfHarm = 0 }
@@ -50,7 +48,7 @@ end
 
 function S.Reset()
     S.log = {}
-    S.enemies = { engaged = 0, hard = false, hints = {}, hintClass = {} }
+    S.enemies = { engaged = 0 }
     S.selfHarm = {}
     S.lastScan = nil
 end
@@ -75,10 +73,6 @@ function S.EnemyCast(now, school, name)
     S.stats.enemyCasts = S.stats.enemyCasts + 1
     if name then S.stats.namedCasts = S.stats.namedCasts + 1 end
     if school then S.stats.schoolCasts = S.stats.schoolCasts + 1 end
-end
-
-function S.MyCast(now)
-    S.log[#S.log + 1] = { t = now, kind = "mycast" }
 end
 
 ----------------------------------------------------------------------
@@ -239,10 +233,6 @@ end
 function S.OnCastStart(unit, spellID)
     unit = Plain(unit)
     if type(unit) ~= "string" then return end
-    if unit == "player" then
-        S.MyCast(Now())
-        return
-    end
     local plate = unit:find("^nameplate%d+$") ~= nil
     if not plate and unit ~= "target" and unit ~= "focus" then return end
     if not Fighting("player") or not Hostile(unit) then return end
@@ -266,44 +256,15 @@ end
 ----------------------------------------------------------------------
 -- The enemies in the fight (from the nameplates, or the target without them)
 ----------------------------------------------------------------------
-local function LookAt(unit, e, isTarget)
-    if not Hostile(unit) then return end
-    local player = false
-    if UnitIsPlayer then
-        local ok, v = pcall(UnitIsPlayer, unit)
-        player = ok and Plain(v) == true
-    end
-    local fighting = Fighting(unit)
-    if fighting then
-        e.engaged = e.engaged + 1
-        if UnitClassification then
-            local ok, c = pcall(UnitClassification, unit)
-            if ok and HARD[Plain(c) or ""] then e.hard = true end
-        end
-        if UnitLevel then
-            local ok, l = pcall(UnitLevel, unit)
-            if ok and Plain(l) == -1 then e.hard = true end
-        end
-    end
-    if player and (fighting or isTarget) and UnitClass then
-        local ok, _, class = pcall(UnitClass, unit)
-        class = ok and Plain(class) or nil
-        local hint = class and Data.CLASS_HINT[class]
-        if hint then
-            for school, weight in pairs(hint) do
-                if weight > (e.hints[school] or 0) then
-                    e.hints[school] = weight
-                    e.hintClass[school] = Data.CLASS_NAME[class] or class
-                end
-            end
-        end
-    end
+-- Only how many: what an enemy is (class, elite, boss) says nothing about what is hitting you.
+local function LookAt(unit, e)
+    if Hostile(unit) and Fighting(unit) then e.engaged = e.engaged + 1 end
 end
 
 function S.ScanEnemies(now, force)
     if not force and S.lastScan and now - S.lastScan < SCAN_EVERY then return end
     S.lastScan = now
-    local e = { engaged = 0, hard = false, hints = {}, hintClass = {} }
+    local e = { engaged = 0 }
     local targetSeen = false
     if C_NamePlate and C_NamePlate.GetNamePlates then
         local ok, plates = pcall(C_NamePlate.GetNamePlates)
@@ -339,11 +300,9 @@ function S.Summary(now)
         physMine = 0, physParty = 0,        -- physical hits that landed (crits and crushing blows count 1.5)
         swings = 0,                         -- physical attacks that were dodged, parried or missed
         heavy = 0,                          -- crits and crushing blows
-        hitsMine = 0,                       -- anything at all that hit you
         magic = { fire = 0, frost = 0, shadow = 0, other = 0 },
         pushMine = 0, pushParty = 0,        -- casts pushed back
-        myCasts = 0,                        -- spells with a cast time you started
-        casts = { fire = 0, frost = 0, shadow = 0, unknown = 0 },   -- enemy spells being cast
+        casts = { fire = 0, frost = 0, shadow = 0, unknown = 0 },   -- enemy spells being cast (unknown: only "a fight is on")
         castName = {},                      -- school -> the latest spell name seen
         count = { physical = 0, fire = 0, frost = 0, shadow = 0, other = 0, unknown = 0,
                   pushMine = 0, pushParty = 0, casts = 0 },          -- plain counts, last 10 s
@@ -361,7 +320,6 @@ function S.Summary(now)
             if ev.kind == "hit" then
                 local magic = sum.magic[ev.school] ~= nil
                 local w = Weight(age, magic and HALF_LIFE.magic or HALF_LIFE.hit)
-                if ev.mine then sum.hitsMine = sum.hitsMine + Weight(age, HALF_LIFE.hit) end
                 if ev.school == "physical" then
                     if ev.landed then
                         local pts = w * (ev.heavy and 1.5 or 1)
@@ -390,8 +348,6 @@ function S.Summary(now)
                 if ev.school and ev.name then sum.castName[ev.school] = ev.name end
                 sum.pressure = sum.pressure + w
                 if recent then sum.count.casts = sum.count.casts + 1 end
-            elseif ev.kind == "mycast" then
-                sum.myCasts = sum.myCasts + Weight(age, HALF_LIFE.mycast)
             end
         end
     end

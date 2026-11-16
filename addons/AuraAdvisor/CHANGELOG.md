@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.2.4 (2026-11-15)
+
+- No more suggestions on guesses. Only what actually happens counts: hits taken by you and your party, casts that were pushed back, and enemy spells seen being cast. In a fight, a switch that can't say what caused it isn't suggested.
+- Dropped: an enemy Mage, Warlock, Priest or Shaman in the fight no longer counts towards a resistance aura; an elite or boss in the fight no longer counts towards Devotion (crits and crushing blows still do); casting while being hit no longer counts towards Concentration (casts that were actually pushed back still do); enemy casts the game won't name no longer count towards a resistance aura.
+- Enemy spells are read more carefully: buffs and summons such as Inner Fire, Icy Veins, Cold Snap or Summon Voidwalker aren't taken for attacks.
+
 ## 1.2.3 (2026-11-15)
 
 - A warlock's own Hellfire no longer counts as Fire damage, so it doesn't suggest Fire Resistance Aura. The burn a party warlock takes from their own Hellfire, and the health Life Tap costs, are left out. Fire and Shadow hits from enemies, on them or anyone else, still count.

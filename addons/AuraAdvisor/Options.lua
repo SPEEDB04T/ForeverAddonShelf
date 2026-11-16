@@ -25,7 +25,7 @@ local function Rows()
           tip = "What the advice is for. Same as /aura style.",
           options = {
               { "auto", "Auto", "Your group role if you have one; tank while Righteous Fury is on; damage otherwise." },
-              { "damage", "Damage", "Retribution for physical hits, Devotion against elites and bosses." },
+              { "damage", "Damage", "Retribution for physical hits, Devotion when crits and crushing blows land." },
               { "tank", "Tank", "Devotion for physical hits, Retribution against three or more enemies." },
               { "healer", "Healer", "Devotion for physical hits; Concentration as soon as casts get pushed back." },
           },

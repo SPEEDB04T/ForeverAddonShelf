@@ -5,12 +5,14 @@
 -- you have on, because a switch costs a global cooldown and nobody wants a new suggestion
 -- with every hit.
 --
---   Devotion        physical hits on you and the party; worth more against elites and bosses
---                   and after crits or crushing blows
+--   Devotion        physical hits on you and the party; worth more after crits or crushing blows
 --   Retribution     physical hits that landed (each one hits back); worth more with many enemies
---   Concentration   casts that were pushed back, and you casting while being hit
---   Resistance      hits of that school, enemies casting a spell of that school, and enemy
---                   players whose class uses it
+--   Concentration   casts that were pushed back
+--   Resistance      hits of that school, and enemies seen casting a spell of that school
+--
+-- Only what was seen counts: hits that landed or were dodged, casts that were pushed back, an
+-- enemy spell being cast. Nothing is guessed from what an enemy is (class, elite, boss) or
+-- what it might cast, and in a fight no switch is suggested that can't say what caused it.
 --
 -- This file reads nothing from the game: it works on plain tables, so the tests can run it.
 local _, ns = ...
@@ -28,11 +30,8 @@ A.T = {
     },
     baseline = 2,           -- points your default aura gets for free
     cast = 2,               -- an enemy casting a spell of a known school
-    unknownCast = 1,        -- an enemy casting something, shared out like the magic hits so far
-    classHint = 2,          -- an enemy player of a class, times that class's weight
     pushMine = 4, pushParty = 2.5,
-    castingUnderFire = 1.5,
-    danger = 1.8,           -- Devotion against elites, bosses, crits and crushing blows
+    danger = 1.8,           -- Devotion after crits and crushing blows
     crowd = 3,              -- this many enemies make Retribution worth more to a tank
     style = {
         damage = { devotion = 0.6, retribution = 1.0 },
@@ -78,7 +77,7 @@ function A.Score(sum, ctx)
     local n = sum.count
 
     local phys = sum.physMine + sum.physParty
-    local danger = e.hard or sum.heavy > 0.3
+    local danger = sum.heavy > 0.3
 
     -- Devotion: every physical attack, landed or not
     local dev = (phys + sum.swings * 0.5) * style.devotion
@@ -86,9 +85,7 @@ function A.Score(sum, ctx)
     scores.devotion = dev
     if n.physical > 0 then
         local line = ("%d physical %s in %d s"):format(n.physical, Plural(n.physical, "hit", "hits"), ns.Signals.RECENT)
-        if e.hard then
-            line = line .. ", an elite or boss in the fight"
-        elseif sum.heavy > 0.3 then
+        if danger then
             line = line .. ", crits or crushing blows among them"
         end
         why.devotion = line
@@ -104,28 +101,19 @@ function A.Score(sum, ctx)
         why.retribution = line .. ": each one hits back"
     end
 
-    -- Concentration
-    local underFire = math.min(sum.myCasts, sum.hitsMine)
-    scores.concentration = sum.pushMine * T.pushMine + sum.pushParty * T.pushParty + underFire * T.castingUnderFire
+    -- Concentration: casts a hit actually pushed back
+    scores.concentration = sum.pushMine * T.pushMine + sum.pushParty * T.pushParty
     if n.pushMine > 0 then
         why.concentration = ("your casts were pushed back %d %s in %d s"):format(n.pushMine,
             Plural(n.pushMine, "time", "times"), ns.Signals.RECENT)
     elseif n.pushParty > 0 then
         why.concentration = ("your party's casts were pushed back %d %s in %d s"):format(n.pushParty,
             Plural(n.pushParty, "time", "times"), ns.Signals.RECENT)
-    elseif underFire > 0.5 then
-        why.concentration = "you are casting while being hit"
     end
 
-    -- Resistance auras
-    local magicTotal = sum.magic.fire + sum.magic.frost + sum.magic.shadow
+    -- Resistance auras: hits of that school, and enemy spells of that school being cast
     for _, school in ipairs({ "shadow", "frost", "fire" }) do
         local pts = sum.magic[school] + sum.casts[school] * T.cast
-        if magicTotal > 0 then
-            pts = pts + sum.casts.unknown * T.unknownCast * (sum.magic[school] / magicTotal)
-        end
-        local hint = e.hints and e.hints[school]
-        if hint then pts = pts + hint * T.classHint end
         scores[school] = pts
         local name = Data.SCHOOL_NAME[school]
         if n[school] > 0 then
@@ -137,8 +125,6 @@ function A.Score(sum, ctx)
             why[school] = line
         elseif sum.casts[school] > 0.3 and sum.castName[school] then
             why[school] = ("an enemy is casting %s (%s)"):format(sum.castName[school], name)
-        elseif hint and e.hintClass and e.hintClass[school] then
-            why[school] = ("an enemy %s is in the fight"):format(e.hintClass[school])
         end
     end
 
@@ -210,9 +196,10 @@ function A.Advise(sum, ctx)
     local have = scores[current] or 0
     local need = have + math.max(sens.gain, have * sens.margin)
     if ctx.sticky == best then need = have + 0.01 end
-    if bestScore >= need then
+    -- In a fight, a switch has to name what caused it: no hits or casts seen, no suggestion.
+    if bestScore >= need and why[best] then
         res.suggest = best
-        res.reason = why[best] or (best == idle and "your default" or "it fits this fight better")
+        res.reason = why[best]
     end
     return res
 end

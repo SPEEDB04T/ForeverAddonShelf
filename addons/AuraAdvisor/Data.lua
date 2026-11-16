@@ -78,28 +78,32 @@ function Data.SchoolOfMask(mask)
 end
 
 ----------------------------------------------------------------------
--- Damage school of an enemy spell, guessed from its English name. Used only for spells
--- that are still being cast (the hit itself reports its school). Returns "fire", "frost",
--- "shadow", or nil when the name says nothing.
+-- Damage school of an enemy spell, from the name of the spell the game shows it casting.
+-- Used only for spells that are still being cast (the hit itself reports its school).
+-- Returns "fire", "frost", "shadow", or nil when the name doesn't clearly say: then the cast
+-- counts for no aura.
 ----------------------------------------------------------------------
 -- A name ending in one of these is a buff or a shield, not an attack.
 local NOT_AN_ATTACK = {
     "ward", "armor", "barrier", "block", "shield", "resistance", "protection", "form", "aura",
     "totem", "weapon", "mending", "heal",
 }
--- Names that contain a school word but are another school.
-local OTHER_SCHOOL = { "holy fire", "mana burn", "frost trap", "shadowmeld", "shadowstep", "fire elemental totem" }
+-- A name starting with one of these makes something, it hits nobody.
+local NOT_AN_ATTACK_START = { "summon", "conjure", "create", "enchant" }
+-- Names that contain a school word but are another school, or no attack at all.
+local OTHER_SCHOOL = { "holy fire", "mana burn", "frost trap", "shadowmeld", "shadowstep", "fire elemental totem",
+                       "inner fire", "icy veins", "cold snap", "cold blood", "shadow trance" }
 
 -- A word of the name that starts with one of these.
 local WORDS = {
     fire = { "fire", "flame", "scorch", "pyro", "immolat", "incinerat", "lava", "magma", "molten",
              "conflag", "hellfire", "inferno", "blaze", "sear", "ignite", "meteor", "cinder", "ember" },
     frost = { "frost", "ice", "icy", "blizzard", "freez", "chill", "cold", "glacial", "hail" },
-    shadow = { "shadow", "corruption", "agony", "drain", "void", "siphon", "plague", "necrotic" },
+    shadow = { "shadow", "corruption", "agony", "drain", "void", "siphon", "necrotic" },
 }
 -- Part of the name, anywhere.
 local PHRASES = {
-    shadow = { "mind blast", "mind flay", "death coil", "touch of weakness" },
+    shadow = { "mind blast", "mind flay", "death coil", "touch of weakness", "devouring plague" },
 }
 
 function Data.SchoolOfSpellName(name)
@@ -110,6 +114,9 @@ function Data.SchoolOfSpellName(name)
     end
     for _, ending in ipairs(NOT_AN_ATTACK) do
         if lower:sub(-#ending) == ending then return nil end
+    end
+    for _, start in ipairs(NOT_AN_ATTACK_START) do
+        if lower:sub(1, #start) == start then return nil end
     end
     for school, list in pairs(PHRASES) do
         for _, phrase in ipairs(list) do
@@ -125,18 +132,6 @@ function Data.SchoolOfSpellName(name)
     end
     return nil
 end
-
-----------------------------------------------------------------------
--- What an enemy player of a class mostly hits with (PvP). Small numbers: a hint until the
--- first real hits arrive.
-----------------------------------------------------------------------
-Data.CLASS_HINT = {
-    MAGE = { frost = 0.6, fire = 0.4 },
-    WARLOCK = { shadow = 0.7, fire = 0.3 },
-    PRIEST = { shadow = 0.5 },
-    SHAMAN = { frost = 0.2 },
-}
-Data.CLASS_NAME = { MAGE = "Mage", WARLOCK = "Warlock", PRIEST = "Priest", SHAMAN = "Shaman" }
 
 ----------------------------------------------------------------------
 -- Spells that hurt the one casting them. A party warlock's own Hellfire burns them every
