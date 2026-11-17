@@ -1,5 +1,13 @@
 # Changelog
 
+## 1.1.0
+
+- Hit it: every hit on a piñata enemy knocks the piñata aside with a squash and bounce, and a mana-blue sparkle bursts out of it. Critical and crushing blows land harder, glancing blows softer, a miss only makes it sway.
+- The hit that gives you mana bursts biggest and plays the game's coin-loot sound.
+- `/pinata preview` (or "Preview hits" in the options): a stand-in nameplate in mid-screen takes a string of blows, so you can see it without a paladin.
+- New options under "Hits": bounce and sparkle on / off (`/pinata juice`), coin sound on / off (`/pinata sound`).
+- LookShots now lists the hit preview instead of frames on nameplates, which the game hides from screenshot helpers.
+
 ## 1.0.5
 
 - If the options window's files are missing after an update, the chat line now says a /reload brings them, not a game restart.

@@ -17,6 +17,9 @@
     /pinata x <n>, /pinata y <n> -> move it sideways / up and down
     /pinata swing       -> swinging on / off
     /pinata bar         -> colouring the enemy's health bar blue on / off
+    /pinata juice       -> a hit knocks the piñata about and sparkles, on / off
+    /pinata sound       -> the coin sound when a hit gives you mana, on / off
+    /pinata preview     -> a stand-in nameplate in mid-screen takes a few blows
     /pinata on|off, /pinata reset, /pinata debug
 ]]
 
@@ -45,6 +48,10 @@ end
 local WISDOM = { 20186, 20268, 20352, 20353, 20354, 20355, 25757, 25758, 27164 }
 local WISDOM_FALLBACK_NAME = "Judgement of Wisdom"
 
+-- The mana a hit brings back: the spell that gives the attacker mana when
+-- Judgement of Wisdom pays out (ranks 1 to 3). Not debuffs; see IsPayout.
+local PAYOUT_SPELLS = { [20268] = true, [20352] = true, [20353] = true }
+
 local DEFAULTS = {
     enabled  = true,
     size     = 44,
@@ -52,6 +59,8 @@ local DEFAULTS = {
     yOffset  = 0,
     swing    = true,
     colorBar = true,    -- the enemy's health bar turns blue while the debuff is on it
+    juice    = true,    -- a hit knocks the piñata about and sparkles
+    sound    = true,    -- the coin sound when a hit gives you mana
 }
 local LIMITS = {
     size    = { 16, 96 },
@@ -172,6 +181,134 @@ local function Art(owner)
 end
 
 ---------------------------------------------------------------------------
+-- Juice: what a blow does to a piñata
+---------------------------------------------------------------------------
+-- How hard a blow lands follows the game's own hit feedback on unit frames
+-- (Blizzard_FrameXML/Mainline/CombatFeedback.lua): a critical or crushing
+-- blow 1.5 times a normal one, a glancing or partly stopped one 0.75. A miss
+-- only makes it sway. A payout is the hit that gave you mana.
+-- push/up: how far the piñata is knocked (pixels), pop: how much it swells,
+-- burst: the sparkle's scale from, scale to, seconds.
+local BLOWS = {
+    miss   = { push = 3, up = 0, pop = 1.00 },
+    glance = { push = 4, up = 1, pop = 1.06 },
+    normal = { push = 6, up = 2, pop = 1.12, burst = { 0.55, 1.15, 0.30 } },
+    crit   = { push = 9, up = 3, pop = 1.18, burst = { 0.60, 1.55, 0.36 } },
+    payout = { push = 8, up = 4, pop = 1.28, burst = { 0.50, 2.00, 0.55 } },
+}
+ns.BLOWS = BLOWS
+
+-- The sparkle: the game's cooldown-finished bling star (CooldownFrame's
+-- default bling texture) in the colour the game gives mana numbers
+-- (CombatFeedback.lua, ENERGIZE). Drawn in a 100 x 100 box that is scaled
+-- with the piñata, so its shape never depends on the size setting.
+local STAR = "Interface\\Cooldown\\star4"
+local ENERGIZE_COLOR = { 0.41, 0.80, 0.94 }
+local BURST_BOX = 100
+local SPARKS, SPARK_RADIUS, SPARK_SIZE = 8, 36, 14
+
+local function BurstArt(owner)
+    local r, g, b = ENERGIZE_COLOR[1], ENERGIZE_COLOR[2], ENERGIZE_COLOR[3]
+    local function Star(size, x, y, white)
+        local t = owner:CreateTexture(nil, "OVERLAY")
+        t:SetTexture(STAR)
+        t:SetBlendMode("ADD")
+        t:SetSize(size, size)
+        t:SetPoint("CENTER", owner, "CENTER", x, y)
+        if white then t:SetVertexColor(1, 1, 1, 1) else t:SetVertexColor(r, g, b, 1) end
+        return t
+    end
+    local stars = { Star(56, 0, 0), Star(28, 0, 0, true) }
+    for i = 1, SPARKS do
+        local angle = (i - 1) * 2 * math.pi / SPARKS
+        stars[#stars + 1] = Star(SPARK_SIZE, SPARK_RADIUS * math.cos(angle), SPARK_RADIUS * math.sin(angle), i % 2 == 0)
+    end
+    return stars
+end
+
+-- Knocked aside and up, back past the middle, settled: three moves that add
+-- up to nothing, with a swell and its undoing. Played on the addon's own
+-- frame that holds the piñata, so it can run in a fight, and it shows only
+-- where the game shows a piñata.
+local function WhackGroup(frame)
+    local group = frame:CreateAnimationGroup()
+    local function Step(kind, order, seconds, smoothing)
+        local a = group:CreateAnimation(kind)
+        a:SetOrder(order)
+        a:SetDuration(seconds)
+        if kind == "Scale" then a:SetOrigin("CENTER", 0, 0) end
+        if a.SetSmoothing then a:SetSmoothing(smoothing) end
+        return a
+    end
+    group.hit    = Step("Translation", 1, 0.05, "OUT")
+    group.recoil = Step("Translation", 2, 0.13, "IN_OUT")
+    group.settle = Step("Translation", 3, 0.20, "IN_OUT")
+    group.grow   = Step("Scale", 1, 0.05, "OUT")
+    group.shrink = Step("Scale", 2, 0.16, "IN_OUT")
+    return group
+end
+
+local function Whack(group, blow, dir)
+    group:Stop()
+    group.hit:SetOffset(dir * blow.push, blow.up)
+    group.recoil:SetOffset(-dir * blow.push * 1.4, -blow.up)
+    group.settle:SetOffset(dir * blow.push * 0.4, 0)
+    group.grow:SetScaleFrom(1, 1)
+    group.grow:SetScaleTo(blow.pop, blow.pop)
+    group.shrink:SetScaleFrom(1, 1)
+    group.shrink:SetScaleTo(1 / blow.pop, 1 / blow.pop)
+    group:Play()
+end
+
+-- The sparkle flashes in, grows and fades; its frame rests at alpha 0.
+local function BurstGroup(frame)
+    local group = frame:CreateAnimationGroup()
+    if group.SetToFinalAlpha then group:SetToFinalAlpha(true) end
+    local flash = group:CreateAnimation("Alpha")
+    flash:SetOrder(1)
+    flash:SetDuration(0.04)
+    flash:SetFromAlpha(0)
+    flash:SetToAlpha(1)
+    local fade = group:CreateAnimation("Alpha")
+    fade:SetOrder(1)
+    fade:SetStartDelay(0.06)
+    fade:SetFromAlpha(1)
+    fade:SetToAlpha(0)
+    if fade.SetSmoothing then fade:SetSmoothing("IN") end
+    local grow = group:CreateAnimation("Scale")
+    grow:SetOrder(1)
+    grow:SetOrigin("CENTER", 0, 0)
+    if grow.SetSmoothing then grow:SetSmoothing("OUT") end
+    group.fade, group.grow = fade, grow
+    return group
+end
+
+local function Burst(group, burst)
+    group:Stop()
+    group.grow:SetScaleFrom(burst[1], burst[1])
+    group.grow:SetScaleTo(burst[2], burst[2])
+    group.grow:SetDuration(burst[3])
+    group.fade:SetDuration(burst[3] - 0.06)
+    group:Play()
+end
+
+-- One blow on anything with a whack and a burst group (a piñata, the preview).
+-- Blows come from alternate sides, like a stick swung back and forth.
+local function Strike(target, kind)
+    local blow = BLOWS[kind]
+    if not blow then return end
+    target.dir = -(target.dir or -1)
+    Whack(target.whack, blow, target.dir)
+    if blow.burst then Burst(target.burst, blow.burst) end
+    target.lastBlow = kind
+end
+
+local function CoinSound()
+    if not (db and db.sound) or type(PlaySound) ~= "function" then return end
+    pcall(PlaySound, (SOUNDKIT and SOUNDKIT.LOOT_WINDOW_COIN_SOUND) or 120, "SFX")
+end
+
+---------------------------------------------------------------------------
 -- The health bar
 ---------------------------------------------------------------------------
 local function HealthBar(plate)
@@ -230,6 +367,8 @@ local NATIVE = {
              warn = "the game would not let the piñata onto the nameplates, so none will show." },
     bar  = { slot = "ManaPinataBar", field = "barContainer", tries = 0,
              warn = "the game would not let the health bar be coloured, so it keeps its own colour." },
+    burst = { slot = "ManaPinataBurst", field = "burstContainer", tries = 0,
+             warn = "the game would not let the hit sparkle onto the nameplates, so a hit only knocks the piñata about." },
 }
 
 -- Everything on the button has to happen in here. The client calls this from
@@ -263,6 +402,18 @@ local function SetupBar(p, container, button)
     button:SetFrameLevel(container:GetFrameLevel() or 0)
     p.barButton = button
     p.barTex = BarArt(button, p.fill)
+end
+
+-- And for the sparkle: drawn once, fully lit. The addon's own frame around it
+-- rests invisible and lights up for a moment on each hit, so it only ever
+-- shows on an enemy the game is showing it on.
+local function SetupBurst(p, container, button)
+    button:EnableMouse(false)
+    button:ClearAllPoints()
+    button:SetAllPoints(container)
+    button:SetFrameLevel((container:GetFrameLevel() or 0) + 1)
+    BurstArt(button)
+    p.burstButton = button
 end
 
 -- One aura container filling `parent`, with one slot that only takes
@@ -300,8 +451,10 @@ local function TryNative(p, kind)
     local ok, result
     if kind == "icon" then
         ok, result = pcall(BuildNative, p, state.slot, p.holder, SetupButton)
-    else
+    elseif kind == "bar" then
         ok, result = pcall(BuildNative, p, state.slot, p.barHolder, SetupBar, p.barHolder:GetFrameLevel())
+    else
+        ok, result = pcall(BuildNative, p, state.slot, p.burstHolder, SetupBurst, p.burstHolder:GetFrameLevel())
     end
     if ok then
         p[state.field] = result
@@ -313,8 +466,10 @@ local function TryNative(p, kind)
     end
     if kind == "icon" then
         p.button, p.tex, p.swing, p.drop, p.swinging = nil, nil, nil, nil, nil
-    else
+    elseif kind == "bar" then
         p.barButton, p.barTex = nil, nil
+    else
+        p.burstButton = nil
     end
     state.error = (issecret and issecret(result)) and "hidden by the game" or tostring(result)
     state.tries = state.tries + 1
@@ -391,14 +546,41 @@ local function Build(plate)
     p.test = Art(holder)
     p.test:Hide()
     p.testSwing = SwingGroup(p.test)
+    p.whack = WhackGroup(holder)
+    -- The sparkle sits on the nameplate, not in the piñata's frame, so it stays
+    -- where the blow landed while the piñata is knocked away from it.
+    local burstHolder = CreateFrame("Frame", nil, plate)
+    burstHolder:SetSize(BURST_BOX, BURST_BOX)
+    burstHolder:SetFrameLevel((plate:GetFrameLevel() or 0) + LEVEL + 1)
+    burstHolder:SetAlpha(0)
+    burstHolder:Hide()
+    p.burstHolder = burstHolder
+    local burstTest = CreateFrame("Frame", nil, burstHolder)
+    burstTest:SetAllPoints(burstHolder)
+    BurstArt(burstTest)
+    burstTest:Hide()
+    p.burstTest = burstTest
+    p.burst = BurstGroup(burstHolder)
     pinatas[plate] = p
     return p
 end
+
+-- The sparkle's 100 x 100 box is scaled so a 44 piñata gets an 88 box.
+local function BurstScale() return db.size / 50 end
 
 local function Layout(p)
     p.holder:SetSize(db.size, db.size)
     p.holder:ClearAllPoints()
     p.holder:SetPoint("BOTTOM", p.plate, "TOP", db.xOffset, db.yOffset)
+    p.burstHolder:SetScale(BurstScale())
+    p.burstHolder:ClearAllPoints()
+    p.burstHolder:SetPoint("CENTER", p.holder, "CENTER", 0, 0)
+end
+
+-- Ends any blow still playing, so a nameplate handed to another enemy starts still.
+local function StillJuice(target)
+    if target.whack then target.whack:Stop() end
+    if target.burst then target.burst:Stop() end
 end
 
 -- Points a container at a unit, or switches it off (unit nil). Returns the
@@ -444,20 +626,30 @@ local function Apply(p)
     local unit = p.unit
     if not unit then
         Switch(p.container, nil)
+        Switch(p.burstContainer, nil)
         ApplyBar(p, nil, false)
+        StillJuice(p)
         p.testSwing:Stop()
         p.test:Hide()
         p.holder:Hide()
+        p.burstHolder:Hide()
         return
     end
 
     Layout(p)
-    p.holder:SetFrameLevel((p.plate:GetFrameLevel() or 0) + LEVEL)
+    local level = (p.plate:GetFrameLevel() or 0) + LEVEL
+    p.holder:SetFrameLevel(level)
+    p.burstHolder:SetFrameLevel(level + 1)
     local live = db.enabled and not testing
     if live then TryNative(p, "icon") end
     local iconErr = Switch(p.container, live and unit or nil)
     local barErr = ApplyBar(p, unit, live)
-    p.bindError = iconErr or barErr
+    local sparkle = live and db.juice
+    if sparkle then TryNative(p, "burst") end
+    local burstErr = Switch(p.burstContainer, sparkle and unit or nil)
+    p.bindError = iconErr or barErr or burstErr
+    if testing and db.juice then p.burstTest:Show() else p.burstTest:Hide() end
+    if db.juice then p.burstHolder:Show() else StillJuice(p); p.burstHolder:Hide() end
 
     if testing then
         p.test:Show()
@@ -577,6 +769,215 @@ local function ApplySwing()
 end
 
 ---------------------------------------------------------------------------
+-- Hits
+---------------------------------------------------------------------------
+-- UNIT_COMBAT is the event the game's own unit frames use for their hit
+-- numbers. The amount is hidden from addons; what kind of blow it was is
+-- not, and that is all a piñata needs. It comes for any enemy with a
+-- nameplate, whoever hit it, so a piñata bounces for the whole group. The
+-- addon can't tell which enemies have the debuff in a fight; it doesn't
+-- need to: it moves its own frames on every nameplate that is hit, and only
+-- where the game is showing a piñata is there anything to see move.
+local MISSES = { MISS = true, DODGE = true, PARRY = true, BLOCK = true, RESIST = true, EVADE = true,
+    IMMUNE = true, DEFLECT = true, ABSORB = true, REFLECT = true }
+local SOFT = { GLANCING = true, ABSORB = true, BLOCK = true, RESIST = true, BLOCK_REDUCED = true }
+local RANK = { miss = 1, glance = 2, normal = 3, crit = 4, payout = 5 }
+local MIN_GAP = 0.1          -- seconds; a weaker blow this soon after another doesn't restart it
+local PAYOUT_GAP = 0.25
+local PAIR_WINDOW = 0.15     -- a mana gain this soon after the target was hit came from the hit
+
+local function Plain(v) return not (issecret and issecret(v)) end
+local function Now() return (type(GetTime) == "function" and GetTime()) or 0 end
+
+-- "crit", "normal", "glance", "miss", or nil for things that aren't blows
+-- (heals, mana). Hidden values count as a normal blow.
+local function HitKind(action, flag)
+    if not Plain(action) then return "normal" end
+    if type(action) ~= "string" then return nil end
+    if action ~= "WOUND" then return MISSES[action] and "miss" or nil end
+    if not Plain(flag) or type(flag) ~= "string" then return "normal" end
+    if flag == "CRITICAL" or flag == "CRUSHING" then return "crit" end
+    if SOFT[flag] then return "glance" end
+    return "normal"
+end
+ns.HitKind = HitKind
+
+local function PinataFor(unit)
+    if not (C_NamePlate and C_NamePlate.GetNamePlateForUnit) then return end
+    local ok, plate = pcall(C_NamePlate.GetNamePlateForUnit, unit)
+    if not ok or type(plate) ~= "table" or Forbidden(plate) then return end
+    local p = pinatas[plate]
+    if p and p.unit then return p end
+end
+
+local function Hit(p, kind)
+    if not (db.enabled and db.juice) or not RANK[kind] then return end
+    local now = Now()
+    if p.lastBlowAt and now - p.lastBlowAt < MIN_GAP and RANK[kind] <= (RANK[p.lastBlow] or 0) then return end
+    p.lastBlowAt = now
+    Strike(p, kind)
+end
+
+local function ManaUser()
+    if type(UnitPowerType) ~= "function" then return true end
+    local ok, power = pcall(UnitPowerType, "player")
+    if not ok or not Plain(power) then return true end
+    return power == 0
+end
+
+-- The blow that gave you mana: a big burst on your target and the coin sound.
+local lastPayout
+local function Payout()
+    if not db.enabled then return end
+    local now = Now()
+    if lastPayout and now - lastPayout < PAYOUT_GAP then return end
+    lastPayout = now
+    CoinSound()
+    local p = PinataFor("target")
+    if p then Hit(p, "payout") end
+end
+ns.Payout = Payout
+
+-- The mana from Judgement of Wisdom, by spell ID or (an ID this list lacks)
+-- by name. The debuff's own IDs never count: a paladin putting the debuff up
+-- is not a payout.
+local function IsPayout(spellID)
+    if not PlainNumber(spellID) then return false end
+    if PAYOUT_SPELLS[spellID] then return true end
+    if spells[spellID] then return false end
+    if not (C_Spell and C_Spell.GetSpellName) then return false end
+    local ok, name = pcall(C_Spell.GetSpellName, spellID)
+    return ok and Plain(name) and name == WisdomName()
+end
+
+local function OnCombat(unit, action, flag)
+    if not Plain(unit) or type(unit) ~= "string" then return end
+    if unit == "player" then
+        -- Mana given to you right as your target was hit: the same payout,
+        -- for clients where the mana does not arrive as a spell cast.
+        if Plain(action) and action == "ENERGIZE" and ManaUser() then
+            local p = PinataFor("target")
+            if p and p.woundAt and Now() - p.woundAt <= PAIR_WINDOW then Payout() end
+        end
+        return
+    end
+    if not (IsPlateUnit(unit) or unit == "target" or unit == "focus") then return end
+    local kind = HitKind(action, flag)
+    if not kind then return end
+    local p = PinataFor(unit)
+    if not p then return end
+    if kind ~= "miss" then p.woundAt = Now() end
+    Hit(p, kind)
+end
+ns.OnCombat = OnCombat
+
+local function OnCast(unit, spellID)
+    if unit == "player" and IsPayout(spellID) then Payout() end
+end
+
+---------------------------------------------------------------------------
+-- The hit preview: a stand-in nameplate in the middle of the screen that
+-- takes a few blows, so the effects can be seen without a paladin.
+---------------------------------------------------------------------------
+local PREVIEW_BLOWS = { "normal", "normal", "crit", "normal", "payout", "glance", "normal", "miss", "crit", "payout" }
+local PREVIEW_GAP, PREVIEW_START, PREVIEW_END = 0.7, 0.4, 1.2
+local PREVIEW_BAR_W, PREVIEW_BAR_H = 120, 13          -- the size of a small nameplate health bar
+local preview
+
+local function SafeAtlas(tex, atlas, fallback)
+    if not pcall(tex.SetAtlas, tex, atlas) then tex:SetTexture(fallback) end
+end
+
+local function BuildPreview()
+    local frame = CreateFrame("Frame", nil, UIParent)
+    frame:SetSize(PREVIEW_BAR_W, 30)
+    frame:SetPoint("CENTER", UIParent, "CENTER", 0, 120)
+    frame:SetFrameStrata("HIGH")
+    frame:EnableMouse(false)
+    frame:Hide()
+    -- The health bar, in the nameplate's own bar art, three quarters full and blue.
+    local bar = CreateFrame("Frame", nil, frame)
+    bar:SetSize(PREVIEW_BAR_W, PREVIEW_BAR_H)
+    bar:SetPoint("BOTTOM", frame, "BOTTOM", 0, 0)
+    local bg = bar:CreateTexture(nil, "BACKGROUND")
+    SafeAtlas(bg, "UI-HUD-CoolDownManager-Bar-BG", BAR_TEXTURE)
+    bg:SetAllPoints(bar)
+    local fill = bar:CreateTexture(nil, "ARTWORK")
+    SafeAtlas(fill, "UI-HUD-CoolDownManager-Bar", BAR_TEXTURE)
+    fill:SetPoint("TOPLEFT", bar, "TOPLEFT", 0, 0)
+    fill:SetPoint("BOTTOMLEFT", bar, "BOTTOMLEFT", 0, 0)
+    fill:SetWidth(PREVIEW_BAR_W * 0.75)
+    fill:SetVertexColor(ManaColor())
+    local name = frame:CreateFontString(nil, "OVERLAY", _G.SystemFont_NamePlate and "SystemFont_NamePlate" or "GameFontNormalSmall")
+    name:SetPoint("BOTTOM", bar, "TOP", 0, 2)
+    name:SetText("Hit preview")
+    name:SetTextColor(1, 1, 1)
+
+    local holder = CreateFrame("Frame", nil, frame)
+    holder:SetFrameLevel((frame:GetFrameLevel() or 0) + LEVEL)
+    local art = Art(holder)
+    local burstHolder = CreateFrame("Frame", nil, frame)
+    burstHolder:SetSize(BURST_BOX, BURST_BOX)
+    burstHolder:SetFrameLevel((frame:GetFrameLevel() or 0) + LEVEL + 1)
+    burstHolder:SetAlpha(0)
+    BurstArt(burstHolder)
+    return {
+        frame = frame, holder = holder, burstHolder = burstHolder, art = art,
+        swing = SwingGroup(art), whack = WhackGroup(holder), burst = BurstGroup(burstHolder),
+        run = 0,
+    }
+end
+
+local function StopPreview()
+    if not preview then return end
+    preview.run = preview.run + 1
+    StillJuice(preview)
+    preview.swing:Stop()
+    preview.frame:Hide()
+end
+
+local function PreviewShowing()
+    return preview ~= nil and preview.frame:IsShown() == true
+end
+ns.PreviewShowing = PreviewShowing
+
+-- Plays the blows one after another and hides itself after the last.
+-- Asked again while it runs, it stops.
+local function RunPreview()
+    if PreviewShowing() then StopPreview(); return false end
+    preview = preview or BuildPreview()
+    local pv = preview
+    pv.holder:SetSize(db.size, db.size)
+    pv.holder:ClearAllPoints()
+    pv.holder:SetPoint("BOTTOM", pv.frame, "TOP", db.xOffset, db.yOffset)
+    pv.burstHolder:SetScale(BurstScale())
+    pv.burstHolder:ClearAllPoints()
+    pv.burstHolder:SetPoint("CENTER", pv.holder, "CENTER", 0, 0)
+    pv.frame:Show()
+    if db.swing then pv.swing:Play() else pv.swing:Stop() end
+    pv.run = pv.run + 1
+    pv.dir, pv.step = nil, 0
+    local run = pv.run
+    local function Next()
+        if pv.run ~= run then return end
+        pv.step = pv.step + 1
+        local kind = PREVIEW_BLOWS[pv.step]
+        if not kind then
+            C_Timer.After(PREVIEW_END, function() if pv.run == run then StopPreview() end end)
+            return
+        end
+        Strike(pv, kind)
+        if kind == "payout" then CoinSound() end
+        C_Timer.After(PREVIEW_GAP, Next)
+    end
+    C_Timer.After(PREVIEW_START, Next)
+    return true
+end
+ns.RunPreview = RunPreview
+ns.StopPreview = StopPreview
+function ns.Preview() return preview end
+
+---------------------------------------------------------------------------
 -- Saved settings
 ---------------------------------------------------------------------------
 local function Clamp(key, value)
@@ -666,27 +1067,12 @@ end
 ---------------------------------------------------------------------------
 -- LookShots: a helper on SuccuDev's machine that takes one game screenshot
 -- of each frame listed here the first time it shows. Harmless without it.
--- One nameplate of each kind is enough: the first piñata (real or test)
--- and the first blue health bar that are on screen.
+-- Frames on a nameplate can't be listed: the client hides where they are
+-- from addons. The hit preview is drawn by the same code and art on the
+-- screen itself, so that is what is listed.
 ---------------------------------------------------------------------------
-local function OnScreen(region)
-    if type(region) ~= "table" then return false end
-    local ok, shown = pcall(region.IsVisible, region)   -- a locked button refuses: not now
-    if not ok or (issecret and issecret(shown)) then return false end
-    return shown == true
-end
-
-local function FirstPinata()
-    for _, p in pairs(pinatas) do
-        if OnScreen(p.button) then return p.button end
-        if OnScreen(p.test) then return p.holder end
-    end
-end
-
-local function FirstBlueBar()
-    for _, p in pairs(pinatas) do
-        if p.bar and (OnScreen(p.barButton) or OnScreen(p.barTest)) then return p.bar end
-    end
+local function PreviewFrame()
+    if PreviewShowing() then return preview.frame end
 end
 
 local function AddonVersion()
@@ -700,8 +1086,7 @@ LookShotsTargets = LookShotsTargets or {}
 LookShotsTargets[ADDON_NAME] = {
     version = AddonVersion(),
     frames = {
-        { label = "piñata", frame = FirstPinata },
-        { label = "blue health bar", frame = FirstBlueBar },
+        { label = "hit preview", frame = PreviewFrame },
     },
 }
 
@@ -716,8 +1101,12 @@ f:RegisterEvent("NAME_PLATE_UNIT_REMOVED")
 f:RegisterEvent("PLAYER_REGEN_DISABLED")
 f:RegisterEvent("PLAYER_REGEN_ENABLED")
 pcall(f.RegisterEvent, f, "UNIT_AURA")
+pcall(f.RegisterEvent, f, "UNIT_COMBAT")
+if not (f.RegisterUnitEvent and pcall(f.RegisterUnitEvent, f, "UNIT_SPELLCAST_SUCCEEDED", "player")) then
+    pcall(f.RegisterEvent, f, "UNIT_SPELLCAST_SUCCEEDED")
+end
 
-f:SetScript("OnEvent", function(_, event, arg1)
+f:SetScript("OnEvent", function(_, event, arg1, arg2, arg3)
     if event == "ADDON_LOADED" then
         if arg1 == ADDON_NAME then
             InitDB()
@@ -730,7 +1119,13 @@ f:SetScript("OnEvent", function(_, event, arg1)
     end
     if not db then return end
 
-    if event == "NAME_PLATE_UNIT_ADDED" then
+    if event == "UNIT_COMBAT" then
+        OnCombat(arg1, arg2, arg3)
+
+    elseif event == "UNIT_SPELLCAST_SUCCEEDED" then
+        OnCast(arg1, arg3)
+
+    elseif event == "NAME_PLATE_UNIT_ADDED" then
         Attach(arg1)
 
     elseif event == "NAME_PLATE_UNIT_REMOVED" then
@@ -776,8 +1171,10 @@ local function PrintStatus()
         .. "  |  x " .. db.xOffset .. ", y " .. db.yOffset
         .. "  |  swing " .. OnOff(db.swing) .. (swingPending and " (changes after the fight)" or "")
         .. "  |  blue health bar " .. OnOff(db.colorBar)
+        .. "  |  bounce on hits " .. OnOff(db.juice)
+        .. "  |  coin sound " .. OnOff(db.sound)
         .. (testing and "  |  TEST piñatas showing" or "")
-        .. ((NATIVE.icon.error or NATIVE.bar.error) and "  |  not fully working, see /pinata debug" or ""))
+        .. ((NATIVE.icon.error or NATIVE.bar.error or NATIVE.burst.error) and "  |  not fully working, see /pinata debug" or ""))
 end
 
 local function PrintHelp()
@@ -785,6 +1182,7 @@ local function PrintHelp()
     print("  /pinata test (a piñata on every nameplate, to size and place it)   -  /pinata config (options window)")
     print("  /pinata size <16-96>   -  /pinata x <-100..100>   -  /pinata y <-100..100>   -  /pinata swing")
     print("  /pinata bar (the enemy's health bar turns blue too, on/off)")
+    print("  /pinata juice (bounce and sparkle on hits, on/off)   -  /pinata sound (coin sound on mana, on/off)   -  /pinata preview")
     print("  /pinata on|off   -  /pinata minimap (minimap button on/off)   -  /pinata reset   -  /pinata debug")
 end
 
@@ -847,6 +1245,16 @@ SlashCmdList.MANAPINATA = function(msg)
     elseif cmd == "bar" then
         ns.Set("colorBar", not db.colorBar)
 
+    elseif cmd == "juice" or cmd == "hits" then
+        ns.Set("juice", not db.juice)
+
+    elseif cmd == "sound" then
+        ns.Set("sound", not db.sound)
+
+    elseif cmd == "preview" then
+        if RunPreview() then print(PREFIX .. "hit preview in the middle of the screen. /pinata preview again stops it.") end
+        return
+
     elseif cmd == "test" then
         ns.SetTesting(not testing)
         TestNote()
@@ -857,23 +1265,31 @@ SlashCmdList.MANAPINATA = function(msg)
         ns.Reset()
 
     elseif cmd == "debug" then
-        local ids, live, bars, total = {}, 0, 0, 0
+        local ids, live, bars, bursts, total = {}, 0, 0, 0, 0
         for id in pairs(spells) do ids[#ids + 1] = id end
         table.sort(ids)
         for _, p in pairs(pinatas) do
             total = total + 1
             if p.container then live = live + 1 end
             if p.barContainer then bars = bars + 1 end
+            if p.burstContainer then bursts = bursts + 1 end
         end
-        local icon, bar = NATIVE.icon, NATIVE.bar
+        local icon, bar, burst = NATIVE.icon, NATIVE.bar, NATIVE.burst
         print(PREFIX .. "build " .. tostring((select(4, GetBuildInfo())))
             .. ", nameplates now: " .. PlateCount()
-            .. ", piñatas made: " .. total .. " (" .. live .. " with a working aura slot, " .. bars .. " with a health bar slot)"
+            .. ", piñatas made: " .. total .. " (" .. live .. " with a working aura slot, " .. bars .. " with a health bar slot, "
+            .. bursts .. " with a sparkle slot)"
             .. ", auras hidden right now: " .. tostring(AurasSecret())
             .. ", aura slots: " .. (icon.error and ("FAILED " .. icon.tries .. "x") or "ok")
-            .. ", health bar slots: " .. (bar.error and ("FAILED " .. bar.tries .. "x") or "ok"))
+            .. ", health bar slots: " .. (bar.error and ("FAILED " .. bar.tries .. "x") or "ok")
+            .. ", sparkle slots: " .. (burst.error and ("FAILED " .. burst.tries .. "x") or "ok"))
         if icon.error then print(PREFIX .. "aura slot error: " .. icon.error) end
         if bar.error then print(PREFIX .. "health bar slot error: " .. bar.error) end
+        if burst.error then print(PREFIX .. "sparkle slot error: " .. burst.error) end
+        local blows = 0
+        for _, p in pairs(pinatas) do if p.lastBlowAt then blows = blows + 1 end end
+        print(PREFIX .. "nameplates hit so far: " .. blows
+            .. (lastPayout and (", last mana payout " .. floor(Now() - lastPayout) .. " s ago") or ", no mana payout seen yet"))
         for _, p in pairs(active) do
             if p.bindError then
                 print(PREFIX .. "nameplate error: " .. p.bindError)

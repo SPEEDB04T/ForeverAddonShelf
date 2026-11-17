@@ -1,7 +1,7 @@
 ## Interface: 16001, 16002
 ## Title: Mana Piñata
-## Notes: A swinging piñata over the nameplate of every enemy with Judgement of Wisdom, and a blue health bar: hit it, get mana. /pinata for options.
-## Version: 1.0.5
+## Notes: A swinging piñata over the nameplate of every enemy with Judgement of Wisdom, and a blue health bar: hit it, watch it burst, get mana. /pinata for options.
+## Version: 1.1.0
 ## SavedVariables: ManaPinataDB
 ## IconTexture: Interface\AddOns\ManaPinata\Art\Pinata
 ## AddonCompartmentFunc: ManaPinata_OnAddonCompartmentClick

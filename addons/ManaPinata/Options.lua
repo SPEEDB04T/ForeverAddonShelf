@@ -52,6 +52,22 @@ local function Rows()
           tip = "Piñatas that are already up during a fight change when the fight ends.",
           get = Get("swing"), set = Set("swing") },
 
+        { kind = "header", text = "Hits" },
+        { kind = "check", label = "Bounce and sparkle on hits",
+          tip = "Every blow knocks the piñata aside and a mana-blue sparkle bursts from it. Critical hits land "
+              .. "harder, glancing blows softer, a miss only makes it sway. The hit that gives you mana bursts "
+              .. "biggest. Same as /pinata juice.",
+          get = Get("juice"), set = Set("juice") },
+        { kind = "check", label = "Coin sound when it pays mana",
+          tip = "The game's coin-loot sound each time a hit on a piñata gives you mana. Same as /pinata sound.",
+          get = Get("sound"), set = Set("sound") },
+        { kind = "buttons", buttons = {
+            { label = "Preview hits",
+              tip = "A stand-in nameplate in the middle of the screen takes a few blows, with the settings above. "
+                  .. "Same as /pinata preview.",
+              click = function() ns.RunPreview() end },
+        } },
+
         { kind = "header", text = "Minimap" },
         Kit.MinimapRow(),
         { kind = "buttons", buttons = {
