@@ -1,5 +1,9 @@
 # Changelog
 
+## 1.1.1
+
+- The coin sound is off to start with: it could ring every few seconds. It is switched off once for everyone who had 1.1.0; turn it back on with "Coin sound when it pays mana" in the options or `/pinata sound`.
+
 ## 1.1.0
 
 - Hit it: every hit on a piñata enemy knocks the piñata aside with a squash and bounce, and a mana-blue sparkle bursts out of it. Critical and crushing blows land harder, glancing blows softer, a miss only makes it sway.

@@ -59,7 +59,8 @@ local function Rows()
               .. "biggest. Same as /pinata juice.",
           get = Get("juice"), set = Set("juice") },
         { kind = "check", label = "Coin sound when it pays mana",
-          tip = "The game's coin-loot sound each time a hit on a piñata gives you mana. Same as /pinata sound.",
+          tip = "The game's coin-loot sound each time a hit on a piñata gives you mana. Off to start with, "
+              .. "since it can ring every few seconds. Same as /pinata sound.",
           get = Get("sound"), set = Set("sound") },
         { kind = "buttons", buttons = {
             { label = "Preview hits",

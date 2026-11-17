@@ -4,7 +4,7 @@ A blue piñata swings over the nameplate of every enemy that has Judgement of Wi
 
 Any paladin's Judgement of Wisdom counts, not only your own. The piñata drops in when the debuff lands; when it runs out the piñata goes away and the health bar gets its own colour back.
 
-Hit it and it takes the blow: every hit knocks the piñata aside with a bounce and a mana-blue sparkle. Critical hits land harder, glancing blows softer, a miss only makes it sway. The hit that actually gives you mana bursts biggest, with the game's coin-loot sound. `/pinata preview` shows all of it in the middle of the screen, no paladin needed.
+Hit it and it takes the blow: every hit knocks the piñata aside with a bounce and a mana-blue sparkle. Critical hits land harder, glancing blows softer, a miss only makes it sway. The hit that actually gives you mana bursts biggest, and can play the game's coin-loot sound too (off to start with: `/pinata sound`). `/pinata preview` shows all of it in the middle of the screen, no paladin needed.
 
 For WoW Forever (Interface 16001).
 
@@ -27,7 +27,7 @@ For WoW Forever (Interface 16001).
 | `/pinata swing` | Swinging on / off |
 | `/pinata bar` | Blue health bar on / off |
 | `/pinata juice` | Bounce and sparkle on hits, on / off |
-| `/pinata sound` | Coin sound when a hit gives you mana, on / off |
+| `/pinata sound` | Coin sound when a hit gives you mana, on / off (off by default) |
 | `/pinata preview` | A stand-in nameplate in mid-screen takes a few blows, to see the hits |
 | `/pinata minimap` | Minimap button on / off |
 | `/pinata on` / `off` / `reset` / `debug` | Enable, disable, defaults, bug-report info |

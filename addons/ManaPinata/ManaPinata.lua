@@ -60,7 +60,7 @@ local DEFAULTS = {
     swing    = true,
     colorBar = true,    -- the enemy's health bar turns blue while the debuff is on it
     juice    = true,    -- a hit knocks the piñata about and sparkles
-    sound    = true,    -- the coin sound when a hit gives you mana
+    sound    = false,   -- the coin sound when a hit gives you mana (off unless chosen: it rings a lot)
 }
 local LIMITS = {
     size    = { 16, 96 },
@@ -993,10 +993,10 @@ local function InitDB()
         if type(db[key]) ~= type(value) then db[key] = value end
     end
     for key in pairs(LIMITS) do db[key] = Clamp(key, db[key]) end
-    if db.settingsVersion ~= 2 then
-        if db.size == 36 then db.size = DEFAULTS.size end   -- the first build's smaller default
-        db.settingsVersion = 2
-    end
+    local version = type(db.settingsVersion) == "number" and db.settingsVersion or 0
+    if version < 2 and db.size == 36 then db.size = DEFAULTS.size end   -- the first build's smaller default
+    if version < 3 then db.sound = false end    -- 1.1.0 had the coin on for everyone; off once, then it's the player's choice
+    db.settingsVersion = 3
     if type(db.learned) == "table" then
         for id in pairs(db.learned) do
             if type(id) == "number" then spells[id] = true end
