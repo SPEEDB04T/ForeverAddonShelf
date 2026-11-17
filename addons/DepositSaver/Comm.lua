@@ -7,7 +7,7 @@
 --   A;1;snap;owner;id;item;ilvl;suffix;pet;qty;unit;deposit;flags;expires;dur
 --                                        one auction (flags: e exact deposit, a rough time,
 --                                        c commodity, b bid only, g listing time judged;
---                                        expires in server time; dur 1-3 = 12/24/48 hours,
+--                                        expires in server time; dur 1-3 = 2/8/24 hours,
 --                                        added in 1.1.2, older clients send none)
 --   E;1;snap;owner;n                     end of owner's list
 --   G;1;id                               that auction is gone (bought back, cancelled)

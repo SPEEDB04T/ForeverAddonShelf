@@ -12,7 +12,7 @@
 -- posted without this addon get an estimate from the vendor price.
 local ADDON, ns = ...
 
-ns.VERSION = "1.1.2"
+ns.VERSION = "1.1.3"
 ns.TITLE = "Deposit Saver"
 ns.ICON = "Interface\\Icons\\INV_Misc_Coin_02"
 
@@ -36,11 +36,12 @@ ns.DEFAULTS = DEFAULTS
 -- Deposit as a share of the vendor price, per duration (1, 2, 3 = the sell frame's three
 -- durations). Only used for auctions posted without this addon; every post the addon sees
 -- replaces the guess with what the game really charged.
--- WoW Forever's AuctionHouse table (client 1.60.1.70938): DepositRate 5 at the faction houses
--- (25 at Blackwater), i.e. 5% of the vendor price for 12 hours, doubling with each longer duration.
--- Seen in game: 10s on an item that sells to a vendor for 2g. Real posts teach the exact rates.
-local DEFAULT_RATES = { 0.05, 0.10, 0.20 }
-local DEFAULT_HOURS = { 12, 24, 48 }
+-- WoW Forever lists auctions for 2, 8 or 24 hours (AUCTION_DURATION_ONE/TWO/THREE in its
+-- GlobalStrings) and charges 2.5% of the vendor price per hour at the faction houses: seen in
+-- game, 10s for 2 hours on an item that sells to a vendor for 2g. Its AuctionHouse table has
+-- DepositRate 5 there and 25 at Blackwater (5x). Real posts teach the exact rates.
+local DEFAULT_RATES = { 0.05, 0.20, 0.60 }
+local DEFAULT_HOURS = { 2, 8, 24 }
 ns.DEFAULT_RATES, ns.DEFAULT_HOURS = DEFAULT_RATES, DEFAULT_HOURS
 
 ---------------------------------------------------------------------------

@@ -47,9 +47,9 @@ out for each one, and warns when it's time.
 
 - **Deposit:** read when you post (the game's own deposit for that post). For auctions posted
   before the addon was installed, or by someone else without it, an estimate from the item's
-  vendor price, marked "?": 5% of it for 12 hours, 10% for 24, 20% for 48 (WoW Forever's own
-  deposit table). Each of your posts teaches the real rate for its listing time.
-- **Listing time:** the 12, 24 or 48 hours you posted for; for an auction the addon didn't see
+  vendor price, marked "?": 2.5% of it per hour listed, so 5% for 2 hours, 20% for 8, 60% for
+  24 (5x that at the neutral Blackwater house). Each of your posts teaches the real rate for its listing time.
+- **Listing time:** the 2, 8 or 24 hours you posted for; for an auction the addon didn't see
   posted, judged from its time left and marked "?".
 - **Time left:** the game's own time left when the auction house gives it; otherwise the
   start of its time-left band, marked "about".

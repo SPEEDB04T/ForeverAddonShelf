@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.1.3 (2026-11-16)
+
+- Fix: WoW Forever lists auctions for 2, 8 or 24 hours, not 12, 24 or 48. Listing times now
+  show the right hours, and estimated deposits are 2.5% of the vendor price per hour: 5% for
+  2 hours, 20% for 8, 60% for 24. 1.1.2 still estimated 8- and 24-hour auctions too low.
+
 ## 1.1.2 (2026-11-16)
 
 - Fix: estimated deposits were three times too high (30s where the game took 10s). Estimates
