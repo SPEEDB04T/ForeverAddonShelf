@@ -19,8 +19,10 @@
     /pinata bar         -> colouring the enemy's health bar blue on / off
     /pinata juice       -> a hit knocks the piñata about and sparkles, on / off
     /pinata flow        -> the mana you get flies into your mana bar, on / off
+    /pinata number      -> "+N Mana" by your mana bar when a hit gives you mana, on / off
     /pinata sound       -> the coin sound when a hit gives you mana, on / off (off to start with)
     /pinata preview     -> a stand-in nameplate in mid-screen takes a few blows
+    /pinata stills      -> the same, holding still at four moments for LookShots
     /pinata on|off, /pinata reset, /pinata debug
 ]]
 
@@ -28,6 +30,7 @@ local ADDON_NAME, ns = ...
 
 local PREFIX = "|cff59c8ffMana Piñata|r: "
 local ART    = "Interface\\AddOns\\ManaPinata\\Art\\Pinata"
+local FLASH_ART  = "Interface\\AddOns\\ManaPinata\\Art\\PinataFlash"     -- the piñata's shape in white
 local LEVEL  = 6                       -- frame level above the nameplate
 local SWING_DEGREES, SWING_SECONDS = 9, 1.6
 local DROP_SECONDS = 0.22
@@ -62,6 +65,7 @@ local DEFAULTS = {
     colorBar = true,    -- the enemy's health bar turns blue while the debuff is on it
     juice    = true,    -- a hit knocks the piñata about and sparkles
     manaFlow = true,    -- the mana you get flies from the piñata into your mana bar
+    manaNumber = true,  -- the mana you got, as a number, when the game lets it be read
     sound    = false,   -- the coin sound when a hit gives you mana (off unless chosen: it rings a lot)
 }
 local LIMITS = {
@@ -189,16 +193,33 @@ end
 -- (Blizzard_FrameXML/Mainline/CombatFeedback.lua): a critical or crushing
 -- blow 1.5 times a normal one, a glancing or partly stopped one 0.75. A miss
 -- only makes it sway. A payout is the hit that gave you mana.
--- push/up: how far the piñata is knocked (pixels), pop: how much it swells,
+-- push: how far the piñata is knocked (pixels, for a 44 piñata), lift: how
+-- far it rises at the end of its swing, squash: how much it squashes and
+-- wobbles (1 = the SQUASH table as it is), flash: how white it flashes,
 -- burst: the sparkle's scale from, scale to, seconds.
 local BLOWS = {
-    miss   = { push = 3, up = 0, pop = 1.00 },
-    glance = { push = 4, up = 1, pop = 1.06 },
-    normal = { push = 6, up = 2, pop = 1.12, burst = { 0.55, 1.15, 0.30 } },
-    crit   = { push = 9, up = 3, pop = 1.18, burst = { 0.60, 1.55, 0.36 } },
-    payout = { push = 8, up = 4, pop = 1.28, burst = { 0.50, 2.00, 0.55 } },
+    miss   = { push = 5,  lift = 0, squash = 0.15 },
+    glance = { push = 8,  lift = 2, squash = 0.50, flash = 0.45 },
+    normal = { push = 13, lift = 4, squash = 0.85, flash = 0.75, burst = { 0.55, 1.15, 0.28 } },
+    crit   = { push = 19, lift = 6, squash = 1.15, flash = 1.00, burst = { 0.60, 1.55, 0.34 } },
+    payout = { push = 17, lift = 7, squash = 1.25, flash = 1.00, burst = { 0.50, 1.60, 0.46 } },
 }
 ns.BLOWS = BLOWS
+
+-- The knock, step by step: where the piñata is after each step as a share of
+-- the push (it rises a little at both ends of the swing), and how long each
+-- step takes. The first step is the impact: the piñata stays put for a
+-- moment and only squashes, which is what gives the blow its weight. Then it
+-- snaps away, swings back once past the middle and settles. No long wobble.
+local KNOCK         = { 0, 1, -0.30, 0.08, 0 }
+local KNOCK_SECONDS = { 0.035, 0.065, 0.17, 0.14, 0.12 }
+local KNOCK_EASE    = { "OUT", "OUT", "IN_OUT", "IN_OUT", "IN_OUT" }
+-- The squash over the same steps (width, height), about the top of the
+-- piñata where the rope holds it: flattened by the blow, springing back tall
+-- as it flies, then back into shape. Squashed from below, it never sinks
+-- towards the name under it.
+local SQUASH = { { 1.20, 0.82 }, { 0.93, 1.07 }, { 1.02, 0.98 }, { 1.0, 1.0 }, { 1, 1 } }
+local SQUASH_MAX = 1.6
 
 -- The sparkle: the game's cooldown-finished bling star (CooldownFrame's
 -- default bling texture) in the colour the game gives mana numbers
@@ -208,6 +229,9 @@ local STAR = "Interface\\Cooldown\\star4"
 local ENERGIZE_COLOR = { 0.41, 0.80, 0.94 }
 local BURST_BOX = 100
 local SPARKS, SPARK_RADIUS, SPARK_SIZE = 8, 36, 14
+-- The sparks fan round the top only, a little below level at each side: the
+-- bottom of a full ring would land on the nameplate's name and health bar.
+local SPARK_FROM, SPARK_TO = -0.25, math.pi + 0.25
 
 local function BurstArt(owner)
     local r, g, b = ENERGIZE_COLOR[1], ENERGIZE_COLOR[2], ENERGIZE_COLOR[3]
@@ -220,45 +244,85 @@ local function BurstArt(owner)
         if white then t:SetVertexColor(1, 1, 1, 1) else t:SetVertexColor(r, g, b, 1) end
         return t
     end
-    local stars = { Star(56, 0, 0), Star(28, 0, 0, true) }
+    local stars = { Star(34, 0, 0), Star(16, 0, 0, true) }
+    -- Not a ring: each spark a little nearer or further, bigger or smaller.
+    local SPREAD = { { 1.00, 1.00, 0 }, { 0.80, 0.75, 0.10 }, { 1.12, 1.15, -0.06 }, { 0.88, 0.85, 0.08 },
+                     { 1.08, 1.10, -0.10 }, { 0.82, 0.80, 0.05 }, { 1.15, 1.20, -0.04 }, { 0.92, 0.90, 0 } }
     for i = 1, SPARKS do
-        local angle = (i - 1) * 2 * math.pi / SPARKS
-        stars[#stars + 1] = Star(SPARK_SIZE, SPARK_RADIUS * math.cos(angle), SPARK_RADIUS * math.sin(angle), i % 2 == 0)
+        local s = SPREAD[(i - 1) % #SPREAD + 1]
+        local angle = SPARK_FROM + (i - 1) * (SPARK_TO - SPARK_FROM) / (SPARKS - 1) + s[3]
+        local radius = SPARK_RADIUS * s[1]
+        stars[#stars + 1] = Star(SPARK_SIZE * s[2], radius * math.cos(angle), radius * math.sin(angle), i % 2 == 0)
     end
     return stars
 end
 
--- Knocked aside and up, back past the middle, settled: three moves that add
--- up to nothing, with a swell and its undoing. Played on the addon's own
--- frame that holds the piñata, so it can run in a fight, and it shows only
--- where the game shows a piñata.
+-- The knock and the squash, step by step. Each step moves and scales on from
+-- where the last one left off, and together they add up to nothing. Played
+-- on the addon's own frame that holds the piñata, so it can run in a fight,
+-- and it shows only where the game shows a piñata.
 local function WhackGroup(frame)
     local group = frame:CreateAnimationGroup()
-    local function Step(kind, order, seconds, smoothing)
-        local a = group:CreateAnimation(kind)
-        a:SetOrder(order)
-        a:SetDuration(seconds)
-        if kind == "Scale" then a:SetOrigin("CENTER", 0, 0) end
-        if a.SetSmoothing then a:SetSmoothing(smoothing) end
-        return a
+    group.moves, group.squash = {}, {}
+    for i, seconds in ipairs(KNOCK_SECONDS) do
+        local smoothing = KNOCK_EASE[i]
+        local move = group:CreateAnimation("Translation")
+        move:SetOrder(i)
+        move:SetDuration(seconds)
+        if move.SetSmoothing then move:SetSmoothing(smoothing) end
+        local squash = group:CreateAnimation("Scale")
+        squash:SetOrder(i)
+        squash:SetDuration(seconds)
+        squash:SetOrigin("TOP", 0, 0)
+        if squash.SetSmoothing then squash:SetSmoothing(smoothing) end
+        group.moves[i], group.squash[i] = move, squash
     end
-    group.hit    = Step("Translation", 1, 0.05, "OUT")
-    group.recoil = Step("Translation", 2, 0.13, "IN_OUT")
-    group.settle = Step("Translation", 3, 0.20, "IN_OUT")
-    group.grow   = Step("Scale", 1, 0.05, "OUT")
-    group.shrink = Step("Scale", 2, 0.16, "IN_OUT")
     return group
 end
 
-local function Whack(group, blow, dir)
+-- size: the piñata's size.
+local function Whack(group, blow, dir, size)
     group:Stop()
-    group.hit:SetOffset(dir * blow.push, blow.up)
-    group.recoil:SetOffset(-dir * blow.push * 1.4, -blow.up)
-    group.settle:SetOffset(dir * blow.push * 0.4, 0)
-    group.grow:SetScaleFrom(1, 1)
-    group.grow:SetScaleTo(blow.pop, blow.pop)
-    group.shrink:SetScaleFrom(1, 1)
-    group.shrink:SetScaleTo(1 / blow.pop, 1 / blow.pop)
+    local scale = (size or 44) / 44
+    local push, lift = blow.push * scale, blow.lift * scale
+    local amount = min(blow.squash, SQUASH_MAX)
+    local x0, y0, w0, h0 = 0, 0, 1, 1
+    for i, at in ipairs(KNOCK) do
+        local x, y = dir * push * at, lift * math.abs(at)
+        local w = 1 + amount * (SQUASH[i][1] - 1)
+        local h = 1 + amount * (SQUASH[i][2] - 1)
+        group.moves[i]:SetOffset(x - x0, y - y0)
+        group.squash[i]:SetScaleFrom(1, 1)
+        group.squash[i]:SetScaleTo(w / w0, h / h0)
+        x0, y0, w0, h0 = x, y, w, h
+    end
+    group:Play()
+end
+
+-- The white flash: the piñata's own shape in white, over it, on a frame of
+-- ours that rests invisible and flares for a moment on a blow.
+local FLASH_IN, FLASH_HOLD, FLASH_FADE = 0.02, 0.045, 0.13
+local function FlashGroup(frame)
+    local group = frame:CreateAnimationGroup()
+    if group.SetToFinalAlpha then group:SetToFinalAlpha(true) end
+    local on = group:CreateAnimation("Alpha")
+    on:SetOrder(1)
+    on:SetDuration(FLASH_IN)
+    on:SetFromAlpha(0)
+    local off = group:CreateAnimation("Alpha")
+    off:SetOrder(1)
+    off:SetStartDelay(FLASH_HOLD)
+    off:SetDuration(FLASH_FADE)
+    off:SetToAlpha(0)
+    if off.SetSmoothing then off:SetSmoothing("OUT") end
+    group.on, group.off = on, off
+    return group
+end
+
+local function Flash(group, strength)
+    group:Stop()
+    group.on:SetToAlpha(strength)
+    group.off:SetFromAlpha(strength)
     group:Play()
 end
 
@@ -294,13 +358,14 @@ local function Burst(group, burst)
     group:Play()
 end
 
--- One blow on anything with a whack and a burst group (a piñata, the preview).
--- Blows come from alternate sides, like a stick swung back and forth.
+-- One blow on anything built by BuildRig (a piñata, the preview). Blows come
+-- from alternate sides, like a stick swung back and forth.
 local function Strike(target, kind)
     local blow = BLOWS[kind]
     if not blow then return end
     target.dir = -(target.dir or -1)
-    Whack(target.whack, blow, target.dir)
+    Whack(target.whack, blow, target.dir, db and db.size)
+    if blow.flash then Flash(target.flash, blow.flash) end
     if blow.burst then Burst(target.burst, blow.burst) end
     target.lastBlow = kind
 end
@@ -360,18 +425,43 @@ ns.pinatas, ns.active = pinatas, active
 local testing = false                  -- test piñatas on every nameplate
 local swingPending, swingNoted = false, false
 
--- The two things the game draws for us, each on an aura slot of its own:
--- the piñata above the nameplate and the blue over the health bar. One
--- failing does not take the other down. `field` is where a piñata keeps
--- that container; `error` is set while the game refuses.
+-- The things the game draws for us, each on an aura slot of its own: the
+-- piñata above the nameplate, the blue over the health bar, and for hits the
+-- sparkle and the white flash. One failing does not take another down. `field` is where a piñata keeps that
+-- container; `error` is set while the game refuses.
 local NATIVE = {
     icon = { slot = "ManaPinata", field = "container", tries = 0,
              warn = "the game would not let the piñata onto the nameplates, so none will show." },
     bar  = { slot = "ManaPinataBar", field = "barContainer", tries = 0,
              warn = "the game would not let the health bar be coloured, so it keeps its own colour." },
-    burst = { slot = "ManaPinataBurst", field = "burstContainer", tries = 0,
+    burst = { slot = "ManaPinataBurst", field = "burstContainer", tries = 0, name = "sparkle",
              warn = "the game would not let the hit sparkle onto the nameplates, so a hit only knocks the piñata about." },
+    flash = { slot = "ManaPinataFlash", field = "flashContainer", tries = 0, name = "white flash",
+             warn = "the game would not let the white hit flash onto the nameplates; the rest of a hit still shows." },
 }
+-- The hit slots, in the order they are made.
+local HIT_SLOTS = { "burst", "flash" }
+
+-- The piñata and its flash swing and drop as one: each picture
+-- gets the same swing and drop, which the client starts on all of them when
+-- the debuff shows. Kept per picture so the swing setting can reach them all.
+local function Dress(p, key, button, tex)
+    local swing = SwingGroup(tex)
+    local entry = { button = button, swing = swing, on = false }
+    if db.swing then
+        button:AddAuraShownAnimation(swing)     -- the client plays it while the debuff is up
+        entry.on = true
+    end
+    -- An extra: if this client can't do it, the piñata simply appears.
+    pcall(function()
+        local drop = DropGroup(tex)
+        button:AddAuraAssignedAnimation(drop)
+        entry.drop = drop
+    end)
+    p.swingers = p.swingers or {}
+    p.swingers[key] = entry
+    return entry
+end
 
 -- Everything on the button has to happen in here. The client calls this from
 -- inside AddAuraSlot, and in a fight it locks the button and all its children
@@ -382,18 +472,22 @@ local function SetupButton(p, container, button)
     button:SetAllPoints(container)
     button:SetFrameLevel((container:GetFrameLevel() or 0) + 1)
     local tex = Art(button)
-    p.button, p.tex = button, tex
-    p.swing = SwingGroup(tex)
-    if db.swing then
-        button:AddAuraShownAnimation(p.swing)   -- the client plays it while the debuff is up
-        p.swinging = true
+    local entry = Dress(p, "icon", button, tex)
+    p.button, p.tex, p.swing, p.drop, p.swinging = button, tex, entry.swing, entry.drop, entry.on
+end
+
+-- A picture laid over the piñata (the flash), the same size and swinging with it.
+local function OverlaySetup(key, art)
+    return function(p, container, button)
+        button:EnableMouse(false)
+        button:ClearAllPoints()
+        button:SetAllPoints(container)
+        button:SetFrameLevel((container:GetFrameLevel() or 0) + 1)
+        local tex = button:CreateTexture(nil, "ARTWORK")
+        tex:SetTexture(art)
+        tex:SetAllPoints(button)
+        Dress(p, key, button, tex)
     end
-    -- An extra: if this client can't do it, the piñata simply appears.
-    pcall(function()
-        local drop = DropGroup(tex)
-        button:AddAuraAssignedAnimation(drop)
-        p.drop = drop
-    end)
 end
 
 -- The same rule for the button that colours the health bar: all of it in here.
@@ -417,6 +511,11 @@ local function SetupBurst(p, container, button)
     BurstArt(button)
     p.burstButton = button
 end
+
+-- Which of the piñata's own frames each slot goes in, and how its button is dressed.
+local SLOT_PARENT = { icon = "holder", bar = "barHolder", burst = "burstHolder", flash = "flashHolder" }
+local SLOT_SETUP = { icon = SetupButton, bar = SetupBar, burst = SetupBurst,
+    flash = OverlaySetup("flash", FLASH_ART) }
 
 -- One aura container filling `parent`, with one slot that only takes
 -- Judgement of Wisdom and whose button is dressed by `setup`.
@@ -447,17 +546,13 @@ local function BuildNative(p, slot, parent, setup, level)
     return container
 end
 
+local warnedSlots = {}
 local function TryNative(p, kind)
     local state = NATIVE[kind]
     if p[state.field] or state.error then return end
-    local ok, result
-    if kind == "icon" then
-        ok, result = pcall(BuildNative, p, state.slot, p.holder, SetupButton)
-    elseif kind == "bar" then
-        ok, result = pcall(BuildNative, p, state.slot, p.barHolder, SetupBar, p.barHolder:GetFrameLevel())
-    else
-        ok, result = pcall(BuildNative, p, state.slot, p.burstHolder, SetupBurst, p.burstHolder:GetFrameLevel())
-    end
+    local parent = p[SLOT_PARENT[kind]]
+    local level = kind ~= "icon" and parent:GetFrameLevel() or nil
+    local ok, result = pcall(BuildNative, p, state.slot, parent, SLOT_SETUP[kind], level)
     if ok then
         p[state.field] = result
         return
@@ -466,17 +561,20 @@ local function TryNative(p, kind)
         pcall(function() p.spare:SetEnabled(false); p.spare:Hide() end)
         p.spare = nil
     end
+    if p.swingers then p.swingers[kind] = nil end
     if kind == "icon" then
         p.button, p.tex, p.swing, p.drop, p.swinging = nil, nil, nil, nil, nil
     elseif kind == "bar" then
         p.barButton, p.barTex = nil, nil
-    else
+    elseif kind == "burst" then
         p.burstButton = nil
     end
     state.error = (issecret and issecret(result)) and "hidden by the game" or tostring(result)
     state.tries = state.tries + 1
-    if not state.warned then
-        state.warned = true
+    -- One line for all the hit slots: if one is refused, the others likely are too.
+    local key = state.name and "hits" or kind
+    if not warnedSlots[key] then
+        warnedSlots[key] = true
         print(PREFIX .. state.warn .. " /pinata debug prints what went wrong.")
     end
 end
@@ -538,51 +636,97 @@ local function EnsureBar(p)
     return true
 end
 
-local function Build(plate)
-    local p = { plate = plate }
-    local holder = CreateFrame("Frame", nil, plate)
-    holder:SetFrameLevel((plate:GetFrameLevel() or 0) + LEVEL)
+-- The addon's own frames a piñata is drawn in, on a nameplate or on the
+-- preview. The holder carries the piñata; over it, a frame for the white
+-- flash, which moves with it. The sparkle sits beside it, on `parent`, so it
+-- stays where the blow landed while the piñata is knocked away. On a nameplate the game's aura slots go
+-- into these frames; the test piñata and the preview draw the same art
+-- straight onto them (the `...Test` pictures), which needs no debuff.
+local function BuildRig(parent)
+    local r = {}
+    local holder = CreateFrame("Frame", nil, parent)
     holder:Hide()
-    p.holder = holder
-    -- The test piñata is the addon's own picture: it can be shown without any debuff.
-    p.test = Art(holder)
-    p.test:Hide()
-    p.testSwing = SwingGroup(p.test)
-    p.whack = WhackGroup(holder)
-    -- The sparkle sits on the nameplate, not in the piñata's frame, so it stays
-    -- where the blow landed while the piñata is knocked away from it.
-    local burstHolder = CreateFrame("Frame", nil, plate)
-    burstHolder:SetSize(BURST_BOX, BURST_BOX)
-    burstHolder:SetFrameLevel((plate:GetFrameLevel() or 0) + LEVEL + 1)
-    burstHolder:SetAlpha(0)
-    burstHolder:Hide()
-    p.burstHolder = burstHolder
-    local burstTest = CreateFrame("Frame", nil, burstHolder)
-    burstTest:SetAllPoints(burstHolder)
-    BurstArt(burstTest)
-    burstTest:Hide()
-    p.burstTest = burstTest
-    p.burst = BurstGroup(burstHolder)
-    pinatas[plate] = p
-    return p
+    r.holder = holder
+    r.test = Art(holder)
+    r.test:Hide()
+    local function Overlay(art)
+        local frame = CreateFrame("Frame", nil, holder)
+        frame:SetAllPoints(holder)
+        frame:SetAlpha(0)
+        local tex = frame:CreateTexture(nil, "ARTWORK")
+        tex:SetTexture(art)
+        tex:SetAllPoints(frame)
+        tex:Hide()
+        return frame, tex
+    end
+    r.flashHolder, r.flashTest = Overlay(FLASH_ART)
+    r.testSwings = { SwingGroup(r.test), SwingGroup(r.flashTest) }
+    local burst = CreateFrame("Frame", nil, parent)
+    burst:SetSize(BURST_BOX, BURST_BOX)
+    burst:SetAlpha(0)
+    burst:Hide()
+    local test = CreateFrame("Frame", nil, burst)
+    test:SetAllPoints(burst)
+    BurstArt(test)
+    test:Hide()
+    r.burstHolder, r.burstTest = burst, test
+    r.whack = WhackGroup(holder)
+    r.flash = FlashGroup(r.flashHolder)
+    r.burst = BurstGroup(r.burstHolder)
+    return r
+end
+
+-- Frame levels from the piñata's own up: the flash, then the sparkle on top.
+local function RigLevels(r, base)
+    r.holder:SetFrameLevel(base)
+    r.flashHolder:SetFrameLevel(base + 3)
+    r.burstHolder:SetFrameLevel(base + 5)
 end
 
 -- The sparkle's 100 x 100 box is scaled so a 44 piñata gets an 88 box.
 local function BurstScale() return db.size / 50 end
 
+-- Size and place a rig's piñata `x`, `y` from the point it hangs from.
+local function RigLayout(r, anchor, x, y)
+    r.holder:SetSize(db.size, db.size)
+    r.holder:ClearAllPoints()
+    r.holder:SetPoint("BOTTOM", anchor, "TOP", x, y)
+    r.burstHolder:SetScale(BurstScale())
+    r.burstHolder:ClearAllPoints()
+    r.burstHolder:SetPoint("CENTER", r.holder, "CENTER", 0, 0)
+end
+
+-- The test pictures on or off, swinging if swing is on.
+local function ShowTestArt(r, on)
+    for _, region in ipairs({ r.test, r.flashTest, r.burstTest }) do
+        if on then region:Show() else region:Hide() end
+    end
+    for _, group in ipairs(r.testSwings) do
+        if on and db.swing then
+            if not group:IsPlaying() then group:Play() end
+        else
+            group:Stop()
+        end
+    end
+end
+
+local function Build(plate)
+    local p = BuildRig(plate)
+    p.plate = plate
+    RigLevels(p, (plate:GetFrameLevel() or 0) + LEVEL)
+    pinatas[plate] = p
+    return p
+end
+
 local function Layout(p)
-    p.holder:SetSize(db.size, db.size)
-    p.holder:ClearAllPoints()
-    p.holder:SetPoint("BOTTOM", p.plate, "TOP", db.xOffset, db.yOffset)
-    p.burstHolder:SetScale(BurstScale())
-    p.burstHolder:ClearAllPoints()
-    p.burstHolder:SetPoint("CENTER", p.holder, "CENTER", 0, 0)
+    RigLayout(p, p.plate, db.xOffset, db.yOffset)
 end
 
 -- Ends any blow still playing, so a nameplate handed to another enemy starts still.
 local function StillJuice(target)
-    if target.whack then target.whack:Stop() end
-    if target.burst then target.burst:Stop() end
+    for _, key in ipairs({ "whack", "flash", "burst" }) do
+        if target[key] then target[key]:Stop() end
+    end
 end
 
 -- Points a container at a unit, or switches it off (unit nil). Returns the
@@ -628,42 +772,35 @@ local function Apply(p)
     local unit = p.unit
     if not unit then
         Switch(p.container, nil)
-        Switch(p.burstContainer, nil)
+        for _, kind in ipairs(HIT_SLOTS) do Switch(p[NATIVE[kind].field], nil) end
         ApplyBar(p, nil, false)
         StillJuice(p)
-        p.testSwing:Stop()
-        p.test:Hide()
+        ShowTestArt(p, false)
         p.holder:Hide()
         p.burstHolder:Hide()
         return
     end
 
     Layout(p)
-    local level = (p.plate:GetFrameLevel() or 0) + LEVEL
-    p.holder:SetFrameLevel(level)
-    p.burstHolder:SetFrameLevel(level + 1)
+    RigLevels(p, (p.plate:GetFrameLevel() or 0) + LEVEL)
     local live = db.enabled and not testing
     if live then TryNative(p, "icon") end
-    local iconErr = Switch(p.container, live and unit or nil)
-    local barErr = ApplyBar(p, unit, live)
+    local errors = { Switch(p.container, live and unit or nil), ApplyBar(p, unit, live) }
     local sparkle = live and db.juice
-    if sparkle then TryNative(p, "burst") end
-    local burstErr = Switch(p.burstContainer, sparkle and unit or nil)
-    p.bindError = iconErr or barErr or burstErr
-    if testing and db.juice then p.burstTest:Show() else p.burstTest:Hide() end
-    if db.juice then p.burstHolder:Show() else StillJuice(p); p.burstHolder:Hide() end
-
-    if testing then
-        p.test:Show()
-        if db.swing then
-            if not p.testSwing:IsPlaying() then p.testSwing:Play() end
-        else
-            p.testSwing:Stop()
-        end
-    else
-        p.testSwing:Stop()
-        p.test:Hide()
+    for _, kind in ipairs(HIT_SLOTS) do
+        if sparkle then TryNative(p, kind) end
+        errors[#errors + 1] = Switch(p[NATIVE[kind].field], sparkle and unit or nil)
     end
+    local err
+    for i = 1, 2 + #HIT_SLOTS do err = err or errors[i] end
+    p.bindError = err
+    ShowTestArt(p, testing)
+    if not db.juice then
+        p.burstTest:Hide()
+        p.flashTest:Hide()
+        StillJuice(p)
+    end
+    if db.juice then p.burstHolder:Show() else p.burstHolder:Hide() end
     p.holder:Show()
 end
 
@@ -738,29 +875,32 @@ end
 -- fight, so a change that is refused is done when the fight ends.
 local function ApplySwing()
     swingPending = false
+    local want = db.swing
     for _, p in pairs(pinatas) do
-        if p.button and p.swing and (p.swinging or false) ~= db.swing then
-            local want = db.swing
-            local ok = pcall(function()
-                if want then
-                    p.button:AddAuraShownAnimation(p.swing)
-                else
-                    p.button:RemoveAuraShownAnimation(p.swing)
-                end
-            end)
-            if ok then
-                p.swinging = want
-                -- Start or stop it now if the piñata is up; refused in a fight, which is fine:
-                -- the game starts it the next time the debuff lands.
-                pcall(function()
-                    if not want then
-                        p.swing:Stop()
-                    elseif p.button:IsShown() then
-                        p.swing:Play()
+        for key, entry in pairs(p.swingers or {}) do
+            if entry.on ~= want then
+                local ok = pcall(function()
+                    if want then
+                        entry.button:AddAuraShownAnimation(entry.swing)
+                    else
+                        entry.button:RemoveAuraShownAnimation(entry.swing)
                     end
                 end)
-            else
-                swingPending = true
+                if ok then
+                    entry.on = want
+                    if key == "icon" then p.swinging = want end
+                    -- Start or stop it now if the piñata is up; refused in a fight, which is fine:
+                    -- the game starts it the next time the debuff lands.
+                    pcall(function()
+                        if not want then
+                            entry.swing:Stop()
+                        elseif entry.button:IsShown() then
+                            entry.swing:Play()
+                        end
+                    end)
+                else
+                    swingPending = true
+                end
             end
         end
     end
@@ -828,17 +968,41 @@ local function ManaUser()
 end
 
 ---------------------------------------------------------------------------
--- The mana going to you: blue sparks fly from the piñata into your mana bar
--- on the player frame, which lights up where they land.
+-- The mana going to you: blue sparks arc from the piñata into your mana bar
+-- on the player frame, the bar surges, and the mana you got rises from it.
 ---------------------------------------------------------------------------
+-- A small number generator with a fixed start, so every payout throws the
+-- same well-spread pattern (and the offline test can check it).
+local function Dice(seed)
+    return function(a, b)
+        seed = (seed * 1103515245 + 12345) % 2147483648
+        return a + (b - a) * seed / 2147483648
+    end
+end
+
 -- How the sparks travel without knowing where anything is (a nameplate's
 -- place on screen is hidden from addons): each spark is drawn at the
 -- piñata, in a frame of ours whose centre sits on the end of your mana bar.
 -- That frame then shrinks to nothing around its centre, which pulls the
 -- spark from the piñata into the bar. The game works out both places.
-local ORB_SECONDS, ORB_STAGGER, ORB_SIZE = 0.45, 0.05, 18
-local ORB_SPREAD = { { 0, 0 }, { -10, 6 }, { 10, 4 }, { -6, -8 }, { 7, -6 }, { 0, 11 } }
-local FLASH_IN, FLASH_OUT = 0.06, 0.35
+-- The arc: the whole rig slides up and back on the way, so the sparks pour
+-- over in one curved stream, each a little higher or lower than the last.
+-- Keeping its size: shrinking the frame would shrink the spark too, to a dot
+-- long before the bar. So the pull runs in ORB_STEPS steps, each halving the
+-- frame, while the picture grows by as much in the same steps: the spark
+-- keeps its size (within an eighth) the whole way. The steps get shorter, so
+-- the spark speeds up as it is drawn in.
+local ORB_COUNT, ORB_SECONDS, ORB_STAGGER = 10, 0.56, 0.035
+local ORB_THROW = ORB_SECONDS * 0.45        -- the bend is widest a little before halfway
+local ORB_SIZES = { 26, 16, 21, 14 }
+local ORB_STEPS, ORB_STEP = 6, 0.5            -- ends 1.6% of the way out: on the bar
+local ORB_FADE = 0.05                         -- fades as it lands, not before
+-- When each step ends, as a share of the flight: the distance left after
+-- step k is ORB_STEP^k, and an even pull-in covers it by sqrt(1 - left).
+local ORB_STEP_ENDS = {}
+for k = 1, ORB_STEPS do ORB_STEP_ENDS[k] = math.sqrt(1 - ORB_STEP ^ k) end
+ORB_STEP_ENDS[ORB_STEPS] = 1
+local SURGE_IN, SURGE_OUT, SURGE_SWEEP = 0.06, 0.55, 0.30
 local flow                 -- built on the first payout
 ns.Flow = function() return flow end
 
@@ -863,12 +1027,25 @@ local function GlowArt(tex, fill)
     tex:SetVertexColor(ENERGIZE_COLOR[1], ENERGIZE_COLOR[2], ENERGIZE_COLOR[3], 1)
 end
 
+local function Glint(owner, width, height, white)
+    local t = owner:CreateTexture(nil, "OVERLAY")
+    t:SetTexture(STAR)
+    t:SetBlendMode("ADD")
+    t:SetSize(width, height)
+    if white then t:SetVertexColor(1, 1, 1, 1)
+    else t:SetVertexColor(ENERGIZE_COLOR[1], ENERGIZE_COLOR[2], ENERGIZE_COLOR[3], 1) end
+    return t
+end
+
 local function BuildFlow(bar, fill)
     local okS, strata = pcall(bar.GetFrameStrata, bar)
     strata = (okS and type(strata) == "string") and strata or "MEDIUM"
     local level = (bar.GetFrameLevel and bar:GetFrameLevel() or 0) + 5
+    local okH, height = pcall(bar.GetHeight, bar)
+    height = (okH and PlainNumber(height) and height > 0) and height or 10
     local fx = { bar = bar, fill = fill, orbs = {} }
 
+    -- The surge: the bar flares up and swells for a moment.
     local flash = CreateFrame("Frame", nil, UIParent)
     flash:SetFrameStrata(strata)
     flash:SetFrameLevel(level)
@@ -878,75 +1055,145 @@ local function BuildFlow(bar, fill)
     local glow = flash:CreateTexture(nil, "OVERLAY")
     GlowArt(glow, fill)
     glow:SetAllPoints(fill)
-    local spark = CreateFrame("Frame", nil, flash)       -- a small burst where the mana lands
-    spark:SetSize(BURST_BOX, BURST_BOX)
-    spark:SetScale(0.45)
-    spark:SetPoint("CENTER", fill, "RIGHT", 0, 0)
-    BurstArt(spark)
     local group = flash:CreateAnimationGroup()
-    local flashIn = group:CreateAnimation("Alpha")
-    flashIn:SetOrder(1)
-    flashIn:SetDuration(FLASH_IN)
+    local function Step(g, kind, seconds, smoothing)
+        local a = g:CreateAnimation(kind)
+        a:SetOrder(1)
+        a:SetDuration(seconds)
+        if kind == "Scale" then a:SetOrigin("CENTER", 0, 0) end
+        if smoothing and a.SetSmoothing then a:SetSmoothing(smoothing) end
+        return a
+    end
+    local flashIn = Step(group, "Alpha", SURGE_IN)
     flashIn:SetFromAlpha(0)
     flashIn:SetToAlpha(1)
-    local flashOut = group:CreateAnimation("Alpha")
-    flashOut:SetOrder(1)
-    flashOut:SetDuration(FLASH_OUT)
+    local flashOut = Step(group, "Alpha", SURGE_OUT, "IN")
     flashOut:SetFromAlpha(1)
     flashOut:SetToAlpha(0)
-    if flashOut.SetSmoothing then flashOut:SetSmoothing("IN") end
-    local sparkGroup = spark:CreateAnimationGroup()
-    local sparkGrow = sparkGroup:CreateAnimation("Scale")
-    sparkGrow:SetOrder(1)
-    sparkGrow:SetOrigin("CENTER", 0, 0)
-    sparkGrow:SetDuration(FLASH_IN + FLASH_OUT)
-    sparkGrow:SetScaleFrom(0.5, 0.5)
-    sparkGrow:SetScaleTo(1.4, 1.4)
-    if sparkGrow.SetSmoothing then sparkGrow:SetSmoothing("OUT") end
-    fx.flash, fx.glow, fx.spark = flash, glow, spark
-    fx.group, fx.flashIn, fx.flashOut = group, flashIn, flashOut
-    fx.sparkGroup, fx.sparkGrow = sparkGroup, sparkGrow
+    local swell = Step(group, "Scale", 0.08, "OUT")
+    swell:SetScaleFrom(1, 1)
+    swell:SetScaleTo(1, 1.6)
+    local ebb = Step(group, "Scale", 0.30, "IN_OUT")
+    ebb:SetScaleFrom(1, 1)
+    ebb:SetScaleTo(1, 1 / 1.6)
+    fx.flash, fx.glow, fx.group = flash, glow, group
+    -- For LookShots: the bar and the room beside it where the number rises.
+    local capture = CreateFrame("Frame", nil, UIParent)
+    capture:SetPoint("TOPLEFT", bar, "TOPLEFT", 0, 30)
+    capture:SetPoint("BOTTOMRIGHT", bar, "BOTTOMRIGHT", 150, 0)
+    capture:EnableMouse(false)
+    fx.capture = capture
+    fx.flashIn, fx.flashOut, fx.swell, fx.ebb = flashIn, flashOut, swell, ebb
 
-    for i, spread in ipairs(ORB_SPREAD) do
-        local orb = CreateFrame("Frame", nil, UIParent)
+    -- A glint that runs along the bar from its start to the end of the fill:
+    -- the picture sits on the fill's end, in a frame whose centre is the bar's
+    -- start, grown from nothing (the same trick as the sparks, the other way).
+    local sweep = CreateFrame("Frame", nil, UIParent)
+    sweep:SetFrameStrata(strata)
+    sweep:SetFrameLevel(level + 2)
+    sweep:SetSize(1, 1)
+    sweep:SetPoint("CENTER", bar, "LEFT", 0, 0)
+    sweep:SetAlpha(0)
+    sweep:EnableMouse(false)
+    local glintWide = Glint(sweep, 44, height * 2.2)
+    glintWide:SetPoint("CENTER", fill, "RIGHT", 0, 0)
+    local glint = Glint(sweep, 16, height * 3, true)
+    glint:SetPoint("CENTER", fill, "RIGHT", 0, 0)
+    local sweepGroup = sweep:CreateAnimationGroup()
+    if sweepGroup.SetToFinalAlpha then sweepGroup:SetToFinalAlpha(true) end
+    local sweepIn = Step(sweepGroup, "Alpha", 0.04)
+    sweepIn:SetFromAlpha(0)
+    sweepIn:SetToAlpha(1)
+    local run = Step(sweepGroup, "Scale", SURGE_SWEEP, "OUT")
+    run:SetScaleFrom(0.05, 0.05)
+    run:SetScaleTo(1, 1)
+    local sweepOut = Step(sweepGroup, "Alpha", 0.16, "IN")
+    sweepOut:SetFromAlpha(1)
+    sweepOut:SetToAlpha(0)
+    fx.sweep, fx.sweepGroup, fx.sweepIn, fx.run, fx.sweepOut = sweep, sweepGroup, sweepIn, run, sweepOut
+
+    -- A burst where the glint ends.
+    local spark = CreateFrame("Frame", nil, UIParent)
+    spark:SetFrameStrata(strata)
+    spark:SetFrameLevel(level + 3)
+    spark:SetSize(BURST_BOX, BURST_BOX)
+    spark:SetScale(0.5)
+    spark:SetPoint("CENTER", fill, "RIGHT", 0, 0)
+    spark:SetAlpha(0)
+    spark:EnableMouse(false)
+    BurstArt(spark)
+    local sparkGroup = spark:CreateAnimationGroup()
+    if sparkGroup.SetToFinalAlpha then sparkGroup:SetToFinalAlpha(true) end
+    local sparkIn = Step(sparkGroup, "Alpha", 0.03)
+    sparkIn:SetFromAlpha(0)
+    sparkIn:SetToAlpha(1)
+    local sparkGrow = Step(sparkGroup, "Scale", 0.4, "OUT")
+    sparkGrow:SetScaleFrom(0.4, 0.4)
+    sparkGrow:SetScaleTo(1.5, 1.5)
+    local sparkOut = Step(sparkGroup, "Alpha", 0.3, "IN")
+    sparkOut:SetFromAlpha(1)
+    sparkOut:SetToAlpha(0)
+    fx.spark, fx.sparkGroup, fx.sparkIn, fx.sparkGrow, fx.sparkOut = spark, sparkGroup, sparkIn, sparkGrow, sparkOut
+
+    local roll = Dice(3)
+    for i = 1, ORB_COUNT do
+        -- The bend: a frame of ours on the bar's end that slides out to one
+        -- side and back while the spark flies. It carries the shrinking frame
+        -- inside it, so the bend is in plain screen pixels and the spark
+        -- swings round in a curve instead of running straight.
+        local path = CreateFrame("Frame", nil, UIParent)
+        path:SetFrameStrata(strata)
+        path:SetFrameLevel(level + 1)
+        path:SetSize(1, 1)
+        path:SetPoint("CENTER", fill, "RIGHT", 0, 0)
+        path:EnableMouse(false)
+        local orb = CreateFrame("Frame", nil, path)
         orb:SetFrameStrata(strata)
         orb:SetFrameLevel(level + 1)
         orb:SetSize(1, 1)
-        orb:SetPoint("CENTER", fill, "RIGHT", 0, 0)
+        orb:SetPoint("CENTER", path, "CENTER", 0, 0)
         orb:SetAlpha(0)
         orb:EnableMouse(false)
-        local tex = orb:CreateTexture(nil, "OVERLAY")
-        tex:SetTexture(STAR)
-        tex:SetBlendMode("ADD")
-        tex:SetSize(ORB_SIZE, ORB_SIZE)
-        if i % 2 == 0 then tex:SetVertexColor(1, 1, 1, 1)
-        else tex:SetVertexColor(ENERGIZE_COLOR[1], ENERGIZE_COLOR[2], ENERGIZE_COLOR[3], 1) end
+        local size = ORB_SIZES[(i - 1) % #ORB_SIZES + 1]
+        local tex = Glint(orb, size, size, i % 3 == 2)
         local g = orb:CreateAnimationGroup()
-        local fadeIn = g:CreateAnimation("Alpha")
-        fadeIn:SetOrder(1)
-        fadeIn:SetDuration(0.06)
+        if g.SetToFinalAlpha then g:SetToFinalAlpha(true) end
+        local fadeIn = Step(g, "Alpha", 0.05)
         fadeIn:SetFromAlpha(0)
         fadeIn:SetToAlpha(1)
-        local pull = g:CreateAnimation("Scale")
-        pull:SetOrder(1)
-        pull:SetOrigin("CENTER", 0, 0)
-        pull:SetDuration(ORB_SECONDS)
-        pull:SetScaleFrom(1, 1)
-        pull:SetScaleTo(0.02, 0.02)
-        if pull.SetSmoothing then pull:SetSmoothing("IN") end
-        local fadeOut = g:CreateAnimation("Alpha")
-        fadeOut:SetOrder(1)
-        fadeOut:SetDuration(0.08)
+        local fadeOut = Step(g, "Alpha", ORB_FADE)
         fadeOut:SetFromAlpha(1)
         fadeOut:SetToAlpha(0)
-        fx.orbs[i] = { frame = orb, tex = tex, group = g, fadeIn = fadeIn, pull = pull, fadeOut = fadeOut,
-            dx = spread[1], dy = spread[2] }
+        local arc = path:CreateAnimationGroup()
+        local out = Step(arc, "Translation", ORB_THROW, "OUT")
+        local back = Step(arc, "Translation", ORB_SECONDS - ORB_THROW, "IN")
+        -- Close paths and an even spread over them, so the sparks read as one
+        -- stream, not a scatter that clumps.
+        local bx, by = roll(-10, 10), 64 + ((i * 3) % ORB_COUNT) * 3
+        out:SetOffset(bx, by)
+        back:SetOffset(-bx, -by)
+        -- The picture's growth that undoes the pull's shrinking.
+        local keep = tex:CreateAnimationGroup()
+        local pulls, grows = {}, {}
+        for k = 1, ORB_STEPS do
+            local seconds = ORB_SECONDS * (ORB_STEP_ENDS[k] - (ORB_STEP_ENDS[k - 1] or 0))
+            local pull = Step(g, "Scale", seconds)
+            pull:SetScaleFrom(1, 1)
+            pull:SetScaleTo(ORB_STEP, ORB_STEP)
+            local grow = Step(keep, "Scale", seconds)
+            grow:SetScaleFrom(1, 1)
+            grow:SetScaleTo(1 / ORB_STEP, 1 / ORB_STEP)
+            pulls[k], grows[k] = pull, grow
+        end
+        fx.orbs[i] = { path = path, frame = orb, tex = tex, group = g, fadeIn = fadeIn, pulls = pulls,
+            keep = keep, grows = grows, fadeOut = fadeOut, arc = arc, out = out, back = back,
+            dx = roll(-8, 8), dy = roll(-6, 8) }
     end
     return fx
 end
 
 -- Sends the mana from `from` (the piñata's frame; nil: none on screen, the
--- bar only lights up) into your mana bar. Does nothing without a visible bar.
+-- bar only surges) into your mana bar. Does nothing without a visible bar.
 local function Flow(from)
     if not (db.enabled and db.manaFlow) then return end
     local bar, fill = ManaBar()
@@ -960,33 +1207,193 @@ local function Flow(from)
     else
         pcall(GlowArt, flow.glow, fill)              -- keep up with a restyled bar
     end
-    local land = 0
+    local land, last = 0, 0
     if from then
         for i, orb in ipairs(flow.orbs) do
             local delay = (i - 1) * ORB_STAGGER
             orb.group:Stop()
+            orb.arc:Stop()
+            orb.keep:Stop()
             orb.tex:ClearAllPoints()
             orb.tex:SetPoint("CENTER", from, "CENTER", orb.dx, orb.dy)
             orb.fadeIn:SetStartDelay(delay)
-            orb.pull:SetStartDelay(delay)
-            orb.fadeOut:SetStartDelay(delay + ORB_SECONDS - 0.08)
+            for k = 1, ORB_STEPS do
+                local at = delay + ORB_SECONDS * (ORB_STEP_ENDS[k - 1] or 0)
+                orb.pulls[k]:SetStartDelay(at)
+                orb.grows[k]:SetStartDelay(at)
+            end
+            orb.fadeOut:SetStartDelay(delay + ORB_SECONDS - 0.01)
+            orb.out:SetStartDelay(delay)
+            orb.back:SetStartDelay(delay + ORB_THROW)
             orb.group:Play()
+            orb.arc:Play()
+            orb.keep:Play()
         end
-        land = ORB_SECONDS * 0.85                      -- the bar lights up as the first sparks arrive
+        land = ORB_SECONDS * 0.9                       -- the bar surges as the first sparks arrive
+        last = (ORB_COUNT - 1) * ORB_STAGGER           -- and stays lit while the rest pour in
     end
     flow.group:Stop()
+    flow.sweepGroup:Stop()
     flow.sparkGroup:Stop()
     flow.flashIn:SetStartDelay(land)
-    flow.flashOut:SetStartDelay(land + FLASH_IN)
-    flow.sparkGrow:SetStartDelay(land)
+    flow.flashOut:SetStartDelay(land + SURGE_IN + last)
+    flow.swell:SetStartDelay(land)
+    flow.ebb:SetStartDelay(land + 0.08)
+    flow.sweepIn:SetStartDelay(land)
+    flow.run:SetStartDelay(land)
+    flow.sweepOut:SetStartDelay(land + SURGE_SWEEP - 0.08)
+    local burstAt = land + SURGE_SWEEP - 0.1
+    flow.sparkIn:SetStartDelay(burstAt)
+    flow.sparkGrow:SetStartDelay(burstAt)
+    flow.sparkOut:SetStartDelay(burstAt + 0.1)
     flow.group:Play()
+    flow.sweepGroup:Play()
     flow.sparkGroup:Play()
     flow.from = from
+    -- When the number should pop: halfway through the stream's arrival, so it
+    -- lands with the bulk of the sparks rather than the first one.
+    return land + last * 0.5
 end
 ns.FlowTo = Flow
 
+---------------------------------------------------------------------------
+-- The mana you got, as a number
+---------------------------------------------------------------------------
+-- Read, never guessed: with no real amount there is no number. Two places
+-- to read it from: the amount on the game's own ENERGIZE hit message, when
+-- the client lets addons see it, else the step up in your own mana at the
+-- moment of the payout (your own mana stays readable in a fight). Of the
+-- steps close to the payout, the closest in time counts.
+local GAIN_WINDOW = 0.2                 -- seconds either side of the payout
+local manaSeen                          -- your mana at the last update
+local rises = {}                        -- recent steps up: { at = time, gain = mana }
+local energized                         -- the last readable ENERGIZE amount: { at, amount }
+
+local function ReadMana()
+    if type(UnitPower) ~= "function" then return end
+    local ok, v = pcall(UnitPower, "player", 0)
+    if ok and PlainNumber(v) then return v end
+end
+
+-- UNIT_POWER_FREQUENT for your mana.
+local function OnMana()
+    local v, now = ReadMana(), Now()
+    if v and manaSeen and v > manaSeen then
+        rises[#rises + 1] = { at = now, gain = v - manaSeen }
+    end
+    manaSeen = v
+    while rises[1] and now - rises[1].at > 2 do table.remove(rises, 1) end
+end
+ns.OnMana = OnMana
+
+-- The UNIT_COMBAT amount of an ENERGIZE on you, if the client shows it.
+local function NoteEnergize(amount)
+    if PlainNumber(amount) and amount > 0 then energized = { at = Now(), amount = amount } end
+end
+
+-- The mana a payout at `at` gave you, or nil.
+local function GainAt(at)
+    if energized and math.abs(energized.at - at) <= GAIN_WINDOW then return floor(energized.amount + 0.5) end
+    local best
+    for _, rise in ipairs(rises) do
+        local off = math.abs(rise.at - at)
+        if off <= GAIN_WINDOW and (not best or off < best.off or (off == best.off and rise.gain > best.gain)) then
+            best = { off = off, gain = rise.gain }
+        end
+    end
+    if best and best.gain >= 1 then return floor(best.gain + 0.5) end
+end
+ns.GainAt = GainAt
+
+-- The number: the font the game's unit frames show hit numbers in
+-- (CombatFeedback), in its ENERGIZE colour, written the way the game's
+-- floating combat text writes a mana gain. It pops in a little big, snaps
+-- to size, rises and fades. Beside the end of your mana bar, where the
+-- sparks land, so it covers nothing on the player frame; above the piñata
+-- when your mana bar isn't the game's own.
+local GAIN_POP, GAIN_RISE, GAIN_SECONDS, GAIN_HOLD = 1.8, 26, 1.15, 0.55
+local gain
+ns.Gain = function() return gain end
+
+local function BuildGain()
+    local frame = CreateFrame("Frame", nil, UIParent)
+    frame:SetFrameStrata("HIGH")
+    frame:SetSize(1, 1)
+    frame:SetAlpha(0)
+    frame:EnableMouse(false)
+    local font = rawget(_G, "NumberFontNormalHuge") and "NumberFontNormalHuge" or "GameFontNormalHuge"
+    local text = frame:CreateFontString(nil, "OVERLAY", font)
+    text:SetTextColor(ENERGIZE_COLOR[1], ENERGIZE_COLOR[2], ENERGIZE_COLOR[3])
+    local group = frame:CreateAnimationGroup()
+    if group.SetToFinalAlpha then group:SetToFinalAlpha(true) end
+    local function Step(kind, delay, seconds, smoothing)
+        local a = group:CreateAnimation(kind)
+        a:SetOrder(1)
+        a:SetStartDelay(delay)
+        a:SetDuration(seconds)
+        if kind == "Scale" then a:SetOrigin("CENTER", 0, 0) end
+        if smoothing and a.SetSmoothing then a:SetSmoothing(smoothing) end
+        return a
+    end
+    local fx = { frame = frame, text = text, group = group }
+    fx.show = Step("Alpha", 0, 0.01)                 -- at full strength from the pop's first frame
+    fx.show:SetFromAlpha(0)
+    fx.show:SetToAlpha(1)
+    fx.pop = Step("Scale", 0, 0.12, "OUT")
+    fx.pop:SetScaleFrom(GAIN_POP, GAIN_POP)
+    fx.pop:SetScaleTo(1, 1)
+    fx.rise = Step("Translation", 0.12, GAIN_SECONDS - 0.12, "OUT")
+    fx.rise:SetOffset(0, GAIN_RISE)
+    fx.hide = Step("Alpha", GAIN_HOLD, GAIN_SECONDS - GAIN_HOLD, "IN")
+    fx.hide:SetFromAlpha(1)
+    fx.hide:SetToAlpha(0)
+    return fx
+end
+
+-- Shows "+amount Mana" after `delay` seconds: by the bar when `bar` is given,
+-- else above `from` (a piñata's frame).
+local function ShowGain(amount, delay, bar, from)
+    if not (db.enabled and db.manaNumber) or not PlainNumber(amount) or amount < 1 then return end
+    if not (bar or from) then return end
+    if not gain then
+        local built, fx = pcall(BuildGain)
+        if not built then return end
+        gain = fx
+    end
+    local fx = gain
+    fx.group:Stop()
+    fx.frame:ClearAllPoints()
+    fx.text:ClearAllPoints()
+    if bar then
+        fx.frame:SetPoint("CENTER", bar, "RIGHT", 8, 0)
+        fx.text:SetPoint("LEFT", fx.frame, "CENTER", 0, 0)
+    else
+        fx.frame:SetPoint("CENTER", from, "TOP", 0, 4)
+        fx.text:SetPoint("BOTTOM", fx.frame, "CENTER", 0, 0)
+    end
+    fx.text:SetText("+" .. floor(amount) .. " " .. ((type(MANA) == "string" and MANA) or "Mana"))
+    delay = max(0, delay or 0)
+    for _, a in ipairs({ fx.show, fx.pop }) do a:SetStartDelay(delay) end
+    fx.rise:SetStartDelay(delay + 0.12)
+    fx.hide:SetStartDelay(delay + GAIN_HOLD)
+    fx.group:Play()
+    fx.amount, fx.bar, fx.from = amount, bar, from
+end
+ns.ShowGain = ShowGain
+
+-- After a payout at `at`, the number once the mana can be read: as the first
+-- sparks land (`land` seconds after the payout) or straight away if none fly.
+local function GainLater(at, land, from)
+    if not (db.manaNumber and C_Timer and C_Timer.After) then return end
+    local bar = land and flow and flow.bar or nil
+    C_Timer.After(GAIN_WINDOW, function()
+        local amount = GainAt(at)
+        if amount then ShowGain(amount, (land or 0) - GAIN_WINDOW, bar, from) end
+    end)
+end
+
 -- The blow that gave you mana: a big burst on your target, the mana flying
--- into your bar, and the coin sound if that is on.
+-- into your bar, the number, and the coin sound if that is on.
 local lastPayout
 local function Payout()
     if not db.enabled then return end
@@ -996,10 +1403,10 @@ local function Payout()
     CoinSound()
     local p = PinataFor("target")
     if p then Hit(p, "payout") end
-    Flow(p and p.holder)
+    local land = Flow(p and p.holder)
+    GainLater(now, land, p and p.holder)
 end
 ns.Payout = Payout
-
 -- The mana from Judgement of Wisdom, by spell ID or (an ID this list lacks)
 -- by name. The debuff's own IDs never count: a paladin putting the debuff up
 -- is not a payout.
@@ -1012,12 +1419,13 @@ local function IsPayout(spellID)
     return ok and Plain(name) and name == WisdomName()
 end
 
-local function OnCombat(unit, action, flag)
+local function OnCombat(unit, action, flag, amount)
     if not Plain(unit) or type(unit) ~= "string" then return end
     if unit == "player" then
         -- Mana given to you right as your target was hit: the same payout,
         -- for clients where the mana does not arrive as a spell cast.
         if Plain(action) and action == "ENERGIZE" and ManaUser() then
+            NoteEnergize(amount)
             local p = PinataFor("target")
             if p and p.woundAt and Now() - p.woundAt <= PAIR_WINDOW then Payout() end
         end
@@ -1039,11 +1447,26 @@ end
 
 ---------------------------------------------------------------------------
 -- The hit preview: a stand-in nameplate in the middle of the screen that
--- takes a few blows, so the effects can be seen without a paladin.
+-- takes a string of blows, so the effects can be seen without a paladin.
 ---------------------------------------------------------------------------
+-- Plain blows, a crit, a glancing blow, a miss and two payouts.
 local PREVIEW_BLOWS = { "normal", "normal", "crit", "normal", "payout", "glance", "normal", "miss", "crit", "payout" }
-local PREVIEW_GAP, PREVIEW_START, PREVIEW_END = 0.7, 0.4, 1.2
+-- The preview's payouts give no mana, so its number is a sample.
+local PREVIEW_GAIN = 85
+local PREVIEW_GAP, PREVIEW_PAYOUT_GAP, PREVIEW_START, PREVIEW_END = 0.55, 1.3, 0.4, 1.4
 local PREVIEW_BAR_W, PREVIEW_BAR_H = 120, 13          -- the size of a small nameplate health bar
+-- /pinata stills plays the same blows, but stops everything for a moment at
+-- these points (seconds after the blow) so LookShots can take a picture of
+-- each: long enough for it to see the frame settle, and far enough apart
+-- for its five seconds between pictures.
+local PREVIEW_STILLS = {
+    [1]  = { label = "still: hit", at = 0.03 },             -- the impact: white and squashed, before it moves
+    [3]  = { label = "still: crit", at = 0.12 },
+    [5]  = { label = "still: payout", at = 0.14 },
+    [10] = { label = "still: mana surge", at = 0.82, bar = true },   -- your mana bar and the number
+}
+local STILL_HOLD, STILL_SPACING = 2.0, 6.0
+ns.PREVIEW_BLOWS, ns.PREVIEW_STILLS = PREVIEW_BLOWS, PREVIEW_STILLS
 local preview
 
 local function SafeAtlas(tex, atlas, fallback)
@@ -1075,27 +1498,63 @@ local function BuildPreview()
     name:SetText("Hit preview")
     name:SetTextColor(1, 1, 1)
 
-    local holder = CreateFrame("Frame", nil, frame)
-    holder:SetFrameLevel((frame:GetFrameLevel() or 0) + LEVEL)
-    local art = Art(holder)
-    local burstHolder = CreateFrame("Frame", nil, frame)
-    burstHolder:SetSize(BURST_BOX, BURST_BOX)
-    burstHolder:SetFrameLevel((frame:GetFrameLevel() or 0) + LEVEL + 1)
-    burstHolder:SetAlpha(0)
-    BurstArt(burstHolder)
-    return {
-        frame = frame, holder = holder, burstHolder = burstHolder, art = art,
-        swing = SwingGroup(art), whack = WhackGroup(holder), burst = BurstGroup(burstHolder),
-        run = 0,
-    }
+    local pv = BuildRig(frame)
+    RigLevels(pv, (frame:GetFrameLevel() or 0) + LEVEL)
+    pv.holder:Show()
+    pv.burstHolder:Show()
+    -- The area the blows reach, for LookShots: the bar, the piñata and its sparkle.
+    local capture = CreateFrame("Frame", nil, frame)
+    capture:SetSize(300, 170)
+    capture:SetPoint("BOTTOM", frame, "BOTTOM", 0, -12)
+    pv.frame, pv.bar, pv.capture, pv.run = frame, bar, capture, 0
+    return pv
+end
+
+-- Every animation the preview can have running, its own and the payout's.
+local function PreviewGroups(pv)
+    local list = { pv.whack, pv.flash, pv.burst }
+    for _, group in ipairs(pv.testSwings) do list[#list + 1] = group end
+    if gain then list[#list + 1] = gain.group end
+    if flow then
+        list[#list + 1] = flow.group
+        list[#list + 1] = flow.sweepGroup
+        list[#list + 1] = flow.sparkGroup
+        for _, orb in ipairs(flow.orbs) do
+            list[#list + 1] = orb.group
+            list[#list + 1] = orb.arc
+            list[#list + 1] = orb.keep
+        end
+    end
+    return list
+end
+
+local function Hold(pv, label)
+    pv.paused = {}
+    for _, group in ipairs(PreviewGroups(pv)) do
+        if group.Pause and group:IsPlaying() then
+            group:Pause()
+            pv.paused[#pv.paused + 1] = group
+        end
+    end
+    pv.still = label
+end
+
+local function Resume(pv)
+    pv.still = nil
+    for _, group in ipairs(pv.paused or {}) do group:Play() end
+    pv.paused = nil
 end
 
 local function StopPreview()
     if not preview then return end
-    preview.run = preview.run + 1
-    StillJuice(preview)
-    preview.swing:Stop()
-    preview.frame:Hide()
+    local pv = preview
+    pv.run = pv.run + 1
+    for _, group in ipairs(pv.paused or {}) do group:Stop() end
+    pv.paused, pv.still = nil, nil
+    StillJuice(pv)
+    if gain then gain.group:Stop() end
+    ShowTestArt(pv, false)
+    pv.frame:Hide()
 end
 
 local function PreviewShowing()
@@ -1103,37 +1562,60 @@ local function PreviewShowing()
 end
 ns.PreviewShowing = PreviewShowing
 
+local function PreviewBlow(pv, kind)
+    Strike(pv, kind)
+    if kind == "payout" then
+        CoinSound()
+        local land = Flow(pv.holder)
+        ShowGain(PREVIEW_GAIN, land or 0, land and flow and flow.bar or nil, pv.holder)
+    end
+end
+
 -- Plays the blows one after another and hides itself after the last.
--- Asked again while it runs, it stops.
-local function RunPreview()
+-- Asked again while it runs, it stops. `stills`: hold at PREVIEW_STILLS.
+local function RunPreview(stills)
     if PreviewShowing() then StopPreview(); return false end
     preview = preview or BuildPreview()
     local pv = preview
-    pv.holder:SetSize(db.size, db.size)
-    pv.holder:ClearAllPoints()
-    pv.holder:SetPoint("BOTTOM", pv.frame, "TOP", db.xOffset, db.yOffset)
-    pv.burstHolder:SetScale(BurstScale())
-    pv.burstHolder:ClearAllPoints()
-    pv.burstHolder:SetPoint("CENTER", pv.holder, "CENTER", 0, 0)
+    RigLayout(pv, pv.frame, db.xOffset, db.yOffset)
     pv.frame:Show()
-    if db.swing then pv.swing:Play() else pv.swing:Stop() end
+    ShowTestArt(pv, true)
     pv.run = pv.run + 1
-    pv.dir, pv.step = nil, 0
+    pv.dir, pv.step, pv.still, pv.lastHold = nil, 0, nil, nil
+    pv.stills = stills and true or false
     local run = pv.run
     local function Next()
         if pv.run ~= run then return end
-        pv.step = pv.step + 1
-        local kind = PREVIEW_BLOWS[pv.step]
+        local kind = PREVIEW_BLOWS[pv.step + 1]
         if not kind then
             C_Timer.After(PREVIEW_END, function() if pv.run == run then StopPreview() end end)
             return
         end
-        Strike(pv, kind)
-        if kind == "payout" then
-            CoinSound()
-            Flow(pv.holder)
+        local still = pv.stills and PREVIEW_STILLS[pv.step + 1]
+        if still and pv.lastHold then
+            local wait = pv.lastHold + STILL_SPACING - (Now() + still.at)
+            if wait > 0 then
+                C_Timer.After(wait, Next)
+                return
+            end
         end
-        C_Timer.After(PREVIEW_GAP, Next)
+        pv.step = pv.step + 1
+        PreviewBlow(pv, kind)
+        local gap = kind == "payout" and PREVIEW_PAYOUT_GAP or PREVIEW_GAP
+        if not still then
+            C_Timer.After(gap, Next)
+            return
+        end
+        C_Timer.After(still.at, function()
+            if pv.run ~= run then return end
+            Hold(pv, still.label)
+            pv.lastHold = Now()
+            C_Timer.After(STILL_HOLD, function()
+                if pv.run ~= run then return end
+                Resume(pv)
+                C_Timer.After(max(0.05, gap - still.at), Next)
+            end)
+        end)
     end
     C_Timer.After(PREVIEW_START, Next)
     return true
@@ -1141,7 +1623,6 @@ end
 ns.RunPreview = RunPreview
 ns.StopPreview = StopPreview
 function ns.Preview() return preview end
-
 ---------------------------------------------------------------------------
 -- Saved settings
 ---------------------------------------------------------------------------
@@ -1237,7 +1718,23 @@ end
 -- screen itself, so that is what is listed.
 ---------------------------------------------------------------------------
 local function PreviewFrame()
-    if PreviewShowing() then return preview.frame end
+    if PreviewShowing() and not preview.stills then return preview.capture end
+end
+
+-- /pinata stills: each held moment is its own picture.
+-- The mana surge is a picture of your mana bar (the frame the surge lies on).
+local function StillFrame(still)
+    return function()
+        if not (PreviewShowing() and preview.still == still.label) then return end
+        if still.bar then return flow and flow.capture or nil end
+        return preview.capture
+    end
+end
+
+local LOOKS = { { label = "hit preview", frame = PreviewFrame } }
+for i = 1, #PREVIEW_BLOWS do
+    local still = PREVIEW_STILLS[i]
+    if still then LOOKS[#LOOKS + 1] = { label = still.label, frame = StillFrame(still) } end
 end
 
 local function AddonVersion()
@@ -1250,9 +1747,7 @@ end
 LookShotsTargets = LookShotsTargets or {}
 LookShotsTargets[ADDON_NAME] = {
     version = AddonVersion(),
-    frames = {
-        { label = "hit preview", frame = PreviewFrame },
-    },
+    frames = LOOKS,
 }
 
 ---------------------------------------------------------------------------
@@ -1267,11 +1762,14 @@ f:RegisterEvent("PLAYER_REGEN_DISABLED")
 f:RegisterEvent("PLAYER_REGEN_ENABLED")
 pcall(f.RegisterEvent, f, "UNIT_AURA")
 pcall(f.RegisterEvent, f, "UNIT_COMBAT")
+if not (f.RegisterUnitEvent and pcall(f.RegisterUnitEvent, f, "UNIT_POWER_FREQUENT", "player")) then
+    pcall(f.RegisterEvent, f, "UNIT_POWER_FREQUENT")
+end
 if not (f.RegisterUnitEvent and pcall(f.RegisterUnitEvent, f, "UNIT_SPELLCAST_SUCCEEDED", "player")) then
     pcall(f.RegisterEvent, f, "UNIT_SPELLCAST_SUCCEEDED")
 end
 
-f:SetScript("OnEvent", function(_, event, arg1, arg2, arg3)
+f:SetScript("OnEvent", function(_, event, arg1, arg2, arg3, arg4)
     if event == "ADDON_LOADED" then
         if arg1 == ADDON_NAME then
             InitDB()
@@ -1285,7 +1783,10 @@ f:SetScript("OnEvent", function(_, event, arg1, arg2, arg3)
     if not db then return end
 
     if event == "UNIT_COMBAT" then
-        OnCombat(arg1, arg2, arg3)
+        OnCombat(arg1, arg2, arg3, arg4)
+
+    elseif event == "UNIT_POWER_FREQUENT" then
+        if arg1 == "player" and arg2 == "MANA" then OnMana() end
 
     elseif event == "UNIT_SPELLCAST_SUCCEEDED" then
         OnCast(arg1, arg3)
@@ -1316,6 +1817,7 @@ f:SetScript("OnEvent", function(_, event, arg1, arg2, arg3)
         RefreshAll()
 
     elseif event == "PLAYER_ENTERING_WORLD" then
+        OnMana()                                  -- where your mana stands, to see it rise
         RefreshAll()
         if not db.welcomed then
             db.welcomed = true
@@ -1330,6 +1832,13 @@ end)
 ---------------------------------------------------------------------------
 local function OnOff(v) return v and "on" or "off" end
 
+local function AnySlotError()
+    for _, state in pairs(NATIVE) do
+        if state.error then return true end
+    end
+    return false
+end
+
 local function PrintStatus()
     print(PREFIX .. (db.enabled and "on" or "OFF")
         .. "  |  size " .. db.size
@@ -1338,9 +1847,10 @@ local function PrintStatus()
         .. "  |  blue health bar " .. OnOff(db.colorBar)
         .. "  |  bounce on hits " .. OnOff(db.juice)
         .. "  |  mana to your bar " .. OnOff(db.manaFlow)
+        .. "  |  mana number " .. OnOff(db.manaNumber)
         .. "  |  coin sound " .. OnOff(db.sound)
         .. (testing and "  |  TEST piñatas showing" or "")
-        .. ((NATIVE.icon.error or NATIVE.bar.error or NATIVE.burst.error) and "  |  not fully working, see /pinata debug" or ""))
+        .. (AnySlotError() and "  |  not fully working, see /pinata debug" or ""))
 end
 
 local function PrintHelp()
@@ -1349,7 +1859,8 @@ local function PrintHelp()
     print("  /pinata size <16-96>   -  /pinata x <-100..100>   -  /pinata y <-100..100>   -  /pinata swing")
     print("  /pinata bar (the enemy's health bar turns blue too, on/off)")
     print("  /pinata juice (bounce and sparkle on hits, on/off)   -  /pinata flow (mana flies into your mana bar, on/off)")
-    print("  /pinata sound (coin sound on mana, on/off)   -  /pinata preview")
+    print("  /pinata number (\"+N Mana\" by your mana bar, on/off)")
+    print("  /pinata sound (coin sound on mana, on/off)   -  /pinata preview   -  /pinata stills (the preview, paused at each moment)")
     print("  /pinata on|off   -  /pinata minimap (minimap button on/off)   -  /pinata reset   -  /pinata debug")
 end
 
@@ -1421,8 +1932,18 @@ SlashCmdList.MANAPINATA = function(msg)
     elseif cmd == "flow" or cmd == "mana" then
         ns.Set("manaFlow", not db.manaFlow)
 
+    elseif cmd == "number" or cmd == "numbers" then
+        ns.Set("manaNumber", not db.manaNumber)
+
     elseif cmd == "preview" then
         if RunPreview() then print(PREFIX .. "hit preview in the middle of the screen. /pinata preview again stops it.") end
+        return
+
+    elseif cmd == "stills" then
+        if RunPreview(true) then
+            print(PREFIX .. "hit preview with pauses, so each moment can be looked at (about half a minute). "
+                .. "/pinata stills again stops it.")
+        end
         return
 
     elseif cmd == "test" then
@@ -1435,31 +1956,44 @@ SlashCmdList.MANAPINATA = function(msg)
         ns.Reset()
 
     elseif cmd == "debug" then
-        local ids, live, bars, bursts, total = {}, 0, 0, 0, 0
+        local ids, live, bars, total = {}, 0, 0, 0
+        local hitSlots = {}
         for id in pairs(spells) do ids[#ids + 1] = id end
         table.sort(ids)
         for _, p in pairs(pinatas) do
             total = total + 1
             if p.container then live = live + 1 end
             if p.barContainer then bars = bars + 1 end
-            if p.burstContainer then bursts = bursts + 1 end
+            for _, kind in ipairs(HIT_SLOTS) do
+                if p[NATIVE[kind].field] then hitSlots[kind] = (hitSlots[kind] or 0) + 1 end
+            end
         end
-        local icon, bar, burst = NATIVE.icon, NATIVE.bar, NATIVE.burst
+        local icon, bar = NATIVE.icon, NATIVE.bar
+        local hitText = {}
+        for _, kind in ipairs(HIT_SLOTS) do
+            local state = NATIVE[kind]
+            hitText[#hitText + 1] = state.name .. " " .. (hitSlots[kind] or 0)
+                .. (state.error and (" FAILED " .. state.tries .. "x") or "")
+        end
         print(PREFIX .. "build " .. tostring((select(4, GetBuildInfo())))
             .. ", nameplates now: " .. PlateCount()
-            .. ", piñatas made: " .. total .. " (" .. live .. " with a working aura slot, " .. bars .. " with a health bar slot, "
-            .. bursts .. " with a sparkle slot)"
+            .. ", piñatas made: " .. total .. " (" .. live .. " with a working aura slot, " .. bars .. " with a health bar slot)"
             .. ", auras hidden right now: " .. tostring(AurasSecret())
             .. ", aura slots: " .. (icon.error and ("FAILED " .. icon.tries .. "x") or "ok")
             .. ", health bar slots: " .. (bar.error and ("FAILED " .. bar.tries .. "x") or "ok")
-            .. ", sparkle slots: " .. (burst.error and ("FAILED " .. burst.tries .. "x") or "ok"))
+            .. ", hit slots: " .. table.concat(hitText, ", "))
         if icon.error then print(PREFIX .. "aura slot error: " .. icon.error) end
         if bar.error then print(PREFIX .. "health bar slot error: " .. bar.error) end
-        if burst.error then print(PREFIX .. "sparkle slot error: " .. burst.error) end
+        for _, kind in ipairs(HIT_SLOTS) do
+            local state = NATIVE[kind]
+            if state.error then print(PREFIX .. state.name .. " slot error: " .. state.error) end
+        end
         local blows = 0
         for _, p in pairs(pinatas) do if p.lastBlowAt then blows = blows + 1 end end
         print(PREFIX .. "nameplates hit so far: " .. blows
-            .. (lastPayout and (", last mana payout " .. floor(Now() - lastPayout) .. " s ago") or ", no mana payout seen yet"))
+            .. (lastPayout and (", last mana payout " .. floor(Now() - lastPayout) .. " s ago") or ", no mana payout seen yet")
+            .. ", your mana " .. (ReadMana() and "readable" or "HIDDEN right now, so no mana number")
+            .. (gain and gain.amount and (", last number +" .. gain.amount) or ""))
         for _, p in pairs(active) do
             if p.bindError then
                 print(PREFIX .. "nameplate error: " .. p.bindError)

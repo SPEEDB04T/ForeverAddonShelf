@@ -1,5 +1,14 @@
 # Changelog
 
+## 1.3.0
+
+- Hits land with weight: on the blow the piñata flashes white and squashes for a moment, then snaps aside, swings back once and settles. Critical hits flash brighter and knock it further.
+- The mana you get shows as a number: "+85 Mana" pops up beside your mana bar as the sparks land, rises and fades. It is the real amount, read from your own mana; when the game hides it, no number shows. Turn it off with "Show the mana you got" in the options or `/pinata number`.
+- The mana pours into your mana bar as one curved stream of sparks that stay big all the way in; the bar swells, a glint runs along it and a sparkle bursts at the end of the fill.
+- The sparkle stays above the piñata, clear of the enemy's name and health bar.
+- `/pinata stills`: the hit preview, holding still at four moments (a hit, a crit, the payout, the mana surge), so screenshot helpers like LookShots can take a picture of each.
+- A new file: after updating, `/reload` once.
+
 ## 1.2.0
 
 - You can see the mana coming back: when a hit gives you mana, blue sparks fly from the piñata into the mana bar on your player frame, and the bar lights up with a sparkle where they land. The hit preview shows it too. Turn it off with "Mana flies to your mana bar" in the options or `/pinata flow`.

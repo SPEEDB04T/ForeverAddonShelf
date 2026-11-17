@@ -62,6 +62,10 @@ local function Rows()
           tip = "When a hit gives you mana, blue sparks fly from the piñata into the mana bar on your player "
               .. "frame, and the bar lights up where they land. Same as /pinata flow.",
           get = Get("manaFlow"), set = Set("manaFlow") },
+        { kind = "check", label = "Show the mana you got",
+          tip = "\"+N Mana\" rises beside your mana bar when a hit gives you mana. Only the real amount, read from "
+              .. "your own mana; when the game hides it, no number shows. Same as /pinata number.",
+          get = Get("manaNumber"), set = Set("manaNumber") },
         { kind = "check", label = "Coin sound when it pays mana",
           tip = "The game's coin-loot sound each time a hit on a piñata gives you mana. Off to start with, "
               .. "since it can ring every few seconds. Same as /pinata sound.",
