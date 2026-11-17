@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.6.0
+
+- The dance is sent again every 30 to 60 seconds, at a random moment each time. Somebody who came into view after you started saw you standing still; now they see the dance within a minute. It waits while you walk, fight or are AFK, and leaves you alone if you do another emote yourself (until you dance again).
+- A click in the world no longer sets off a line or brings the dance back, so clicking back into the game's window says nothing. Lines by itself go out on your next key press only. The buttons on the counter work as before.
+- The dance the addon sends does not count as "another emote of yours", so it does not hold the lines at nobody back.
+
 ## 1.5.3
 
 - Fewer lines at nobody: one every 30 to 60 seconds, where it was one every 10 to 30. The first comes 20 to 40 seconds after you start.

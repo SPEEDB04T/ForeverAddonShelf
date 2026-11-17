@@ -214,7 +214,8 @@ local Queue, Flush
 -- The game lets a chat line from an addon out only while it handles the player's own key press or
 -- click. From a timer or from somebody's chat line it is blocked ("action failed because of an addon",
 -- and in the saved log every "timer /e" and "event /e" has "no echo"). The game's own emotes (/wink)
--- are not blocked. So: nothing in /e from these origins, and lines by itself wait for the next key or click.
+-- are not blocked. So: nothing in /e from these origins, and lines by itself wait for the next key press
+-- (a click in the world no longer counts, see M.Start).
 M.HARDWARE_ONLY = true
 local NOKEY = { timer = true, event = true, nudge = true, tip = true, back = true, ["?"] = true }
 local lastAlert = -1e9
@@ -319,6 +320,25 @@ local due                        -- when the dance should be back, until its ech
 local tries = 0
 local lastDance = -1e9           -- when the last dance went out
 local lastOk = -1e9              -- when the game last showed one of them: two that take stay DANCE_GAP apart
+-- Somebody who comes into view after the dance started sees you standing still: the game does not
+-- show them a dance that began before they could see you. So the dance is sent again every 30 to 60
+-- seconds, picked at random each time (SuccuDev, 2026-11-17: "it needs to refresh the dance emote every
+-- 30-60s randomly, because theres a bug where when people see her for the first time they dont see her
+-- dancing"). Not while you walk or fight, not while AFK, and not once you stopped dancing yourself.
+M.REFRESH = { 30, 60 }           -- seconds from one dance to the next; nil: the dance is not sent again
+local nextRefresh                -- when the dance is sent again; nil: picked from the last dance
+
+local function Busy()
+    if type(GetUnitSpeed) == "function" then
+        local ok, speed = pcall(GetUnitSpeed, "player")
+        if ok and Readable(speed) and type(speed) == "number" and speed > 0 then return true end
+    end
+    if type(UnitAffectingCombat) == "function" then
+        local ok, fight = pcall(UnitAffectingCombat, "player")
+        if ok and Readable(fight) and fight then return true end
+    end
+    return false
+end
 
 function M.Random(a, b)
     if math and math.random then return a + math.random() * (b - a) end
@@ -435,7 +455,7 @@ Game = function(token, name, from)
         not ok and ("error " .. tostring(restricted)) or (Readable(restricted) and tostring(restricted) or "secret")))
     if not ok or (Readable(restricted) and restricted == true) then return false end
     if token == "DANCE" then
-        dancing, lastDance = true, Now()
+        dancing, lastDance, nextRefresh = true, Now(), nil
     elseif dancing then
         due, tries = Now() + M.Random(REDANCE_MIN, REDANCE_MAX), 0
         local wait = math.max(due, lastDance + RETRY_GAP) - Now()
@@ -465,6 +485,7 @@ function M.Redance(from)
     if now < ready then return false end
     if now - ready > GIVE_UP or tries >= TRIES then
         due = nil
+        if M.REFRESH then nextRefresh = now + M.Random(M.REFRESH[1], M.REFRESH[2]) end   -- the next go, not at once
         Log("gave up dancing again")
         return false
     end
@@ -484,7 +505,7 @@ local function Echo(text)
         -- one you did yourself: dancing or not is your call
         dancing = text:lower():find("danc", 1, true) ~= nil
         if dancing then lastDance = Now() lastOk = lastDance end
-        due = nil
+        due, nextRefresh = nil, nil
         return
     end
     if pend.who and not text:find(pend.who, 1, true) then
@@ -649,7 +670,7 @@ local function Fade()
     if b:IsShown() and b.visitor and pulse then b:LockHighlight() else b:UnlockHighlight() end
     -- and the tip jar button, while its line did not go out
     if jarOwed and pulse then frame.jar:LockHighlight() else frame.jar:UnlockHighlight() end
-    -- and Say a line, while a line waits for a key or click
+    -- and Say a line, while a line waits for a key press
     local say = frame.cta.say
     if say:IsShown() and M.Queued() > 0 and pulse then say:LockHighlight() else say:UnlockHighlight() end
 end
@@ -817,7 +838,8 @@ local function OnEmote(text, sender, guid)
     if not (Readable(text) and Readable(sender) and type(text) == "string" and type(sender) == "string") then return end
     if sender == "" then return end
     if Mine(text, sender, guid) then
-        lastOwn = Now()
+        -- a dance the addon sent is no news: it does not hold the lines at nobody back
+        if not (pend and pend.token == "DANCE") then lastOwn = Now() end
         Echo(text)
         -- your own emote, as the game showed it: whoever it names has their answer ("You wink at Bob.")
         local hit = false
@@ -912,7 +934,7 @@ local function Look()
 end
 
 -- The tip jar line, or the one that did not go out last time.
--- A line by itself waits here for the player's next key press or click in the world, and goes out on
+-- A line by itself waits here for the player's next key press, and goes out on
 -- that (M.Hardware). One at a time, FLUSH_GAP apart; one that waited too long is dropped.
 local QUEUE_KEEP, QUEUE_OLD, FLUSH_GAP = 3, 60, 2
 local queue, lastFlush = {}, -1e9
@@ -940,7 +962,7 @@ Queue = function(fn, old, soft)
     if not M.HARDWARE_ONLY then Flush() end
 end
 M.Queued = function() return #queue end
--- The player pressed a key or clicked: the line that was waiting goes out.
+-- The player pressed a key: the line that was waiting goes out.
 function M.Hardware()
     if not on then return false end
     if dancing and due then M.Redance("key") end      -- the dance is down: a key press brings it back
@@ -1001,7 +1023,7 @@ function M.Idle(from)
     local function send(f)
         Say(line, f or "timer", function()
             tries = tries + 1
-            if tries < 2 and M.HARDWARE_ONLY then Queue(send, nil, true) end     -- once more, on the next key or click
+            if tries < 2 and M.HARDWARE_ONLY then Queue(send, nil, true) end     -- once more, on the next key press
         end, done)
     end
     Queue(send, nil, true)
@@ -1075,6 +1097,15 @@ local function Tick()
     local quiet = now - lastEngage >= ENGAGE_HOLD
     Purge()
     quiet = quiet and now - lastOwn >= LINE_GAP
+    -- the dance again, for whoever came into view since the last one
+    if M.REFRESH and dancing and not due and not away then
+        nextRefresh = nextRefresh or (lastDance + M.Random(M.REFRESH[1], M.REFRESH[2]))
+        if now >= nextRefresh and not Busy() then
+            nextRefresh = nil
+            due, tries = now, 0
+            M.Redance("refresh")
+        end
+    end
     if now >= nextJar and near > 0 and not away and quiet and not queue[1] and now - lastAuto >= GLOBAL_GAP then
         nextJar = now + M.Random(JAR_MIN, JAR_MAX)
         lastAuto = now
@@ -1213,8 +1244,8 @@ local function Build(host)
         if not GameTooltip then return end
         GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
         GameTooltip:SetText("Say a line")
-        GameTooltip:AddLine("Says the next line at nobody in /e, right now. The game lets a line out only on your own "
-            .. "key press or click, so lines by itself wait for one: the button lights up while a line is waiting.", 1, 0.82, 0, true)
+        GameTooltip:AddLine("Says the next line at nobody in /e, right now. Lines by itself wait for your next key press "
+            .. "(a click in the world does not set one off): the button lights up while a line is waiting.", 1, 0.82, 0, true)
         GameTooltip:Show()
     end)
     cta.say:SetScript("OnLeave", HideTip)
@@ -1267,7 +1298,7 @@ local function Build(host)
         GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
         GameTooltip:SetText("Tip jar")
         GameTooltip:AddLine("Says a short line about your tip jar in /e. One is due every 8 to 12 minutes "
-            .. "while somebody is around and goes out on your next key press or click.", 1, 0.82, 0, true)
+            .. "while somebody is around and goes out on your next key press.", 1, 0.82, 0, true)
         GameTooltip:Show()
     end)
     f.jar:SetScript("OnLeave", HideTip)
@@ -1311,9 +1342,11 @@ function M.Start()
         pcall(events.RegisterEvent, events, e)
     end
     on, manual, misses, pend, dancing, due = true, false, 0, nil, false, nil
-    nextJar, nextIdle, wasAway, lastEngage, lastOwn = nil, nil, false, -1e9, -1e9
+    nextJar, nextIdle, nextRefresh, wasAway, lastEngage, lastOwn = nil, nil, nil, false, -1e9, -1e9
     for i = #queue, 1, -1 do queue[i] = nil end
-    -- every key press and every click in the world, passed on untouched: the moment a waiting line may go out
+    -- every key press, passed on untouched: the moment a waiting line may go out. Not a click in the
+    -- world: the click that brings the game's window back to the front set a line off each time
+    -- (SuccuDev, 2026-11-17: "stop auto emoting when I click into the window").
     if not keys and type(CreateFrame) == "function" then
         keys = CreateFrame("Frame", "MailboxSluttingKeys", UIParent)
         keys:SetScript("OnKeyDown", function() M.Hardware() end)
@@ -1322,16 +1355,12 @@ function M.Start()
             and type(keys.EnableKeyboard) == "function" then
             pcall(keys.EnableKeyboard, keys, true)
         end
-        local world = rawget(_G, "WorldFrame")
-        if type(world) == "table" and type(world.HookScript) == "function" then
-            pcall(world.HookScript, world, "OnMouseDown", function() M.Hardware() end)
-        end
     end
     if keys then keys:Show() end
     frame:Show()
     Emote("DANCE", nil, "start")
     Tick()
-    ns.Print("you are dancing, and the big button winks or smiles at whoever is waiting. Lines by itself go out when you press any key or click in the world. Stop dancing on the counter ends it.")
+    ns.Print("you are dancing, and the big button winks or smiles at whoever is waiting. The dance is sent again every 30 to 60 seconds, so whoever walks up sees it. Lines by itself go out when you press any key. Stop dancing on the counter ends it.")
     return true
 end
 
