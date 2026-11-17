@@ -63,8 +63,9 @@ local function Rows()
               .. "frame, and the bar lights up where they land. Same as /pinata flow.",
           get = Get("manaFlow"), set = Set("manaFlow") },
         { kind = "check", label = "Show the mana you got",
-          tip = "\"+N Mana\" rises beside your mana bar when a hit gives you mana. Only the real amount, read from "
-              .. "your own mana; when the game hides it, no number shows. Same as /pinata number.",
+          tip = "\"+N Mana\" rises beside your mana bar when a hit gives you mana: what that Judgement of Wisdom "
+              .. "rank gives, as the game's own spell text says. Never a guess; with no amount to read, no number "
+              .. "shows. Same as /pinata number.",
           get = Get("manaNumber"), set = Set("manaNumber") },
         { kind = "check", label = "Coin sound when it pays mana",
           tip = "The game's coin-loot sound each time a hit on a piñata gives you mana. Off to start with, "

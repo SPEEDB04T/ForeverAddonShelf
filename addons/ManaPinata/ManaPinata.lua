@@ -55,6 +55,8 @@ local WISDOM_FALLBACK_NAME = "Judgement of Wisdom"
 -- The mana a hit brings back: the spell that gives the attacker mana when
 -- Judgement of Wisdom pays out (ranks 1 to 3). Not debuffs; see IsPayout.
 local PAYOUT_SPELLS = { [20268] = true, [20352] = true, [20353] = true }
+-- Each payout's own debuff rank, whose spell text also says the mana.
+local PAYOUT_RANK = { [20268] = 20186, [20352] = 20354, [20353] = 20355 }
 
 local DEFAULTS = {
     enabled  = true,
@@ -1259,11 +1261,14 @@ ns.FlowTo = Flow
 ---------------------------------------------------------------------------
 -- The mana you got, as a number
 ---------------------------------------------------------------------------
--- Read, never guessed: with no real amount there is no number. Two places
--- to read it from: the amount on the game's own ENERGIZE hit message, when
--- the client lets addons see it, else the step up in your own mana at the
--- moment of the payout (your own mana stays readable in a fight). Of the
--- steps close to the payout, the closest in time counts.
+-- Read, never guessed: with no real amount there is no number. First the
+-- rank: each Judgement of Wisdom rank gives a set amount, and the game's own
+-- text for that rank says how much ("... restore 59 mana ..."), so the
+-- payout's spell ID is enough and nothing has to be read mid-fight. Without
+-- it (a client whose payout carries no spell ID, or text that names no
+-- mana), the amount on the game's own ENERGIZE hit message when the client
+-- lets addons see it, else the step up in your own mana at the moment of the
+-- payout. Of the steps close to the payout, the closest in time counts.
 local GAIN_WINDOW = 0.2                 -- seconds either side of the payout
 local manaSeen                          -- your mana at the last update
 local rises = {}                        -- recent steps up: { at = time, gain = mana }
@@ -1289,6 +1294,51 @@ ns.OnMana = OnMana
 -- The UNIT_COMBAT amount of an ENERGIZE on you, if the client shows it.
 local function NoteEnergize(amount)
     if PlainNumber(amount) and amount > 0 then energized = { at = Now(), amount = amount } end
+end
+
+-- The mana a spell's text says it restores, or nil.
+local function SpellText(id)
+    for _, get in ipairs({ C_Spell and C_Spell.GetSpellDescription, GetSpellDescription }) do
+        if type(get) == "function" then
+            local ok, text = pcall(get, id)
+            if ok and Plain(text) and type(text) == "string" and text ~= "" then return text end
+        end
+    end
+end
+
+local function ManaInText(text)
+    local n = text and text:lower():match("(%d[%d,]*) mana")
+    n = n and tonumber((n:gsub(",", "")))
+    if n and n >= 1 then return n end
+end
+
+-- The mana the Judgement of Wisdom rank behind payout `spellID` gives, from
+-- the payout's text or else its debuff's. Kept once read.
+local rankMana = {}
+local function RankMana(spellID)
+    if not PlainNumber(spellID) then return end
+    if rankMana[spellID] then return rankMana[spellID] end
+    local n = ManaInText(SpellText(spellID))
+    if not n and PAYOUT_RANK[spellID] then n = ManaInText(SpellText(PAYOUT_RANK[spellID])) end
+    rankMana[spellID] = n
+    return n
+end
+ns.RankMana = RankMana
+
+-- For /pinata debug: "33, 46, 59", "?" for a rank whose text names no mana.
+local function RankList()
+    local out = {}
+    for i, id in ipairs({ 20268, 20352, 20353 }) do out[i] = tostring(RankMana(id) or "?") end
+    return table.concat(out, ", ")
+end
+
+-- Asks the game to load the ranks' text, so it is there by the first payout.
+local function LoadRankText()
+    if not (C_Spell and C_Spell.RequestLoadSpellData) then return end
+    for payout, debuff in pairs(PAYOUT_RANK) do
+        pcall(C_Spell.RequestLoadSpellData, payout)
+        pcall(C_Spell.RequestLoadSpellData, debuff)
+    end
 end
 
 -- The mana a payout at `at` gave you, or nil.
@@ -1381,11 +1431,15 @@ local function ShowGain(amount, delay, bar, from)
 end
 ns.ShowGain = ShowGain
 
--- After a payout at `at`, the number once the mana can be read: as the first
--- sparks land (`land` seconds after the payout) or straight away if none fly.
-local function GainLater(at, land, from)
-    if not (db.manaNumber and C_Timer and C_Timer.After) then return end
+-- After a payout at `at`, the number as the sparks land (`land` seconds
+-- after the payout) or straight away if none fly: the rank's amount when the
+-- payout's spell ID gives one, else once the mana can be read.
+local function GainLater(at, land, from, spellID)
+    if not db.manaNumber then return end
     local bar = land and flow and flow.bar or nil
+    local ranked = RankMana(spellID)
+    if ranked then return ShowGain(ranked, land or 0, bar, from) end
+    if not (C_Timer and C_Timer.After) then return end
     C_Timer.After(GAIN_WINDOW, function()
         local amount = GainAt(at)
         if amount then ShowGain(amount, (land or 0) - GAIN_WINDOW, bar, from) end
@@ -1395,7 +1449,7 @@ end
 -- The blow that gave you mana: a big burst on your target, the mana flying
 -- into your bar, the number, and the coin sound if that is on.
 local lastPayout
-local function Payout()
+local function Payout(spellID)
     if not db.enabled then return end
     local now = Now()
     if lastPayout and now - lastPayout < PAYOUT_GAP then return end
@@ -1404,7 +1458,7 @@ local function Payout()
     local p = PinataFor("target")
     if p then Hit(p, "payout") end
     local land = Flow(p and p.holder)
-    GainLater(now, land, p and p.holder)
+    GainLater(now, land, p and p.holder, spellID)
 end
 ns.Payout = Payout
 -- The mana from Judgement of Wisdom, by spell ID or (an ID this list lacks)
@@ -1442,7 +1496,7 @@ end
 ns.OnCombat = OnCombat
 
 local function OnCast(unit, spellID)
-    if unit == "player" and IsPayout(spellID) then Payout() end
+    if unit == "player" and IsPayout(spellID) then Payout(spellID) end
 end
 
 ---------------------------------------------------------------------------
@@ -1818,6 +1872,7 @@ f:SetScript("OnEvent", function(_, event, arg1, arg2, arg3, arg4)
 
     elseif event == "PLAYER_ENTERING_WORLD" then
         OnMana()                                  -- where your mana stands, to see it rise
+        LoadRankText()                            -- each rank's mana, for the number
         RefreshAll()
         if not db.welcomed then
             db.welcomed = true
@@ -1992,7 +2047,8 @@ SlashCmdList.MANAPINATA = function(msg)
         for _, p in pairs(pinatas) do if p.lastBlowAt then blows = blows + 1 end end
         print(PREFIX .. "nameplates hit so far: " .. blows
             .. (lastPayout and (", last mana payout " .. floor(Now() - lastPayout) .. " s ago") or ", no mana payout seen yet")
-            .. ", your mana " .. (ReadMana() and "readable" or "HIDDEN right now, so no mana number")
+            .. ", mana per Judgement of Wisdom rank: " .. RankList()
+            .. ", your mana " .. (ReadMana() and "readable" or "hidden right now")
             .. (gain and gain.amount and (", last number +" .. gain.amount) or ""))
         for _, p in pairs(active) do
             if p.bindError then

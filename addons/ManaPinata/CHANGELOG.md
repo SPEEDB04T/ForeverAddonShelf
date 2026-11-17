@@ -1,5 +1,9 @@
 # Changelog
 
+## 1.3.1
+
+- The "+N Mana" number now comes from your Judgement of Wisdom rank: the game's own text for each rank says how much mana it gives, so the number shows in every fight, even when the game hides your mana from addons. Where that text names no amount, it reads your mana as before. `/pinata debug` lists the mana it found for each rank.
+
 ## 1.3.0
 
 - Hits land with weight: on the blow the piñata flashes white and squashes for a moment, then snaps aside, swings back once and settles. Critical hits flash brighter and knock it further.
