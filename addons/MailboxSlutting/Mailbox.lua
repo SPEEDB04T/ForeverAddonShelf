@@ -1,4 +1,7 @@
--- Mailbox Slutting: mailbox mode. For dancing on a city mailbox: it keeps a list of who looked at
+-- Mailbox Slutting: the dancing. For dancing for tips wherever you stand (the name is from where it
+-- started, on a city mailbox; nothing in here looks for a mailbox, needs one or says one, see SuccuDev,
+-- 2026-11-17: "make sure there are no actual references to mailboxes so I can actually do this
+-- anywhere"). It keeps a list of who looked at
 -- you, emoted at you and whispered you, puts the one who is waiting for an answer on a big button
 -- at the top, and gives everybody a one-click reply. /mailslut open turns it on; closing its window
 -- turns it off. Nothing here knows about wares or ads: that is Slutmog Shop, another addon
@@ -9,8 +12,9 @@
 -- game's emote stops the dance, a line in /e does not (SuccuDev: "do custom /emotes cancel dance
 -- animation? couldnt we replace all of them with the same wording"). If /e from the shop does not
 -- go out, the game's own emote is done instead.
--- By itself the shop only dances and tries the game's emote back, and few of those: one per person
--- every two minutes, one every six seconds at most. It never says, emotes text or whispers without a click.
+-- By itself the addon only dances and tries the game's emote back, and few of those: one per person
+-- every two minutes, one every six seconds at most, each a few seconds after what it answers. It never
+-- says, emotes text or whispers without a click on one of its own buttons.
 local ADDON, ns = ...
 local M = {}
 ns.Mailbox = M
@@ -41,18 +45,26 @@ local BACK_AGAIN = 2 * 3600     -- seconds before a tipper is welcomed back agai
 
 -- Their emote, by a word in its text: the game's emote that goes back by itself, and which lines
 -- the reply comes from. First match wins.
+-- Reviewed 2026-11-17 by three hostile readers (SuccuDev: "do an adversarial review on all lines and
+-- reactions etc to ensure it's all as enticing as possible"). What they agreed on, and what changed:
+-- whoever heats things up gets heat back, not a retreat or a servant's gesture. A kiss gets a kiss
+-- (it was a blush), a whistle a sly smirk (a curtsey), a lick and a purr a purr (a giggle, a wink),
+-- "sexy" a flirt (a wink), a cheer a grin ("thanks Bob." read like a tip receipt), a hug a giggle
+-- (hugging a stranger back was too much by itself; Hug is still on the button).
 local REPLIES = {
-    { "kiss", "BLUSH", "kiss" }, { "wink", "WINK", "wink" }, { "flirt", "FLIRT", "flirt" },
-    { "whistle", "CURTSEY", "show" }, { "danc", "DANCE", "dance" }, { "wave", "WAVE", "wave" },
+    { "kiss", "KISS", "kiss" }, { "wink", "WINK", "wink" }, { "flirt", "FLIRT", "flirt" },
+    { "whistle", "SMIRK", "wink" }, { "danc", "DANCE", "dance" }, { "wave", "WAVE", "wave" },
     { "greet", "WAVE", "wave" }, { "hello", "WAVE", "wave" }, { "bow", "CURTSEY", "show" },
-    { "hug", "HUG", "hug" }, { "cuddle", "HUG", "hug" }, { "drool", "GIGGLE", "look" },
-    { "lick", "GIGGLE", "flirt" }, { "cheer", "THANK", "show" }, { "applaud", "CURTSEY", "show" },
-    { "clap", "CURTSEY", "show" }, { "love", "BLUSH", "kiss" }, { "sexy", "WINK", "flirt" },
-    { "purr", "WINK", "flirt" }, { "stare", "WINK", "look" }, { "gaze", "WINK", "look" },
+    { "hug", "GIGGLE", "hug" }, { "cuddle", "GIGGLE", "hug" }, { "drool", "GIGGLE", "look" },
+    { "lick", "PURR", "flirt" }, { "cheer", "GRIN", "any" }, { "applaud", "CURTSEY", "show" },
+    { "clap", "CURTSEY", "show" }, { "love", "BLUSH", "kiss" }, { "sexy", "FLIRT", "flirt" },
+    { "purr", "PURR", "flirt" }, { "stare", "WINK", "look" }, { "gaze", "WINK", "look" },
 }
 -- These get a sad emote back (SuccuDev: "cry or feel sad when people do bad emotes at me"), and no pitch.
+-- By itself that is a pout: all three readers called "cries on Bob's shoulder." the worst line of the
+-- lot (a sympathy scene for whoever spat, and the tease turned into a victim). Cry is still on the button.
 local RUDE = { "spit", "rude", "slap", "insult", "mock", "taunt", "pity", "puke", "fart", "disgust", "threaten", "angry", "bonk" }
-local SAD_REPLY = { nil, "CRY", "sad" }
+local SAD_REPLY = { nil, "POUT", "sad" }
 local DEFAULT_REPLY = { nil, "WINK", "any" }
 local LOOK_REPLY = { nil, "WINK", "look" }
 local BACK_REPLY = { nil, nil, "hug" }
@@ -64,47 +76,48 @@ M.EMOTES = {
     -- More of the same kind, short and quiet (SuccuDev: "similar emotes to the basic ones like wink,
     -- short and sweet, doesnt stand out"). All of them are in the game's own emote list
     -- (ChatEmoteConstants.lua, Gethe/wow-ui-source branch forever) and old enough for this client.
-    look = { "WINK", "SMILE", "GIGGLE", "SHY", "WAVE", "GRIN", "SMIRK", "BASHFUL", "NOD", "CHUCKLE", "BLINK" },   -- only targeted you: slight
-    kiss = { "BLUSH", "KISS", "BASHFUL", "PURR", "KISSDOWN", "LASHES" },
-    wink = { "WINK", "SMIRK", "GRIN", "CHUCKLE" },
-    flirt = { "GIGGLE", "FLIRT", "TEASE", "SMIRK", "PURR", "BECKON", "LASHES", "FINGER", "SPIN" },
-    show = { "CURTSEY", "THANK", "BOW", "WELCOME", "SPIN" },
-    hug = { "HUG", "BLUSH", "BASHFUL", "CUDDLE" },
-    wave = { "WAVE", "GREET", "NOD", "HELLO", "WELCOME" },
+    -- The 2026-11-17 review took out what does not fit somebody who knows they are being watched:
+    -- the shy ones (Bashful: "too bashful to get Bob's attention" reads as a brush-off; Shy), the flat
+    -- ones (Nod, Blink, Chuckle, which can read as laughing at them), the shop greeter (Welcome, Greet,
+    -- "a hearty hello!"), the servant (Bow, Thank), Cuddle (too much at a stranger), Frown ("with
+    -- disappointment" guilt-trips) and Spin (nobody spins in the middle of a dance that never stops).
+    look = { "WINK", "SMILE", "GIGGLE", "GRIN", "SMIRK", "WAVE" },   -- only targeted you: slight
+    kiss = { "KISS", "BLUSH", "PURR", "FLIRT", "KISSDOWN", "LASHES" },
+    wink = { "WINK", "SMIRK", "GRIN", "GIGGLE" },
+    flirt = { "FLIRT", "PURR", "TEASE", "SMIRK", "GIGGLE", "LASHES", "BECKON", "FINGER" },
+    show = { "CURTSEY", "SMILE" },
+    hug = { "GIGGLE", "HUG", "BLUSH" },
+    wave = { "WAVE", "SMILE" },
     dance = { "DANCE" },
     whisper = { },
-    sad = { "CRY", "POUT", "FROWN", "SIGH" },                 -- after a rude emote, and nothing from "any"
-    any = { "WINK", "SMILE", "GIGGLE", "GRIN", "NOD", "CHUCKLE" },
+    sad = { "POUT", "SIGH", "CRY" },                          -- after a rude emote, and nothing from "any"
+    any = { "WINK", "SMILE", "GIGGLE", "GRIN", "SMIRK" },
 }
 -- What the buttons call them.
 M.LABEL = {
-    WINK = "Wink", SMILE = "Smile", GIGGLE = "Giggle", SHY = "Shy", WAVE = "Wave", BLUSH = "Blush",
-    KISS = "Blow a kiss", FLIRT = "Flirt", CURTSEY = "Curtsey", THANK = "Thank", HUG = "Hug", DANCE = "Dance",
-    GRIN = "Grin", SMIRK = "Smirk", BASHFUL = "Act bashful", NOD = "Nod", TEASE = "Tease", BOW = "Bow", GREET = "Greet",
-    CHUCKLE = "Chuckle", BLINK = "Blink", PURR = "Purr", BECKON = "Beckon", WELCOME = "Welcome", CUDDLE = "Cuddle",
-    HELLO = "Say hello", CRY = "Cry", POUT = "Pout", FROWN = "Frown", SIGH = "Sigh",
+    WINK = "Wink", SMILE = "Smile", GIGGLE = "Giggle", WAVE = "Wave", BLUSH = "Blush",
+    KISS = "Blow a kiss", FLIRT = "Flirt", CURTSEY = "Curtsey", HUG = "Hug", DANCE = "Dance",
+    GRIN = "Grin", SMIRK = "Smirk", TEASE = "Tease", PURR = "Purr", BECKON = "Beckon",
+    CRY = "Cry", POUT = "Pout", SIGH = "Sigh",
     WELCOMEBACK = "Welcome back",
-    SPIN = "Spin", LASHES = "Bat eyelashes", FINGER = "Crook a finger", KISSDOWN = "Blow a slow kiss",
+    LASHES = "Bat eyelashes", FINGER = "Crook a finger", KISSDOWN = "Blow a slow kiss",
 }
--- The shop's own emotes, from on top of the mailbox (SuccuDev: "im dancing on TOP of the mailbox,
--- classic WoW style, you have to design around that"; "more clever emotes, more enticing emotes").
--- They only exist as /e lines; when /e does not go out, the game's emote here goes instead. Only for
--- people who flirted, kissed or whistled first.
-M.FALLBACK = { SPIN = "CURTSEY", LASHES = "FLIRT", FINGER = "BECKON", KISSDOWN = "KISS" }
+-- The addon's own emotes (SuccuDev: "more clever emotes, more enticing emotes"). They only exist as /e
+-- lines; when /e does not go out, the game's emote here goes instead. Only for people who flirted,
+-- kissed or whistled first.
+M.FALLBACK = { LASHES = "FLIRT", FINGER = "BECKON", KISSDOWN = "KISS" }
 
 -- What the game's emote says when aimed at somebody (warcraft.wiki.gg, List of emotes), said in /e
 -- instead, so the dance goes on. %s is their name.
 M.SAY = {
-    WINK = "winks slyly at %s.", SMILE = "smiles at %s.", GIGGLE = "giggles at %s.", SHY = "smiles shyly at %s.",
+    WINK = "winks slyly at %s.", SMILE = "smiles at %s.", GIGGLE = "giggles at %s.",
     WAVE = "waves at %s.", GRIN = "grins wickedly at %s.", SMIRK = "smirks slyly at %s.",
-    BASHFUL = "is so bashful...too bashful to get %s's attention.", NOD = "nods at %s.", CHUCKLE = "chuckles at %s.",
-    BLINK = "blinks at %s.", BLUSH = "blushes at %s.", KISS = "blows a kiss to %s.", PURR = "purrs at %s.",
+    BLUSH = "blushes at %s.", KISS = "blows a kiss to %s.", PURR = "purrs at %s.",
     FLIRT = "flirts with %s.", TEASE = "teases %s.", BECKON = "beckons %s over.", CURTSEY = "curtseys before %s.",
-    THANK = "thanks %s.", BOW = "bows before %s.", WELCOME = "welcomes %s.", HUG = "hugs %s.",
-    CUDDLE = "cuddles up against %s.", GREET = "greets %s warmly.", HELLO = "greets %s with a hearty hello!",
-    SPIN = "does a little spin for %s.", LASHES = "bats eyelashes at %s.", FINGER = "crooks a finger at %s.",
+    HUG = "hugs %s.",
+    LASHES = "bats eyelashes at %s.", FINGER = "crooks a finger at %s.",
     KISSDOWN = "blows %s a slow kiss.",
-    CRY = "cries on %s's shoulder.", POUT = "pouts at %s.", FROWN = "frowns with disappointment at %s.", SIGH = "sighs at %s.",
+    CRY = "cries on %s's shoulder.", POUT = "pouts at %s.", SIGH = "sighs at %s.",
 }
 
 -- Other wordings of the common ones, taking turns with the game's own, so the same line does not
@@ -112,16 +125,15 @@ M.SAY = {
 -- different winks, smiles"). Same style: short, third person, nothing said out loud.
 M.VARIANTS = {
     WINK = { "winks at %s.", "gives %s a wink.", "gives %s a slow wink." },
-    SMILE = { "gives %s a slow smile.", "gives %s a little smile.", "smiles warmly at %s." },
+    SMILE = { "gives %s a slow smile.", "gives %s a little smile." },      -- not "warmly": that one was mumsy
     WAVE = { "gives %s a little wave." },
     GIGGLE = { "gives %s a little giggle." },
     GRIN = { "grins at %s.", "gives %s a grin." },
     SMIRK = { "smirks at %s." },
-    NOD = { "gives %s a slow nod.", "gives %s a little nod." },
-    BLUSH = { "blushes and looks away from %s.", "blushes a little at %s." },
+    BLUSH = { "blushes a little at %s." },        -- not "blushes and looks away": that read as a brush-off
     KISS = { "blows %s a kiss." },
-    CURTSEY = { "curtseys for %s.", "does a little curtsey for %s." },
-    SHY = { "gives %s a shy smile." },
+    CURTSEY = { "curtseys for %s." },
+    PURR = { "gives %s a little purr." },
 }
 local sayTurn = {}
 -- The line for a token this time: the game's wording first, then the others, in turn.
@@ -140,9 +152,12 @@ end
 -- And the tone (SuccuDev, 2026-11-16: "the passive emotes are really unsexy and beggar like"): the lines
 -- are a tease from somebody who knows they are being watched, never somebody waiting, hoping or asking.
 -- No looking for an audience, no eyeing the jar. The jar is mentioned seldom and never asked for.
+-- 2026-11-17 review: "leaves the tip jar where everybody can reach it." was begging in two of three
+-- readings. In its place a wink at the ones who tipped: it says tips are taken and what they get, and
+-- asks nobody for anything.
 M.JAR = {
     "dances a little slower beside the tip jar.",
-    "leaves the tip jar where everybody can reach it.",
+    "winks at whoever tipped today.",
 }
 -- Now and then while somebody is around, at nobody: something to look at.
 -- The lines fit wherever you dance (SuccuDev, 2026-11-16: "make it compatible with non mailbox dancing
@@ -157,29 +172,26 @@ M.JAR = {
 -- And plain (SuccuDev, 2026-11-16: "'licks a lip' is not the kind of phrasing that ever works. you are
 -- claudeing this shit up"): short lines the way players type an emote. Nothing writerly, and no body
 -- part with "a" or "those" in place of a pronoun (a lip, a toe, those hips).
+-- 2026-11-17 review: the 22 lines held about 7 ideas. Nine said "smiles, winks or grins at the crowd",
+-- four said "enjoys being watched", two were the same slow dance; read in a row that is a bot on a
+-- loop. Now 14 lines, one idea each, and more of them pick out "somebody", so each reader wonders if
+-- it is them. Out as stiff: "does not mind the staring at all.", "grins at the ones staring.",
+-- "lets the crowd look.", "eyes somebody in the crowd."
 M.IDLE = {
     "dances a little slower for whoever is watching.",
-    "catches somebody staring and smiles.",
-    "winks at the crowd.",
+    "catches somebody staring and winks.",
     "gives the crowd something to look at.",
     "knows exactly who is watching.",
-    "winks at whoever is staring.",
     "puts a little more hip into it.",
-    "smirks at the crowd.",
-    "enjoys the attention.",
-    "smiles at whoever is looking.",
-    "dances just out of reach.",
-    "lets the crowd look.",
-    "catches somebody staring and winks.",
+    "stares right back at somebody.",
     "enjoys being watched.",
-    "does not mind the staring at all.",
-    "grins at the ones staring.",
+    "dances just out of reach.",
+    "smirks at the crowd.",
+    "starts dancing a little dirtier.",
+    "checks out somebody in the crowd.",
     "pretends not to notice the staring.",
-    "eyes somebody in the crowd.",
-    "sways a little slower for the crowd.",
-    "likes being stared at.",
-    "smiles at the crowd.",
-    "grins at the crowd.",
+    "makes sure everybody gets a good look.",
+    "grins at whoever is staring.",
 }
 -- Somebody who has kept you targeted this long gets one look at the tip jar, once an hour at most.
 M.NUDGE = "glances at the tip jar, then at %s."
@@ -195,15 +207,16 @@ M.DANCE_FOR = "dances for %s."
 -- Somebody who tipped you before comes by again: one of these, in /e (SuccuDev: "just a welcome back emote").
 -- Worded like the game's own emotes, nothing said in Smuttanie's voice (SuccuDev: "dont add text as if
 -- smuttanie's writing in emotes. it has to be clean, minimalistic, feel similar to ingame emotes").
+-- 2026-11-17 review: "waves at Bob again." and "smiles at Bob again." sounded like a counter, and
+-- "greets Bob warmly." like a hostess. Somebody who comes back gets a little more than a stranger.
 M.WELCOMES = {
     "welcomes {name} back.",
-    "waves at {name} again.",
-    "smiles at {name} again.",
-    "greets {name} warmly.",
+    "gives {name} a wink for coming back.",
+    "smiles to see {name} back.",
 }
 
 local on = false
-local frame, events, keys
+local frame, events
 -- newest first: { name, kind = "look"|"emote"|"whisper", what, at, seen, reply = { word, token, label }, pitch = bool,
 --                 pitchedAt, emotedAt (by itself), doneAt (answered: a click, or the game showed the emote going at them) }
 local visitors = {}
@@ -214,8 +227,8 @@ local Queue, Flush
 -- The game lets a chat line from an addon out only while it handles the player's own key press or
 -- click. From a timer or from somebody's chat line it is blocked ("action failed because of an addon",
 -- and in the saved log every "timer /e" and "event /e" has "no echo"). The game's own emotes (/wink)
--- are not blocked. So: nothing in /e from these origins, and lines by itself wait for the next key press
--- (a click in the world no longer counts, see M.Start).
+-- are not blocked. So: nothing in /e from these origins, and a line at nobody waits for a click on the
+-- counter's Say a line button (no key press and no click in the world sets one off, see M.Start).
 M.HARDWARE_ONLY = true
 local NOKEY = { timer = true, event = true, nudge = true, tip = true, back = true, ["?"] = true }
 local lastAlert = -1e9
@@ -670,7 +683,7 @@ local function Fade()
     if b:IsShown() and b.visitor and pulse then b:LockHighlight() else b:UnlockHighlight() end
     -- and the tip jar button, while its line did not go out
     if jarOwed and pulse then frame.jar:LockHighlight() else frame.jar:UnlockHighlight() end
-    -- and Say a line, while a line waits for a key press
+    -- and Say a line, while a line is due
     local say = frame.cta.say
     if say:IsShown() and M.Queued() > 0 and pulse then say:LockHighlight() else say:UnlockHighlight() end
 end
@@ -794,18 +807,51 @@ Missed = function()
 end
 
 -- An emote by itself, if the limits allow. The dance comes back a few seconds later.
-local LOOK_OLD = 10              -- seconds a wink at a looker waits for a key before it is dropped
-local function Auto(v, gap, soft)
-    if manual or not v.reply or Away() then return false end
+local function MayAuto(v, gap)
+    if manual or not v.reply or not v.reply[2] or Away() then return false end
     local now = Now()
     if now - lastAuto < GLOBAL_GAP or (v.emotedAt and now - v.emotedAt < gap) then return false end
     -- a dance back only if you are not dancing already, and not right after the last one
     if v.reply[2] == "DANCE" and (dancing or now - lastDance < DANCE_GAP) then return false end
+    return true
+end
+local function Auto(v, gap)
+    if not MayAuto(v, gap) then return false end
     if not Emote(v.reply[2], v.name, "event") then
         Missed()
         return false
     end
-    lastAuto, v.emotedAt = now, now
+    lastAuto, v.emotedAt = Now(), Now()
+    return true
+end
+
+-- A person needs a moment to read an emote and answer it. One that comes back in the same instant,
+-- every time, is a bot (SuccuDev, 2026-11-17: "make reactions to peoples emotes have a more natural
+-- delay too"). So the answer by itself goes out a few seconds later, picked at random each time; a
+-- wink at somebody who only looks gets a shorter wait, on top of the HOLD seconds they kept looking.
+-- When the wait is over everything is checked again: still dancing, not AFK, not answered by a click
+-- in the meantime, the limits, and a looker must still be looking.
+M.REACT = { 2, 5 }               -- seconds before an answer to an emote; nil: at once
+M.REACT_LOOK = { 0.5, 2.5 }      -- ... before the wink at somebody who only looks
+local function Later(v, gap, look)
+    if v.answering or not MayAuto(v, gap) then return false end
+    local wait
+    if look then wait = M.REACT_LOOK else wait = M.REACT end
+    if not (wait and C_Timer and C_Timer.After) then return Auto(v, gap) end
+    v.answering = true
+    C_Timer.After(M.Random(wait[1], wait[2]), function()
+        v.answering = nil
+        if not on then return end
+        if v.doneAt and v.doneAt >= v.at then return end             -- answered with a click meanwhile
+        local sent
+        if v.kind == "look" then
+            -- looked away while it waited: no wink after them (seen on the last look, a second ago at most)
+            sent = v.seen ~= nil and Now() - v.seen <= TICK + 0.6 and Auto(v, LOOK_GAP)
+        elseif v.kind == "emote" then
+            sent = Auto(v, PERSON_GAP)      -- what they did last, if more came while it waited
+        end
+        if sent and Sync then Sync() end
+    end)
     return true
 end
 
@@ -855,7 +901,7 @@ local function OnEmote(text, sender, guid)
     if not text:lower():find("%f[%a]you%f[%A]") then return end        -- only what is aimed at you
     local reply = ReplyFor(text)
     local v = Visit(sender, "emote", text, reply, reply ~= SAD_REPLY)
-    if reply then Auto(v, PERSON_GAP) end
+    if reply then Later(v, PERSON_GAP) end
     Sync()
 end
 
@@ -926,18 +972,19 @@ local function Look()
                 end
                 if not (v.seen and now - v.seen <= TICK + 0.6) then v.since = now end   -- a new look starts
                 v.seen = now
-                if now - (v.since or now) >= HOLD then Auto(v, LOOK_GAP, true) end
+                if now - (v.since or now) >= HOLD then Later(v, LOOK_GAP, true) end
             end
         end
     end
     return near
 end
 
--- The tip jar line, or the one that did not go out last time.
--- A line by itself waits here for the player's next key press, and goes out on
--- that (M.Hardware). One at a time, FLUSH_GAP apart; one that waited too long is dropped.
-local QUEUE_KEEP, QUEUE_OLD, FLUSH_GAP = 3, 60, 2
-local queue, lastFlush = {}, -1e9
+-- A line by itself waits here for a click on the counter's Say a line button, which lights up while
+-- one waits, and goes out on that click. Nothing else sets it off: not a key press, not a click in the
+-- world (SuccuDev, 2026-11-17: "just leave it on the button not the clicks"). One that waited too long
+-- is dropped; the next one that comes due waits in its place.
+local QUEUE_KEEP, QUEUE_OLD = 3, 60
+local queue = {}
 local function Purge()
     local now = Now()
     for i = #queue, 1, -1 do
@@ -945,13 +992,8 @@ local function Purge()
     end
 end
 Flush = function(from)
-    local now = Now()
     Purge()
     if not (on and queue[1]) or Away() then return false end
-    if from == "key" and now - lastFlush < FLUSH_GAP then return false end
-    -- a line at nobody does not go out right behind another emote of yours: it waits for a later key
-    if from == "key" and queue[1].soft and now - lastOwn < LINE_GAP then return false end
-    lastFlush = now
     local q = table.remove(queue, 1)
     q.fn(from)
     return true
@@ -962,13 +1004,6 @@ Queue = function(fn, old, soft)
     if not M.HARDWARE_ONLY then Flush() end
 end
 M.Queued = function() return #queue end
--- The player pressed a key: the line that was waiting goes out.
-function M.Hardware()
-    if not on then return false end
-    if dancing and due then M.Redance("key") end      -- the dance is down: a key press brings it back
-    if queue[1] then return Flush("key") end
-    return false
-end
 
 local jarTurn, jarOwed, nextJar = 0, nil, nil
 -- Every third jar line counts the jar out loud, and the count is seeded like a busker's hat
@@ -1023,7 +1058,7 @@ function M.Idle(from)
     local function send(f)
         Say(line, f or "timer", function()
             tries = tries + 1
-            if tries < 2 and M.HARDWARE_ONLY then Queue(send, nil, true) end     -- once more, on the next key press
+            if tries < 2 and M.HARDWARE_ONLY then Queue(send, nil, true) end     -- once more, on the next click of the button
         end, done)
     end
     Queue(send, nil, true)
@@ -1031,8 +1066,8 @@ function M.Idle(from)
 end
 function M.NextIdle(t) if t then nextIdle = t end return nextIdle end
 
--- The Say a line button: the line that was waiting for a key goes out now; with none waiting, the
--- next line at nobody. A click is always allowed to speak.
+-- The Say a line button: the line that was waiting goes out now; with none waiting, the next line at
+-- nobody. A click on it is the only thing that lets a line at nobody out.
 function M.SayLine()
     if not on then return false end
     local now = Now()
@@ -1244,8 +1279,8 @@ local function Build(host)
         if not GameTooltip then return end
         GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
         GameTooltip:SetText("Say a line")
-        GameTooltip:AddLine("Says the next line at nobody in /e, right now. Lines by itself wait for your next key press "
-            .. "(a click in the world does not set one off): the button lights up while a line is waiting.", 1, 0.82, 0, true)
+        GameTooltip:AddLine("Says the next line at nobody in /e, right now. Nothing else says one: no key press and no "
+            .. "click in the world. The button lights up when a line is due.", 1, 0.82, 0, true)
         GameTooltip:Show()
     end)
     cta.say:SetScript("OnLeave", HideTip)
@@ -1297,8 +1332,8 @@ local function Build(host)
         if not GameTooltip then return end
         GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
         GameTooltip:SetText("Tip jar")
-        GameTooltip:AddLine("Says a short line about your tip jar in /e. One is due every 8 to 12 minutes "
-            .. "while somebody is around and goes out on your next key press.", 1, 0.82, 0, true)
+        GameTooltip:AddLine("Says a short line about your tip jar in /e. One also comes due every 8 to 12 minutes "
+            .. "while somebody is around: Say a line lights up and says it.", 1, 0.82, 0, true)
         GameTooltip:Show()
     end)
     f.jar:SetScript("OnLeave", HideTip)
@@ -1315,13 +1350,13 @@ end
 function M.Start()
     if on then return true end
     if not (C_Timer and C_Timer.After) then
-        ns.Print("mailbox mode needs the game's timers, and this client has none.")
+        ns.Print("dancing for tips needs the game's timers, and this client has none.")
         return false
     end
     if ns.Counter and ns.Counter.Show then ns.Counter.Show() end
     local ok, err = pcall(Build)
     if not ok then
-        ns.Print("the mailbox window could not be built: " .. tostring(err))
+        ns.Print("the window could not be built: " .. tostring(err))
         return false
     end
     if not events then
@@ -1344,30 +1379,19 @@ function M.Start()
     on, manual, misses, pend, dancing, due = true, false, 0, nil, false, nil
     nextJar, nextIdle, nextRefresh, wasAway, lastEngage, lastOwn = nil, nil, nil, false, -1e9, -1e9
     for i = #queue, 1, -1 do queue[i] = nil end
-    -- every key press, passed on untouched: the moment a waiting line may go out. Not a click in the
-    -- world: the click that brings the game's window back to the front set a line off each time
-    -- (SuccuDev, 2026-11-17: "stop auto emoting when I click into the window").
-    if not keys and type(CreateFrame) == "function" then
-        keys = CreateFrame("Frame", "MailboxSluttingKeys", UIParent)
-        keys:SetScript("OnKeyDown", function() M.Hardware() end)
-        -- only with the keys passed on: a frame that takes the keyboard without it would swallow them all
-        if type(keys.SetPropagateKeyboardInput) == "function" and pcall(keys.SetPropagateKeyboardInput, keys, true)
-            and type(keys.EnableKeyboard) == "function" then
-            pcall(keys.EnableKeyboard, keys, true)
-        end
-    end
-    if keys then keys:Show() end
+    -- Nothing listens to the keyboard or to clicks in the world: the click that brings the game's window
+    -- back to the front set a line off each time (SuccuDev, 2026-11-17: "stop auto emoting when I click
+    -- into the window"), and a key press did the same ("just leave it on the button not the clicks").
     frame:Show()
     Emote("DANCE", nil, "start")
     Tick()
-    ns.Print("you are dancing, and the big button winks or smiles at whoever is waiting. The dance is sent again every 30 to 60 seconds, so whoever walks up sees it. Lines by itself go out when you press any key. Stop dancing on the counter ends it.")
+    ns.Print("you are dancing, and the big button winks or smiles at whoever is waiting. The dance is sent again every 30 to 60 seconds, so whoever walks up sees it. A line at nobody goes out only when you click Say a line. Stop dancing on the counter ends it.")
     return true
 end
 
 function M.Stop(fromHide)
     if not on then return end
     on = false
-    if keys then keys:Hide() end
     if wasAway and type(StaticPopup_Hide) == "function" then pcall(StaticPopup_Hide, "MAILBOXSLUTTING_AFK") end
     wasAway = false
     if events then

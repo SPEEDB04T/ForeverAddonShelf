@@ -1,4 +1,5 @@
--- Mailbox Slutting: for standing on a city mailbox and dancing for tips, classic WoW style.
+-- Mailbox Slutting: for dancing for tips, classic WoW style. The name is from where it started, on a
+-- city mailbox; it works wherever you stand, and nothing it shows or sends mentions a mailbox.
 --
 --   Mailbox.lua  the dance, and the emotes back at whoever looks at you, emotes at you or whispers
 --                you; the idle lines, the tip jar lines and the welcome back for your tippers
@@ -12,7 +13,7 @@
 -- from the shop is what you had saved there (tips, tippers, numbers), copied once.
 local ADDON, ns = ...
 
-ns.VERSION = "1.6.0"
+ns.VERSION = "1.7.0"
 ns.TITLE = "Mailbox Slutting"
 ns.ICON = "Interface\\Icons\\INV_Letter_15"
 

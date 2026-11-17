@@ -169,8 +169,10 @@ T.THANKS = {
         "thanks {who} for the tip of {amount}.",
         "drops {who}'s {amount} in the tip jar.",
     } },
+    -- 2026-11-17 review: a gold got the same "thanks" as a few silver, and 20 gold got a bow, which
+    -- reads as a servant where a bigger tip should get something warmer than a smaller one.
     { 10000, {                              -- a gold or more
-        "thanks {who} for the tip of {amount}.",
+        "gives {who} a wink for the tip of {amount}.",
         "curtseys before {who} for the tip of {amount}.",
     } },
     { 50000, {                              -- 5 gold or more
@@ -179,7 +181,7 @@ T.THANKS = {
     } },
     { 200000, {                             -- 20 gold or more
         "gives {who} a big hug for the tip of {amount}.",
-        "bows before {who} for the tip of {amount}.",
+        "blows {who} a slow kiss for the tip of {amount}.",
     } },
     { 1000000, {                            -- 100 gold or more
         "is speechless at {who}'s tip of {amount}.",
@@ -212,7 +214,8 @@ end
 
 -- A little whisper after it, a few seconds later like a person would (SuccuDev: "whisper can be a cute
 -- little thank you <3 or something, with a natural delay randomized").
-T.WHISPERS = { "thank you <3", "aww, thank you <3", "ty ty <3", "thank you!! <3" }
+-- 2026-11-17 review: "aww, thank you <3" and "thank you!! <3" gushed, "ty ty" was trying. Three plain ones.
+T.WHISPERS = { "thank you <3", "ty <3", "thanks <3" }
 T.DELAY_MIN, T.DELAY_MAX = 3, 8
 local ECHO_WAIT = 2             -- seconds for the game to show a line went out
 local THANK_SHOWN = 60          -- seconds the Thank button stays up

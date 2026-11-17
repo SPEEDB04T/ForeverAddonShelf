@@ -1,5 +1,20 @@
 # Changelog
 
+## 1.7.0
+
+- A line at nobody goes out only when you click **Say a line** (or **Tip jar**) on the counter. Key presses no longer send one, so walking, jumping or typing says nothing. The button still lights up when a line is due.
+- An answer to somebody's emote comes 2 to 5 seconds later, at a random moment each time, where it came in the same instant. The wink at somebody who keeps you targeted comes half a second to 2.5 seconds after the three seconds. Nothing goes out if you answered with a click in the meantime, went AFK or stopped dancing, or if the looker looked away.
+- No mailbox anywhere: the addon's description and two messages said "mailbox"; they don't any more. Nothing it sends ever did, and nothing in it looks for one. Only the name is left.
+- Every line and reaction was put in front of three hostile reviewers. What changed:
+  - **Lines at nobody: 14, one idea each, where 22 held about 7 ideas** (nine were "smiles, winks or grins at the crowd", four were "enjoys being watched"). New: "stares right back at somebody.", "starts dancing a little dirtier.", "checks out somebody in the crowd.", "makes sure everybody gets a good look.", "grins at whoever is staring." Gone, among the repeats: "does not mind the staring at all.", "lets the crowd look.", "grins at the ones staring.", "eyes somebody in the crowd."
+  - **What goes back by itself**: a kiss gets a kiss (it was a blush), a whistle a sly smirk (a curtsey), a lick a purr (a giggle), a purr a purr and "sexy" a flirt (both a wink), a cheer a grin ("thanks Bob."), a hug a giggle (a hug back; Hug is still on the button).
+  - **Rude emotes get a pout**, where it was "cries on Bob's shoulder." Sigh and Cry are still on the button.
+  - **Off the buttons**: Act bashful, Shy, Nod, Blink, Chuckle, Greet, Say hello, Welcome, Bow, Thank, Cuddle, Frown and Spin. Gone with them: "smiles warmly at Bob." and "blushes and looks away from Bob."
+  - **Tip jar**: "winks at whoever tipped today." in place of "leaves the tip jar where everybody can reach it."
+  - **Welcome back**: "gives Bob a wink for coming back." and "smiles to see Bob back." in place of "waves at Bob again.", "smiles at Bob again." and "greets Bob warmly."
+  - **Thank-yous**: a gold or more gets "gives Bob a wink for the tip of..." (it was the same "thanks" as a few silver), and 20 gold or more "blows Bob a slow kiss for the tip of..." in place of the bow.
+  - **Whispers**: "thank you <3", "ty <3" or "thanks <3".
+
 ## 1.6.0
 
 - The dance is sent again every 30 to 60 seconds, at a random moment each time. Somebody who came into view after you started saw you standing still; now they see the dance within a minute. It waits while you walk, fight or are AFK, and leaves you alone if you do another emote yourself (until you dance again).

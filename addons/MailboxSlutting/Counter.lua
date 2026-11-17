@@ -1,4 +1,4 @@
--- Mailbox Slutting: the counter. One window that stays on screen while you stand on the mailbox:
+-- Mailbox Slutting: the counter. One window that stays on screen while you dance:
 --   mailbox mode, built into it (who is waiting and the reply, the visitors, Tip jar, Dance);
 --   today's numbers (hover for the week and all time);
 --   Start dancing / Stop dancing.
