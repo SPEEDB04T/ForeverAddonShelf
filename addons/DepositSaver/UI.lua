@@ -354,7 +354,10 @@ function UI.Attach()
     for _, key in ipairs({ "ItemSellFrame", "CommoditiesSellFrame" }) do
         local sf = ah[key]
         if type(sf) == "table" and sf.UpdatePostState then
-            hooksecurefunc(sf, "UpdatePostState", function() pcall(UI.Refresh) end)
+            hooksecurefunc(sf, "UpdatePostState", function()
+                pcall(ns.CacheSellState, sf)
+                pcall(UI.Refresh)
+            end)
         end
     end
     if ah.HookScript then

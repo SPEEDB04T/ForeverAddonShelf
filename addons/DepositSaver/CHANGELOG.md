@@ -1,5 +1,20 @@
 # Changelog
 
+## 1.1.1 (2026-11-16)
+
+- Fix: deposits came out wrong.
+  - The deposit is now the number the auction house showed when you posted. Before, it was
+    worked out after the item had already left your bag, which could give 0 or another item's
+    deposit.
+  - Posting several copies of an item at once makes one auction per copy; each now gets its
+    share of the deposit and its own price. Before, the first auction got all of it.
+  - When part of a stack sells, only the rest's deposit counts as at risk.
+  - An auction matched to the wrong post (one the addon missed) is caught at the first read
+    and estimated instead.
+  - Estimates use how long the auction was posted for, judged from its time left.
+  - Deposit rates learned from the bad reads are dropped once.
+  - Your guildmates and alts see the corrected numbers the next time your list is shared.
+
 ## 1.1.0 (2026-11-16)
 
 - Mail a bought-back item to its seller with Cash on Delivery. The addon remembers who

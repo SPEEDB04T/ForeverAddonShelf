@@ -232,13 +232,14 @@ local function Upsert(owner, f, sender)
     if rec and rec.src == "own" then return id end
     local flags = f[13] or ""
     local exact = flags:find("e", 1, true) ~= nil
+    -- only the owner's own account shares its auctions: its latest numbers win, even when a
+    -- deposit it called exact before is now an estimate (it was matched to the wrong post)
     local deposit = N(f[12])
-    if rec and rec.exact and not exact then deposit = rec.deposit end
     rec = rec or {}
     rec.id, rec.owner, rec.src, rec.from = id, owner, "comm", sender
     rec.item, rec.ilvl, rec.suffix, rec.pet = N(f[6]), N(f[7]), N(f[8]), N(f[9])
     rec.qty, rec.unit, rec.deposit = math.max(N(f[10]) or 1, 1), N(f[11]), deposit
-    rec.exact = exact or (rec.exact and deposit ~= nil) or false
+    rec.exact = exact
     rec.approx = flags:find("a", 1, true) ~= nil or nil
     rec.commodity = flags:find("c", 1, true) ~= nil
     rec.bidOnly = flags:find("b", 1, true) ~= nil or nil

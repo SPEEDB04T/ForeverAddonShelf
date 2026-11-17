@@ -12,7 +12,7 @@
 -- posted without this addon get an estimate from the vendor price.
 local ADDON, ns = ...
 
-ns.VERSION = "1.1.0"
+ns.VERSION = "1.1.1"
 ns.TITLE = "Deposit Saver"
 ns.ICON = "Interface\\Icons\\INV_Misc_Coin_02"
 
@@ -141,6 +141,18 @@ function ns.InitDB()
     for _, k in ipairs({ "auctions", "chars", "whisper", "rates", "hours", "commLog", "sendBack" }) do
         if type(db[k]) ~= "table" then db[k] = {} end
     end
+    if (tonumber(db.depositFix) or 0) < 1 then
+        db.rates = {}
+        for _, rec in pairs(db.auctions) do
+            if type(rec) == "table" and rec.src == "own" and (tonumber(rec.deposit) or 0) <= 0 then
+                rec.deposit, rec.exact = nil, false
+            end
+        end
+        db.depositFix = 1
+    end
+    for d, r in pairs(db.rates) do
+        if type(r) ~= "number" or r <= 0 or r > 5 then db.rates[d] = nil end
+    end
     local c = type(db.chars[ns.Me()]) == "table" and db.chars[ns.Me()] or {}
     c.seen = ns.ServerNow()
     db.chars[ns.Me()] = c
@@ -227,11 +239,27 @@ local function DurationGuess()
     return d
 end
 
+-- The shortest duration that fits the time left, or the one the sell frame is set to.
+function ns.DurationFor(rec, now)
+    local d = DurationGuess()
+    local left = ns.Left(rec, now or ns.ServerNow())
+    if left then
+        for dur = 1, 3 do
+            if left <= ns.Hours(dur) * 3600 + 60 then
+                if d < dur then d = dur end
+                return d
+            end
+        end
+        return 3
+    end
+    return d
+end
+
 -- An estimate for an auction whose post the addon did not see.
 function ns.EstimateDeposit(rec)
     local vendor = VendorPrice(rec.item)
     if not vendor then return nil end
-    local dur = rec.dur or DurationGuess()
+    local dur = rec.dur or ns.DurationFor(rec)
     local rate = Num(ns.db.rates[dur]) or DEFAULT_RATES[dur] or DEFAULT_RATES[2]
     return math.floor(vendor * math.max(Num(rec.qty) or 1, 1) * rate + 0.5)
 end
@@ -331,10 +359,31 @@ local function SellFrameDeposit()
     return nil
 end
 
+-- What the sell frame shows, kept from its last update: the hook on PostItem runs after the
+-- item has left its bag slot, so the deposit can't be worked out again from the slot then.
+ns.sellState = nil
+function ns.CacheSellState(f)
+    if type(f) ~= "table" or not f.GetItem then return end
+    local ok, loc = pcall(f.GetItem, f)
+    if not ok or not loc then return end
+    local id, link = ItemFromLocation(loc)
+    if not id then return end
+    local okD, d = pcall(f.GetDepositAmount, f)
+    local okT, dur = pcall(function() return f:GetDuration() end)
+    local okQ, qty = pcall(function() return f:GetQuantity() end)
+    ns.sellState = { item = id, link = link, deposit = okD and Num(d) or nil, dur = okT and Num(dur) or nil,
+        qty = okQ and Num(qty) or nil, t = GetTime() }
+end
+
 -- Called (after the game's own call) for PostItem / ConfirmPostItem / PostCommodity / ConfirmPostCommodity.
 function ns.CapturePost(kind, loc, duration, qty, a, b)
     local id, link = ItemFromLocation(loc)
     duration, qty = Num(duration), math.max(Num(qty) or 1, 1)
+    local s = ns.sellState
+    if s and GetTime() - s.t > 600 then s = nil end
+    if s and ((id and s.item ~= id) or (s.dur and s.dur ~= duration) or (s.qty and s.qty ~= qty)) then s = nil end
+    if not id and s then id, link = s.item, s.link end
+    link = link or (s and s.link)
     if not id or not duration then return end
     local unit, bidOnly
     if kind == "commodity" then
@@ -344,27 +393,39 @@ function ns.CapturePost(kind, loc, duration, qty, a, b)
         unit = Num(b)
         if not unit or unit <= 0 then unit, bidOnly = Num(a), true end
     end
-    local deposit
-    if kind == "commodity" and C_AuctionHouse.CalculateCommodityDeposit then
+    local deposit = s and s.deposit and s.deposit > 0 and s.deposit or nil
+    if deposit then
+        -- the sell frame's number, read before the post
+    elseif kind == "commodity" and C_AuctionHouse.CalculateCommodityDeposit then
         local ok, d = pcall(C_AuctionHouse.CalculateCommodityDeposit, id, duration, qty)
         deposit = ok and Num(d) or nil
     elseif C_AuctionHouse.CalculateItemDeposit then
         local ok, d = pcall(C_AuctionHouse.CalculateItemDeposit, loc, duration, qty)
         deposit = ok and Num(d) or nil
     end
-    deposit = deposit or SellFrameDeposit()
+    if not deposit or deposit <= 0 then deposit = SellFrameDeposit() end
+    if deposit and deposit <= 0 then deposit = nil end
     local now = GetTime()
     -- A confirmation repeats the post it confirms: replace it.
     for i = #pending, 1, -1 do
         local p = pending[i]
-        if p.item == id and p.unit == unit and p.qty == qty and now - p.t < 30 then
+        if p.item == id and p.unit == unit and p.post == qty and now - p.t < 30 then
             table.remove(pending, i)
         elseif now - p.t > 60 then
             table.remove(pending, i)
         end
     end
-    pending[#pending + 1] = { item = id, link = link, dur = duration, qty = qty, unit = unit, bidOnly = bidOnly,
-        deposit = deposit, commodity = kind == "commodity", t = now }
+    local copies, each = 1, qty
+    if kind ~= "commodity" and qty > 1 then copies, each = qty, 1 end   -- one auction per copy
+    for i = 1, copies do
+        local part = deposit
+        if deposit and copies > 1 then
+            part = math.floor(deposit / copies)
+            if i == copies then part = deposit - part * (copies - 1) end
+        end
+        pending[#pending + 1] = { item = id, link = link, dur = duration, qty = each, unit = unit, bidOnly = bidOnly,
+            deposit = part, commodity = kind == "commodity", t = now, post = qty }
+    end
     -- learn the deposit rate for estimates
     local vendor = VendorPrice(id)
     if deposit and vendor and vendor > 0 then
@@ -434,10 +495,22 @@ function ns.ReadOwned()
                 rec = { id = id, created = nil }
                 ns.db.auctions[id] = rec
             end
+            local qty = math.max(Num(Get(a, "quantity")) or 1, 1)
+            if rec.exact and Num(rec.created) and not rec.checked then
+                -- matched to the wrong post (one the addon missed): the deposit isn't this auction's
+                if (rec.item and rec.item ~= item) or (rec.qty and rec.qty ~= qty) then
+                    rec.deposit, rec.exact, rec.dur = nil, false, nil
+                end
+            end
+            rec.checked = true
+            if Num(rec.deposit) and rec.qty and qty < rec.qty and rec.exact then
+                -- part of it sold: that part's deposit came back
+                rec.deposit = math.floor(rec.deposit * qty / rec.qty + 0.5)
+            end
             rec.owner, rec.src, rec.item, rec.seen = me, "own", item, now
             rec.ilvl, rec.suffix, rec.pet = Num(Get(key, "itemLevel")), Num(Get(key, "itemSuffix")), Num(Get(key, "battlePetSpeciesID"))
             rec.link = Str(Get(a, "itemLink")) or rec.link
-            rec.qty = math.max(Num(Get(a, "quantity")) or 1, 1)
+            rec.qty = qty
             local buyout, bid = Num(Get(a, "buyoutAmount")), Num(Get(a, "bidAmount"))
             if buyout and buyout > 0 then
                 rec.unit, rec.bidOnly = buyout, nil
@@ -466,8 +539,10 @@ function ns.ReadOwned()
                     rec.expires, rec.approx = nil, true
                 end
             end
-            if not Num(rec.deposit) then
+            if not Num(rec.deposit) or (not rec.exact and Num(rec.deposit) <= 0) then
                 rec.deposit, rec.exact = ns.EstimateDeposit(rec), false
+            elseif not rec.exact then
+                rec.deposit = ns.EstimateDeposit(rec) or rec.deposit   -- estimates follow what's learned
             end
             changed = true
         end
