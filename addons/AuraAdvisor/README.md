@@ -1,6 +1,6 @@
 # Aura Advisor
 
-For Paladins. Tells you when another aura fits the fight better, on the game's own stance bar: Fire Resistance when Fire hits are landing on you and your party, Concentration when your casts keep getting pushed back, Devotion or Retribution for physical hits, and back to your usual aura just after a fight. It also reminds a tank of Righteous Fury and keeps track of your blessings on the party. It has no bar or frame of its own, and no sound.
+For Paladins. Tells you when another aura fits the fight better, on the game's own stance bar: Fire Resistance when Fire hits are landing on you and your party, Concentration when your casts keep getting pushed back, Devotion or Retribution for physical hits, and back to your usual aura just after a fight. It also reminds a tank of Righteous Fury and keeps track of your blessings on the party. It has no bar or frame of its own, and the only sound is the Righteous Fury warning's.
 
 For WoW Forever (Interface 16001).
 
@@ -33,7 +33,12 @@ The play style comes from your group role, or Righteous Fury (tank), or is damag
 
 ## Righteous Fury
 
-In a group, as a Protection paladin (tank role, the Tank play style, or most of your talent points in Protection), Righteous Fury's action button glows while it is off, and its tooltip says "Not on". When a fight starts without it, its icon and name show once in the middle of the screen. Not solo, not in town or on a flight. `/aura fury` turns it off.
+In a group, as a Protection paladin (tank role, the Tank play style, or most of your talent points in Protection), while Righteous Fury is off:
+
+- a **raid warning**, "No Righteous Fury", shows in the middle of the screen with the game's raid warning sound: as a fight starts and every 8 seconds of it, when it comes off between fights (you died, joined a group, left town) and every 30 seconds after that. Not while mounted;
+- its action button glows, and its tooltip says "Not on".
+
+Cast it, in a fight too, and it all stops at once. Not solo, not in town or on a flight. `/aura fury` turns it off; `/aura furysound` turns off only the sound.
 
 ## Blessings
 
@@ -58,7 +63,7 @@ In a group, as a Protection paladin (tank role, the Tank play style, or most of 
 | `/aura default auto\|devotion\|retribution\|concentration` | Your aura between fights |
 | `/aura sens low\|normal\|high` | How quickly it suggests a switch |
 | `/aura glow` / `banner` / `chat` / `between` | Switch the glow, the line on screen, the chat line, or the between-fights suggestion on or off |
-| `/aura fury` / `bless` | Switch the Righteous Fury reminder, or the blessing tracking, on or off |
+| `/aura fury` / `furysound` / `bless` | Switch the Righteous Fury reminder, its sound, or the blessing tracking, on or off |
 | `/aura test fire\|frost\|shadow\|melee\|push\|off` | A pretend fight |
 | `/aura minimap` / `reset` / `debug` | The rest (`debug` also lists every aura's points) |
 

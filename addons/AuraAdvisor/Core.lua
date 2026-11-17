@@ -19,6 +19,7 @@ local defaults = {
     banner = true,              -- a line in the middle of the screen
     chat = false,               -- a line in the chat window
     fury = true,                -- remind a Protection paladin in a group to put Righteous Fury on
+    furySound = true,           -- the raid warning sound with that reminder
     blessings = true,           -- your blessings on the party: in tooltips, and a glow when they run out
 }
 local CHOICES = {
@@ -196,22 +197,24 @@ function ns.ScanBuffs()
         local ok, secret = pcall(C_Secrets.ShouldAurasBeSecret)
         if ok and secret then return false end
     end
-    local own, others, fury = nil, {}, false
+    local own, others, fury, furyEnds = nil, {}, false, nil
     local furyName = ns.SpellInfo(Data.RIGHTEOUS_FURY.id)
     for i = 1, 60 do
-        local name, spellID, source
+        local name, spellID, source, expires
         if C_UnitAuras and C_UnitAuras.GetAuraDataByIndex then
             local ok, data = pcall(C_UnitAuras.GetAuraDataByIndex, "player", i, "HELPFUL")
             if not ok or Secret(data) then return false end
             if data == nil then break end
             local read
-            read, name, spellID, source = pcall(function() return data.name, data.spellId, data.sourceUnit end)
+            read, name, spellID, source, expires = pcall(function()
+                return data.name, data.spellId, data.sourceUnit, data.expirationTime
+            end)
             if not read then return false end
         elseif UnitBuff then
-            local ok, n, _, _, _, _, _, src, _, _, id = pcall(UnitBuff, "player", i)
+            local ok, n, _, _, _, _, exp, src, _, _, id = pcall(UnitBuff, "player", i)
             if not ok or Secret(n) then return false end
             if n == nil then break end
-            name, spellID, source = n, id, src
+            name, spellID, source, expires = n, id, src, exp
         else
             return false
         end
@@ -227,9 +230,12 @@ function ns.ScanBuffs()
         elseif spellID == Data.RIGHTEOUS_FURY.id or name == Data.RIGHTEOUS_FURY.english
             or (furyName and name == furyName) then
             fury = true
+            -- when it runs out (none: it doesn't), so a fight that outlasts it isn't fooled
+            expires = Plain(expires)
+            furyEnds = (type(expires) == "number" and expires > 0) and expires or nil
         end
     end
-    ns.buffOthers, ns.castOthers, ns.fury = others, {}, fury
+    ns.buffOthers, ns.castOthers, ns.fury, ns.furyEnds = others, {}, fury, furyEnds
     if not (ns.formsListed and ns.formsReadable) then ns.seenCurrent = own end
     ns.seenValid = true
     return true
@@ -466,6 +472,10 @@ local function OnEvent(_, event, a1, a2, a3, a4, a5)
             if key then
                 ns.seenCurrent, ns.seenValid = key, true
                 formsDirty, ns.thinkNow = true, true
+            elseif ns.Reminders and ns.Reminders.IsFury(a3) then
+                -- in a fight the game hides your buffs: the cast is all there is to go by
+                ns.fury, ns.furyEnds = true, nil
+                buffDirty, ns.thinkNow = true, true
             end
         elseif unit and PARTY[unit] then
             PartyAuraCast(unit, a3)
@@ -490,6 +500,7 @@ local function OnEvent(_, event, a1, a2, a3, a4, a5)
         ns.held, ns.thinkNow = nil, true    -- the fight is over: so is its suggestion
     elseif event == "PLAYER_DEAD" then
         ns.seenCurrent, ns.seenValid, ns.deadFlag, ns.held = nil, false, true, nil
+        ns.fury, ns.furyEnds = false, nil      -- dying takes it off
         formsDirty, buffDirty, ns.thinkNow = true, true, true
         -- the fight you died in is over for you: its hits don't count once you're back
         if not ns.testing then Signals.Reset() end
@@ -678,7 +689,7 @@ local function Help()
     ns.Print("  /aura style auto|damage|tank|healer  (now: " .. ns.db.style .. ")")
     ns.Print("  /aura default auto|devotion|retribution|concentration  - your aura between fights (now: " .. ns.db.idle .. ")")
     ns.Print("  /aura sens low|normal|high  - how quickly it suggests a switch (now: " .. ns.db.sensitivity .. ")")
-    ns.Print("  /aura glow | banner | chat | between | fury | bless  - switch that on or off")
+    ns.Print("  /aura glow | banner | chat | between | fury | furysound | bless  - switch that on or off")
     ns.Print("  /aura test fire|frost|shadow|melee|push|off  - a pretend fight")
     ns.Print("  /aura minimap | reset | debug")
 end
@@ -689,6 +700,7 @@ local TOGGLES = {
     chat = { "chat", "chat line" },
     between = { "betweenFights", "default after a fight" },
     fury = { "fury", "Righteous Fury reminder" },
+    furysound = { "furySound", "Righteous Fury sound" },
     bless = { "blessings", "blessing reminders" },
 }
 

@@ -62,8 +62,12 @@ local function Rows()
         { kind = "header", text = "Reminders" },
         { kind = "check", label = "Righteous Fury when you tank",
           tip = "In a group, as a Protection paladin (tank role, Tank play style, or most points in Protection): "
-              .. "Righteous Fury's button glows while it is off, and a line shows when a fight starts without it. Same as /aura fury.",
+              .. "while Righteous Fury is off, its button glows and a raid warning says so: when a fight starts, every "
+              .. "8 seconds of it, and every 30 seconds between fights (not while mounted). Same as /aura fury.",
           get = Get("fury"), set = Set("fury") },
+        { kind = "check", label = "Sound with the warning",
+          tip = "The game's raid warning sound with each Righteous Fury warning. Same as /aura furysound.",
+          get = Get("furySound"), set = Set("furySound") },
         { kind = "check", label = "Your blessings on the party",
           tip = "Party members' tooltips show your blessing on them and its time left. Out of a fight, a blessing you gave "
               .. "that ran out (or is about to) glows; its tooltip names who needs it. Same as /aura bless.",

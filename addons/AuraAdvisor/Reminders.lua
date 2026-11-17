@@ -1,7 +1,8 @@
 -- Aura Advisor: two reminders, shown the way the aura advice is (the game's spell-alert glow on
 -- the action button that casts it, and a short line in tooltips; no frame of its own):
 --
--- * Righteous Fury, for a Protection paladin who doesn't have it on.
+-- * Righteous Fury, for a Protection paladin who doesn't have it on: its button glows, and a
+--   raid warning with its sound repeats until it's on.
 -- * Your blessings on the party: each member's tooltip says which of yours they have and for
 --   how long; out of a fight, in a group, the blessing most of them are missing (or that is
 --   about to run out) glows, and its tooltip names who needs it.
@@ -108,6 +109,12 @@ function R.Resolve()
     if not fury then
         local _, _, byName = ns.SpellInfo(Data.RIGHTEOUS_FURY.english)
         fury = byName ~= nil
+        -- this client's own id for it, so its buff can be asked about by id too
+        if type(byName) == "number" then
+            local listed = false
+            for _, id in ipairs(Data.RIGHTEOUS_FURY.ids) do if id == byName then listed = true end end
+            if not listed then table.insert(Data.RIGHTEOUS_FURY.ids, byName) end
+        end
     end
     R.knowsFury = fury
     R.talentProt = nil      -- read again
@@ -168,11 +175,54 @@ local function AtRest()
     return Call(IsResting) == true or Call(UnitOnTaxi, "player") == true
 end
 
+-- Is Righteous Fury on? Your last buff look or your last cast of it says yes, unless it has run
+-- out since. When the game won't let the buff list be read, it may still answer for this one buff.
+function R.FuryOn(now)
+    if ns.fury and not (ns.furyEnds and (now or Now()) >= ns.furyEnds) then return true end
+    if C_UnitAuras and C_UnitAuras.GetPlayerAuraBySpellID then
+        for _, id in ipairs(Data.RIGHTEOUS_FURY.ids) do
+            local ok, data = pcall(C_UnitAuras.GetPlayerAuraBySpellID, id)
+            if ok and data ~= nil and not Secret(data) then return true end
+        end
+    end
+    return false
+end
+
 -- Righteous Fury only matters when you tank for others: in a group, out of town.
-function R.FuryWanted()
-    if not (ns.db and ns.db.fury and R.knowsFury) or ns.fury then return false end
+function R.FuryWanted(now)
+    if not (ns.db and ns.db.fury and R.knowsFury) or R.FuryOn(now) then return false end
     if ns.IsDead() or not InGroup() or AtRest() then return false end
     return R.IsProt()
+end
+
+-- While it's off: a raid warning in the middle of the screen, with its sound, when the fight
+-- starts and every few seconds of it; between fights when it comes off (you died, joined a group,
+-- left town) and twice a minute after that. Not while mounted: casting it would knock you off.
+local NAG_FIGHT = 8
+local NAG_CALM = 30
+
+function R.Alert()
+    local text = ns.IconText(Data.RIGHTEOUS_FURY.id, "No " .. (ns.SpellInfo(Data.RIGHTEOUS_FURY.id)
+        or Data.RIGHTEOUS_FURY.english))
+    local color = ChatTypeInfo and ChatTypeInfo.RAID_WARNING
+    local shown = false
+    if RaidWarningFrame and RaidNotice_AddMessage then
+        shown = pcall(RaidNotice_AddMessage, RaidWarningFrame, text, color or { r = 1, g = 0.28, b = 0 }, 5)
+    end
+    if not shown and UIErrorsFrame and UIErrorsFrame.AddMessage then
+        pcall(UIErrorsFrame.AddMessage, UIErrorsFrame, text, 1, 0.28, 0)
+    end
+    if ns.db.furySound and PlaySound then
+        local kit = SOUNDKIT and SOUNDKIT.RAID_WARNING or 8959
+        if not pcall(PlaySound, kit, "Master") then pcall(PlaySound, kit) end
+    end
+end
+
+local function Nag(now)
+    if Call(IsMounted) == true then return end
+    if R.nagAt and now < R.nagAt then return end
+    R.nagAt = now + (ns.inCombat and NAG_FIGHT or NAG_CALM)
+    R.Alert()
 end
 
 ----------------------------------------------------------------------
@@ -318,10 +368,12 @@ function R.Update(now)
     if (R.dirty and now - (R.scanned or -MIN_GAP) >= MIN_GAP) or now - (R.scanned or -RESCAN) >= RESCAN then
         R.Scan(now)
     end
-    if R.FuryWanted() then
+    if R.FuryWanted(now) then
         R.pick = { kind = "fury", id = "fury" }
+        Nag(now)
         return R.pick
     end
+    R.nagAt = nil       -- the next time it comes off, say so at once
     if not ns.db.blessings or ns.inCombat or not InGroup() or AtRest() then return nil end
     local count, who = {}, {}
     for unit, key in pairs(R.Needs(now)) do
@@ -348,13 +400,9 @@ function R.Matches(pick, spellID)
     return R.BlessingOf(spellID) == pick.key
 end
 
--- When a fight starts without Righteous Fury, in a group: one line on screen.
+-- A fight starts: if Righteous Fury is off, the next look says so at once.
 function R.OnCombatStart()
-    if not (ns.db and ns.db.banner) or not InGroup() or not R.FuryWanted() then return end
-    if UIErrorsFrame and UIErrorsFrame.AddMessage then
-        UIErrorsFrame:AddMessage(ns.IconText(Data.RIGHTEOUS_FURY.id, ns.SpellInfo(Data.RIGHTEOUS_FURY.id)
-            or Data.RIGHTEOUS_FURY.english), 1, 0.82, 0.2)
-    end
+    R.nagAt = nil
 end
 
 ----------------------------------------------------------------------

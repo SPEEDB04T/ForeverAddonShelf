@@ -1,5 +1,12 @@
 # Changelog
 
+## 1.3.1 (2026-11-16)
+
+- Righteous Fury is harder to miss: while it is off, a raid warning ("No Righteous Fury") shows in the middle of the screen with the raid warning sound, when a fight starts, every 8 seconds of it, when it comes off between fights and every 30 seconds after that. Not while mounted. Its button still glows. The sound can be turned off on its own ("Sound with the warning", `/aura furysound`).
+- Righteous Fury cast in a fight now counts at once. Before, the game hid your buffs in the fight, so its button kept glowing until the fight was over.
+- It runs out in a fight: the time it had left is remembered, so the reminder comes back.
+- Dying takes it off, so the reminder is there when you're back.
+
 ## 1.3.0 (2026-11-16)
 
 - No sound any more. A switch shows only as the glow and the line on screen.
