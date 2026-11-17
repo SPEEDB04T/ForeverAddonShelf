@@ -47,7 +47,10 @@ out for each one, and warns when it's time.
 
 - **Deposit:** read when you post (the game's own deposit for that post). For auctions posted
   before the addon was installed, or by someone else without it, an estimate from the item's
-  vendor price, marked "about".
+  vendor price, marked "?": 5% of it for 12 hours, 10% for 24, 20% for 48 (WoW Forever's own
+  deposit table). Each of your posts teaches the real rate for its listing time.
+- **Listing time:** the 12, 24 or 48 hours you posted for; for an auction the addon didn't see
+  posted, judged from its time left and marked "?".
 - **Time left:** the game's own time left when the auction house gives it; otherwise the
   start of its time-left band, marked "about".
 - **Commodities** (stackable goods) can't be bought back one seller at a time: the cheapest
@@ -60,7 +63,7 @@ out for each one, and warns when it's time.
 `/deposits add First Last` / `remove First Last` (share by whisper), `/deposits who` (the
 whisper list), `/deposits panel` (show or hide the buyback list), `/deposits mail` (the items to mail back;
 at a mailbox it also shows or hides the send-back list), `/deposits status` (what the
-addon read and sent), `/deposits clear` (forget other people's auctions).
+addon read and sent), `/deposits rates` (the deposit for each listing time), `/deposits clear` (forget other people's auctions).
 
 ## Not yet seen in the live game
 

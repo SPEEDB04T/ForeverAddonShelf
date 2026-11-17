@@ -1,5 +1,18 @@
 # Changelog
 
+## 1.1.2 (2026-11-16)
+
+- Fix: estimated deposits were three times too high (30s where the game took 10s). Estimates
+  now use WoW Forever's own deposit table: 5% of the vendor price for 12 hours, 10% for 24,
+  20% for 48. Auctions already tracked are corrected the next time you open the auction house.
+- Each auction now shows how long it was listed for (12, 24 or 48 hours) in its tooltip, in
+  the buyback list and in `/deposits list`. For an auction posted without the addon it is
+  judged from the time left and marked with "?"; it no longer shrinks as the time runs down.
+- The deposit rate learned from your posts is kept per listing time. `/deposits rates` shows
+  the three.
+- The "This post" line at the auction house says how long the post is listed for.
+- Guildmates and alts share the listing time too; older versions still work alongside.
+
 ## 1.1.1 (2026-11-16)
 
 - Fix: deposits came out wrong.

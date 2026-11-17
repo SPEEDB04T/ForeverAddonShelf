@@ -4,9 +4,11 @@
 -- Messages (prefix "DepositSaver", fields split by ";", version 1):
 --   Q;1                                  send me your auctions
 --   S;1;snap;owner;n                     owner's full list follows: n auctions
---   A;1;snap;owner;id;item;ilvl;suffix;pet;qty;unit;deposit;flags;expires
+--   A;1;snap;owner;id;item;ilvl;suffix;pet;qty;unit;deposit;flags;expires;dur
 --                                        one auction (flags: e exact deposit, a rough time,
---                                        c commodity, b bid only; expires in server time)
+--                                        c commodity, b bid only, g listing time judged;
+--                                        expires in server time; dur 1-3 = 12/24/48 hours,
+--                                        added in 1.1.2, older clients send none)
 --   E;1;snap;owner;n                     end of owner's list
 --   G;1;id                               that auction is gone (bought back, cancelled)
 -- Each client shares the auctions of every character on its own account, so an alt that is
@@ -147,6 +149,7 @@ end
 
 local function Flags(rec)
     return (rec.exact and "e" or "") .. (rec.approx and "a" or "") .. (rec.commodity and "c" or "") .. (rec.bidOnly and "b" or "")
+        .. (rec.dur and "" or "g")
 end
 
 local function OwnersOnAccount()
@@ -183,7 +186,7 @@ local function SendLists(targets)
         Broadcast(table.concat({ "S", PROTO, snap, owner, #list }, ";"), targets)
         for _, rec in ipairs(list) do
             Broadcast(table.concat({ "A", PROTO, snap, owner, Field(rec.id), Field(rec.item), Field(rec.ilvl), Field(rec.suffix),
-                Field(rec.pet), Field(rec.qty), Field(rec.unit), Field(rec.deposit), Flags(rec), Field(rec.expires) }, ";"), targets)
+                Field(rec.pet), Field(rec.qty), Field(rec.unit), Field(rec.deposit), Flags(rec), Field(rec.expires), Field((ns.ListedDur(rec))) }, ";"), targets)
         end
         Broadcast(table.concat({ "E", PROTO, snap, owner, #list }, ";"), targets)
         sent = sent + 1
@@ -244,6 +247,13 @@ local function Upsert(owner, f, sender)
     rec.commodity = flags:find("c", 1, true) ~= nil
     rec.bidOnly = flags:find("b", 1, true) ~= nil or nil
     rec.expires, rec.seen = N(f[14]), ns.ServerNow()
+    local dur = N(f[15])
+    if dur ~= 1 and dur ~= 2 and dur ~= 3 then dur = nil end
+    if dur and flags:find("g", 1, true) then
+        rec.dur, rec.durGuess = nil, dur
+    else
+        rec.dur, rec.durGuess = dur, nil
+    end
     if rec.link and not tostring(rec.link):find("item:" .. rec.item .. ":", 1, true) then rec.link = nil end
     ns.db.auctions[id] = rec
     return id

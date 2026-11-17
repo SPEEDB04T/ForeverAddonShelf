@@ -129,6 +129,7 @@ function UI.RowTooltip(b)
     GameTooltip:AddDoubleLine("Seller", rec.owner or "?", NORMAL_FONT_COLOR.r, NORMAL_FONT_COLOR.g, NORMAL_FONT_COLOR.b, 1, 1, 1)
     GameTooltip:AddDoubleLine(rec.bidOnly and "Bid (no buyout)" or "Buyout", price and ns.Money(price) or "?",
         NORMAL_FONT_COLOR.r, NORMAL_FONT_COLOR.g, NORMAL_FONT_COLOR.b, 1, 1, 1)
+    GameTooltip:AddDoubleLine("Listed for", ns.ListedText(rec), NORMAL_FONT_COLOR.r, NORMAL_FONT_COLOR.g, NORMAL_FONT_COLOR.b, 1, 1, 1)
     GameTooltip:AddDoubleLine("Time left", left and ((rec.approx and "about " or "") .. ns.TimeText(math.max(left, 0))) or "?",
         NORMAL_FONT_COLOR.r, NORMAL_FONT_COLOR.g, NORMAL_FONT_COLOR.b, 1, 1, 1)
     GameTooltip:AddDoubleLine(rec.exact and "Deposit lost if it expires" or "Deposit lost if it expires (estimate)",
@@ -173,7 +174,7 @@ local function Verdict(rec)
     if not cut or not deposit then
         return Color(GRAY_FONT_COLOR, "Deposit or price unknown")
     end
-    local d = ns.Money(deposit) .. (rec.exact and "" or "?")
+    local d = ns.Money(deposit) .. (rec.exact and "" or "?") .. " (" .. ns.Hours((ns.ListedDur(rec))) .. "h)"
     if worth then
         return Color(GREEN_FONT_COLOR, ("Buy back: saves %s"):format(ns.Money(saving))) .. "  "
             .. Color(GRAY_FONT_COLOR, ("deposit %s, cut %s"):format(d, ns.Money(cut)))
@@ -208,7 +209,7 @@ local function SellFrame()
     return nil
 end
 
--- deposit, price, item link of what the sell frame would post now (nil when nothing is in it)
+-- deposit, price, item link, hours of what the sell frame would post now (nil when nothing is in it)
 function UI.PostPreview()
     local f = SellFrame()
     if not f then return nil end
@@ -222,11 +223,13 @@ function UI.PostPreview()
         local ok, v = pcall(C_Item.GetItemLink, loc)
         link = ok and ns.Str(v) or nil
     end
-    return deposit, price, link
+    local okT, dur = pcall(function() return f:GetDuration() end)
+    dur = okT and Num(dur) or nil
+    return deposit, price, link, (dur == 1 or dur == 2 or dur == 3) and ns.Hours(dur) or nil
 end
 
 local function PreviewText()
-    local deposit, price, link = UI.PostPreview()
+    local deposit, price, link, hours = UI.PostPreview()
     if not deposit or not price or price <= 0 then return nil end
     local cut = math.floor(price * (Num(ns.db.cutPct) or 5) / 100 + 0.5)
     local saving = deposit - cut
@@ -239,6 +242,7 @@ local function PreviewText()
         body = ("Unsold, it loses the %s deposit. A buyback would cost the %s cut: not worth it."):format(
             ns.Money(deposit), ns.Money(cut))
     end
+    if hours then body = ("Listed for %d hours. "):format(hours) .. body end
     return head .. "\n" .. body
 end
 UI.PreviewText = PreviewText

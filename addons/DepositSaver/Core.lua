@@ -12,7 +12,7 @@
 -- posted without this addon get an estimate from the vendor price.
 local ADDON, ns = ...
 
-ns.VERSION = "1.1.1"
+ns.VERSION = "1.1.2"
 ns.TITLE = "Deposit Saver"
 ns.ICON = "Interface\\Icons\\INV_Misc_Coin_02"
 
@@ -36,7 +36,10 @@ ns.DEFAULTS = DEFAULTS
 -- Deposit as a share of the vendor price, per duration (1, 2, 3 = the sell frame's three
 -- durations). Only used for auctions posted without this addon; every post the addon sees
 -- replaces the guess with what the game really charged.
-local DEFAULT_RATES = { 0.15, 0.30, 0.60 }
+-- WoW Forever's AuctionHouse table (client 1.60.1.70938): DepositRate 5 at the faction houses
+-- (25 at Blackwater), i.e. 5% of the vendor price for 12 hours, doubling with each longer duration.
+-- Seen in game: 10s on an item that sells to a vendor for 2g. Real posts teach the exact rates.
+local DEFAULT_RATES = { 0.05, 0.10, 0.20 }
 local DEFAULT_HOURS = { 12, 24, 48 }
 ns.DEFAULT_RATES, ns.DEFAULT_HOURS = DEFAULT_RATES, DEFAULT_HOURS
 
@@ -255,11 +258,27 @@ function ns.DurationFor(rec, now)
     return d
 end
 
+-- How long the auction was listed for (1, 2, 3), and whether that is known or judged from the
+-- time left. A judged one only ever goes up: with less time left a long auction would look short.
+function ns.ListedDur(rec)
+    if rec.dur then return rec.dur, true end
+    local d = ns.DurationFor(rec)
+    local g = Num(rec.durGuess)
+    if g and g > d then d = g end
+    return d, false
+end
+
+-- "24 hours", or "24 hours?" when judged from the time left
+function ns.ListedText(rec)
+    local d, known = ns.ListedDur(rec)
+    return ("%d hours%s"):format(ns.Hours(d), known and "" or "?")
+end
+
 -- An estimate for an auction whose post the addon did not see.
 function ns.EstimateDeposit(rec)
     local vendor = VendorPrice(rec.item)
     if not vendor then return nil end
-    local dur = rec.dur or ns.DurationFor(rec)
+    local dur = ns.ListedDur(rec)
     local rate = Num(ns.db.rates[dur]) or DEFAULT_RATES[dur] or DEFAULT_RATES[2]
     return math.floor(vendor * math.max(Num(rec.qty) or 1, 1) * rate + 0.5)
 end
@@ -539,6 +558,7 @@ function ns.ReadOwned()
                     rec.expires, rec.approx = nil, true
                 end
             end
+            if not rec.dur then rec.durGuess = (ns.ListedDur(rec)) end
             if not Num(rec.deposit) or (not rec.exact and Num(rec.deposit) <= 0) then
                 rec.deposit, rec.exact = ns.EstimateDeposit(rec), false
             elseif not rec.exact then
@@ -821,8 +841,8 @@ local function Line(rec, now)
     else
         verdict = "|cff808080let it expire: the cut " .. ns.Money(cut) .. " is more than the deposit " .. ns.Money(deposit or 0) .. "|r"
     end
-    return ("%s - %s, %s%s left, deposit %s%s: %s"):format(rec.owner or "?", ns.ItemName(rec),
-        rec.approx and "about " or "", left and ns.TimeText(math.max(left, 0)) or "?",
+    return ("%s - %s, listed %s, %s%s left, deposit %s%s: %s"):format(rec.owner or "?", ns.ItemName(rec),
+        ns.ListedText(rec), rec.approx and "about " or "", left and ns.TimeText(math.max(left, 0)) or "?",
         deposit and ns.Money(deposit) or "?", rec.exact and "" or " (estimate)", verdict)
 end
 ns.Line = Line
@@ -885,6 +905,13 @@ local function Slash(msg)
         ns.Set("panel", not ns.db.panel)
         ns.Print(ns.db.panel and "The buyback list shows next to the auction house." or "The buyback list is hidden. /deposits panel brings it back.")
         if HasKit() and ns.Options.Ready() then pcall(ns.Kit.Sync) end
+    elseif cmd == "rates" then
+        ns.Print("Deposit per listing time, as a share of the vendor price:")
+        for d = 1, 3 do
+            local learned = Num(ns.db.rates[d])
+            ns.Print(("%d hours: %s%% (%s)"):format(ns.Hours(d), tostring(math.floor((learned or DEFAULT_RATES[d]) * 1000 + 0.5) / 10),
+                learned and "learned from your last post" or "the game's table; your next post teaches the real one"))
+        end
     elseif cmd == "clear" then
         local n = 0
         for id, rec in pairs(ns.db.auctions) do
@@ -894,7 +921,7 @@ local function Slash(msg)
         ns.Print(n .. " auctions of other players forgotten. They come back when their owners share again.")
     else
         ns.Print("/deposits: options. list: every tracked auction. status. test: a sample warning. sync: ask everyone again. "
-            .. "add / remove First Last: share with a character on another account. who. panel: the list at the auction house. mail: bought-back items to mail back. clear.")
+            .. "add / remove First Last: share with a character on another account. who. panel: the list at the auction house. mail: bought-back items to mail back. rates: deposit per listing time. clear.")
     end
 end
 ns.Slash = Slash
