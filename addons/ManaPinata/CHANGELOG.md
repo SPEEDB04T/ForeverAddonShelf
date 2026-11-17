@@ -1,5 +1,9 @@
 # Changelog
 
+## 1.2.0
+
+- You can see the mana coming back: when a hit gives you mana, blue sparks fly from the piñata into the mana bar on your player frame, and the bar lights up with a sparkle where they land. The hit preview shows it too. Turn it off with "Mana flies to your mana bar" in the options or `/pinata flow`.
+
 ## 1.1.1
 
 - The coin sound is off to start with: it could ring every few seconds. It is switched off once for everyone who had 1.1.0; turn it back on with "Coin sound when it pays mana" in the options or `/pinata sound`.

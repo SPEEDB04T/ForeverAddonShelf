@@ -18,7 +18,8 @@
     /pinata swing       -> swinging on / off
     /pinata bar         -> colouring the enemy's health bar blue on / off
     /pinata juice       -> a hit knocks the piñata about and sparkles, on / off
-    /pinata sound       -> the coin sound when a hit gives you mana, on / off
+    /pinata flow        -> the mana you get flies into your mana bar, on / off
+    /pinata sound       -> the coin sound when a hit gives you mana, on / off (off to start with)
     /pinata preview     -> a stand-in nameplate in mid-screen takes a few blows
     /pinata on|off, /pinata reset, /pinata debug
 ]]
@@ -60,6 +61,7 @@ local DEFAULTS = {
     swing    = true,
     colorBar = true,    -- the enemy's health bar turns blue while the debuff is on it
     juice    = true,    -- a hit knocks the piñata about and sparkles
+    manaFlow = true,    -- the mana you get flies from the piñata into your mana bar
     sound    = false,   -- the coin sound when a hit gives you mana (off unless chosen: it rings a lot)
 }
 local LIMITS = {
@@ -825,7 +827,166 @@ local function ManaUser()
     return power == 0
 end
 
--- The blow that gave you mana: a big burst on your target and the coin sound.
+---------------------------------------------------------------------------
+-- The mana going to you: blue sparks fly from the piñata into your mana bar
+-- on the player frame, which lights up where they land.
+---------------------------------------------------------------------------
+-- How the sparks travel without knowing where anything is (a nameplate's
+-- place on screen is hidden from addons): each spark is drawn at the
+-- piñata, in a frame of ours whose centre sits on the end of your mana bar.
+-- That frame then shrinks to nothing around its centre, which pulls the
+-- spark from the piñata into the bar. The game works out both places.
+local ORB_SECONDS, ORB_STAGGER, ORB_SIZE = 0.45, 0.05, 18
+local ORB_SPREAD = { { 0, 0 }, { -10, 6 }, { 10, 4 }, { -6, -8 }, { 7, -6 }, { 0, 11 } }
+local FLASH_IN, FLASH_OUT = 0.06, 0.35
+local flow                 -- built on the first payout
+ns.Flow = function() return flow end
+
+-- The player frame's mana bar and its fill, or nothing (another unit frame addon).
+local function ManaBar()
+    local bar
+    if type(PlayerFrame_GetManaBar) == "function" then
+        local ok, found = pcall(PlayerFrame_GetManaBar)
+        if ok then bar = found end
+    end
+    if type(bar) ~= "table" then bar = rawget(_G, "PlayerFrameManaBar") end
+    if type(bar) ~= "table" or Forbidden(bar) or type(bar.GetStatusBarTexture) ~= "function" then return end
+    local ok, fill = pcall(bar.GetStatusBarTexture, bar)
+    if not ok or type(fill) ~= "table" then return end
+    return bar, fill
+end
+
+-- A bright copy of the bar's own fill, added on top of it: the bar flares up.
+local function GlowArt(tex, fill)
+    CopyFill(tex, fill)
+    tex:SetBlendMode("ADD")
+    tex:SetVertexColor(ENERGIZE_COLOR[1], ENERGIZE_COLOR[2], ENERGIZE_COLOR[3], 1)
+end
+
+local function BuildFlow(bar, fill)
+    local okS, strata = pcall(bar.GetFrameStrata, bar)
+    strata = (okS and type(strata) == "string") and strata or "MEDIUM"
+    local level = (bar.GetFrameLevel and bar:GetFrameLevel() or 0) + 5
+    local fx = { bar = bar, fill = fill, orbs = {} }
+
+    local flash = CreateFrame("Frame", nil, UIParent)
+    flash:SetFrameStrata(strata)
+    flash:SetFrameLevel(level)
+    flash:SetAllPoints(bar)
+    flash:SetAlpha(0)
+    flash:EnableMouse(false)
+    local glow = flash:CreateTexture(nil, "OVERLAY")
+    GlowArt(glow, fill)
+    glow:SetAllPoints(fill)
+    local spark = CreateFrame("Frame", nil, flash)       -- a small burst where the mana lands
+    spark:SetSize(BURST_BOX, BURST_BOX)
+    spark:SetScale(0.45)
+    spark:SetPoint("CENTER", fill, "RIGHT", 0, 0)
+    BurstArt(spark)
+    local group = flash:CreateAnimationGroup()
+    local flashIn = group:CreateAnimation("Alpha")
+    flashIn:SetOrder(1)
+    flashIn:SetDuration(FLASH_IN)
+    flashIn:SetFromAlpha(0)
+    flashIn:SetToAlpha(1)
+    local flashOut = group:CreateAnimation("Alpha")
+    flashOut:SetOrder(1)
+    flashOut:SetDuration(FLASH_OUT)
+    flashOut:SetFromAlpha(1)
+    flashOut:SetToAlpha(0)
+    if flashOut.SetSmoothing then flashOut:SetSmoothing("IN") end
+    local sparkGroup = spark:CreateAnimationGroup()
+    local sparkGrow = sparkGroup:CreateAnimation("Scale")
+    sparkGrow:SetOrder(1)
+    sparkGrow:SetOrigin("CENTER", 0, 0)
+    sparkGrow:SetDuration(FLASH_IN + FLASH_OUT)
+    sparkGrow:SetScaleFrom(0.5, 0.5)
+    sparkGrow:SetScaleTo(1.4, 1.4)
+    if sparkGrow.SetSmoothing then sparkGrow:SetSmoothing("OUT") end
+    fx.flash, fx.glow, fx.spark = flash, glow, spark
+    fx.group, fx.flashIn, fx.flashOut = group, flashIn, flashOut
+    fx.sparkGroup, fx.sparkGrow = sparkGroup, sparkGrow
+
+    for i, spread in ipairs(ORB_SPREAD) do
+        local orb = CreateFrame("Frame", nil, UIParent)
+        orb:SetFrameStrata(strata)
+        orb:SetFrameLevel(level + 1)
+        orb:SetSize(1, 1)
+        orb:SetPoint("CENTER", fill, "RIGHT", 0, 0)
+        orb:SetAlpha(0)
+        orb:EnableMouse(false)
+        local tex = orb:CreateTexture(nil, "OVERLAY")
+        tex:SetTexture(STAR)
+        tex:SetBlendMode("ADD")
+        tex:SetSize(ORB_SIZE, ORB_SIZE)
+        if i % 2 == 0 then tex:SetVertexColor(1, 1, 1, 1)
+        else tex:SetVertexColor(ENERGIZE_COLOR[1], ENERGIZE_COLOR[2], ENERGIZE_COLOR[3], 1) end
+        local g = orb:CreateAnimationGroup()
+        local fadeIn = g:CreateAnimation("Alpha")
+        fadeIn:SetOrder(1)
+        fadeIn:SetDuration(0.06)
+        fadeIn:SetFromAlpha(0)
+        fadeIn:SetToAlpha(1)
+        local pull = g:CreateAnimation("Scale")
+        pull:SetOrder(1)
+        pull:SetOrigin("CENTER", 0, 0)
+        pull:SetDuration(ORB_SECONDS)
+        pull:SetScaleFrom(1, 1)
+        pull:SetScaleTo(0.02, 0.02)
+        if pull.SetSmoothing then pull:SetSmoothing("IN") end
+        local fadeOut = g:CreateAnimation("Alpha")
+        fadeOut:SetOrder(1)
+        fadeOut:SetDuration(0.08)
+        fadeOut:SetFromAlpha(1)
+        fadeOut:SetToAlpha(0)
+        fx.orbs[i] = { frame = orb, tex = tex, group = g, fadeIn = fadeIn, pull = pull, fadeOut = fadeOut,
+            dx = spread[1], dy = spread[2] }
+    end
+    return fx
+end
+
+-- Sends the mana from `from` (the piñata's frame; nil: none on screen, the
+-- bar only lights up) into your mana bar. Does nothing without a visible bar.
+local function Flow(from)
+    if not (db.enabled and db.manaFlow) then return end
+    local bar, fill = ManaBar()
+    if not bar then return end
+    local ok, visible = pcall(bar.IsVisible, bar)
+    if not ok or not Plain(visible) or visible ~= true then return end
+    if not flow or flow.fill ~= fill then
+        local built, fx = pcall(BuildFlow, bar, fill)
+        if not built then return end
+        flow = fx
+    else
+        pcall(GlowArt, flow.glow, fill)              -- keep up with a restyled bar
+    end
+    local land = 0
+    if from then
+        for i, orb in ipairs(flow.orbs) do
+            local delay = (i - 1) * ORB_STAGGER
+            orb.group:Stop()
+            orb.tex:ClearAllPoints()
+            orb.tex:SetPoint("CENTER", from, "CENTER", orb.dx, orb.dy)
+            orb.fadeIn:SetStartDelay(delay)
+            orb.pull:SetStartDelay(delay)
+            orb.fadeOut:SetStartDelay(delay + ORB_SECONDS - 0.08)
+            orb.group:Play()
+        end
+        land = ORB_SECONDS * 0.85                      -- the bar lights up as the first sparks arrive
+    end
+    flow.group:Stop()
+    flow.sparkGroup:Stop()
+    flow.flashIn:SetStartDelay(land)
+    flow.flashOut:SetStartDelay(land + FLASH_IN)
+    flow.sparkGrow:SetStartDelay(land)
+    flow.group:Play()
+    flow.sparkGroup:Play()
+    flow.from = from
+end
+ns.FlowTo = Flow
+
+-- The blow that gave you mana: a big burst on your target, the mana flying
+-- into your bar, and the coin sound if that is on.
 local lastPayout
 local function Payout()
     if not db.enabled then return end
@@ -835,6 +996,7 @@ local function Payout()
     CoinSound()
     local p = PinataFor("target")
     if p then Hit(p, "payout") end
+    Flow(p and p.holder)
 end
 ns.Payout = Payout
 
@@ -967,7 +1129,10 @@ local function RunPreview()
             return
         end
         Strike(pv, kind)
-        if kind == "payout" then CoinSound() end
+        if kind == "payout" then
+            CoinSound()
+            Flow(pv.holder)
+        end
         C_Timer.After(PREVIEW_GAP, Next)
     end
     C_Timer.After(PREVIEW_START, Next)
@@ -1172,6 +1337,7 @@ local function PrintStatus()
         .. "  |  swing " .. OnOff(db.swing) .. (swingPending and " (changes after the fight)" or "")
         .. "  |  blue health bar " .. OnOff(db.colorBar)
         .. "  |  bounce on hits " .. OnOff(db.juice)
+        .. "  |  mana to your bar " .. OnOff(db.manaFlow)
         .. "  |  coin sound " .. OnOff(db.sound)
         .. (testing and "  |  TEST piñatas showing" or "")
         .. ((NATIVE.icon.error or NATIVE.bar.error or NATIVE.burst.error) and "  |  not fully working, see /pinata debug" or ""))
@@ -1182,7 +1348,8 @@ local function PrintHelp()
     print("  /pinata test (a piñata on every nameplate, to size and place it)   -  /pinata config (options window)")
     print("  /pinata size <16-96>   -  /pinata x <-100..100>   -  /pinata y <-100..100>   -  /pinata swing")
     print("  /pinata bar (the enemy's health bar turns blue too, on/off)")
-    print("  /pinata juice (bounce and sparkle on hits, on/off)   -  /pinata sound (coin sound on mana, on/off)   -  /pinata preview")
+    print("  /pinata juice (bounce and sparkle on hits, on/off)   -  /pinata flow (mana flies into your mana bar, on/off)")
+    print("  /pinata sound (coin sound on mana, on/off)   -  /pinata preview")
     print("  /pinata on|off   -  /pinata minimap (minimap button on/off)   -  /pinata reset   -  /pinata debug")
 end
 
@@ -1250,6 +1417,9 @@ SlashCmdList.MANAPINATA = function(msg)
 
     elseif cmd == "sound" then
         ns.Set("sound", not db.sound)
+
+    elseif cmd == "flow" or cmd == "mana" then
+        ns.Set("manaFlow", not db.manaFlow)
 
     elseif cmd == "preview" then
         if RunPreview() then print(PREFIX .. "hit preview in the middle of the screen. /pinata preview again stops it.") end
