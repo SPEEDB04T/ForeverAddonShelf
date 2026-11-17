@@ -55,6 +55,11 @@ local function Rows()
           tip = "Every tracked auction with its deposit, the cut a buyback costs and whether it is worth it. At the top, what the item you are posting would lose.",
           get = Get("panel"), set = Set("panel") },
 
+        { kind = "header", text = "Mailbox" },
+        { kind = "check", label = "Send-back list next to the mail window",
+          tip = "Items you bought back from someone, ready to mail back to them with Cash on Delivery for what you paid. One click takes the item out of the mailbox, the next fills in the mail. You press Send.",
+          get = Get("mailPanel"), set = Set("mailPanel") },
+
         { kind = "header", text = "Minimap" },
         Kit.MinimapRow(),
         { kind = "buttons", buttons = {

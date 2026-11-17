@@ -12,12 +12,13 @@
 -- posted without this addon get an estimate from the vendor price.
 local ADDON, ns = ...
 
-ns.VERSION = "1.0.0"
+ns.VERSION = "1.1.0"
 ns.TITLE = "Deposit Saver"
 ns.ICON = "Interface\\Icons\\INV_Misc_Coin_02"
 
 local DEFAULTS = {
     warn = true,          -- the centre-screen warning
+    mailPanel = true,     -- the send-back list at the mailbox
     warnOwn = true,       -- also warn about my own auctions (someone else has to buy them)
     popup = true,         -- the "Find it" window with the warning
     sound = true,
@@ -137,7 +138,7 @@ function ns.InitDB()
         if db[k] == nil then db[k] = v end
     end
     if type(db.minimap) ~= "table" then db.minimap = { hide = false } end
-    for _, k in ipairs({ "auctions", "chars", "whisper", "rates", "hours", "commLog" }) do
+    for _, k in ipairs({ "auctions", "chars", "whisper", "rates", "hours", "commLog", "sendBack" }) do
         if type(db[k]) ~= "table" then db[k] = {} end
     end
     local c = type(db.chars[ns.Me()]) == "table" and db.chars[ns.Me()] or {}
@@ -278,6 +279,7 @@ function ns.Prune()
             n = n + 1
         end
     end
+    if ns.Mail then ns.Mail.Prune(now) end
     return n
 end
 
@@ -512,10 +514,15 @@ function ns.OnPurchased(auctionID)
     auctionID = Num(auctionID)
     local rec = auctionID and ns.db.auctions[auctionID]
     if not rec then return end
+    local back = ns.Mail and ns.Mail.Remember(rec)
     ns.Forget(auctionID)
     local _, _, saving = ns.Worth(rec)
     ns.Print(("Bought back %s%s. Its deposit stays in the group%s."):format(ns.ItemName(rec),
         rec.owner and (" from " .. rec.owner) or "", saving and saving > 0 and (" (saved " .. ns.Money(saving) .. ")") or ""))
+    if back then
+        ns.Print(("At a mailbox, the send-back list fills in a mail to %s with Cash on Delivery %s, so you get your gold back."):format(
+            back.seller, ns.Money(back.price)))
+    end
     if ns.Comm then ns.Comm.Gone(auctionID) end
 end
 
@@ -645,7 +652,8 @@ local frame = CreateFrame("Frame")
 ns.frame = frame
 for _, e in ipairs({ "ADDON_LOADED", "PLAYER_LOGIN", "PLAYER_REGEN_ENABLED", "AUCTION_HOUSE_SHOW", "AUCTION_HOUSE_CLOSED",
     "OWNED_AUCTIONS_UPDATED", "AUCTION_HOUSE_AUCTION_CREATED", "AUCTION_CANCELED", "AUCTION_HOUSE_PURCHASE_COMPLETED",
-    "ITEM_SEARCH_RESULTS_UPDATED", "GET_ITEM_INFO_RECEIVED", "CHAT_MSG_ADDON", "GROUP_ROSTER_UPDATE" }) do
+    "ITEM_SEARCH_RESULTS_UPDATED", "GET_ITEM_INFO_RECEIVED", "CHAT_MSG_ADDON", "GROUP_ROSTER_UPDATE",
+    "MAIL_SHOW", "MAIL_CLOSED", "MAIL_INBOX_UPDATE", "MAIL_SEND_SUCCESS", "MAIL_FAILED", "BAG_UPDATE_DELAYED" }) do
     pcall(frame.RegisterEvent, frame, e)
 end
 
@@ -716,6 +724,11 @@ frame:SetScript("OnEvent", function(_, event, a1, a2, a3, a4)
         if ns.Comm then pcall(ns.Comm.OnMessage, a1, a2, a3, a4) end
     elseif event == "GROUP_ROSTER_UPDATE" then
         if ns.Comm then pcall(ns.Comm.OnRoster) end
+    elseif event:sub(1, 5) == "MAIL_" or event == "BAG_UPDATE_DELAYED" then
+        if ns.Mail and (event ~= "BAG_UPDATE_DELAYED" or ns.Mail.MailOpen()) then
+            local ok, err = pcall(ns.Mail.OnEvent, event)
+            if not ok then ns.lastError = err end
+        end
     end
 end)
 
@@ -751,8 +764,10 @@ local function Slash(msg)
         if HasKit() and ns.Options.Ready() then
             ns.Kit.Toggle()
         else
-            ns.Print("The options window loads after a /reload. Until then: /deposits list, status, test, sync, add, remove, panel.")
+            ns.Print("The options window loads after a /reload. Until then: /deposits list, status, test, sync, add, remove, panel, mail.")
         end
+    elseif cmd == "mail" then
+        if ns.Mail then ns.Mail.Slash() else ns.Print("The send-back list loads after a /reload.") end
     elseif cmd == "list" then
         local list, now = ns.Records(), ns.ServerNow()
         if #list == 0 then
@@ -804,7 +819,7 @@ local function Slash(msg)
         ns.Print(n .. " auctions of other players forgotten. They come back when their owners share again.")
     else
         ns.Print("/deposits: options. list: every tracked auction. status. test: a sample warning. sync: ask everyone again. "
-            .. "add / remove First Last: share with a character on another account. who. panel: the list at the auction house. clear.")
+            .. "add / remove First Last: share with a character on another account. who. panel: the list at the auction house. mail: bought-back items to mail back. clear.")
     end
 end
 ns.Slash = Slash

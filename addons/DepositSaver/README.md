@@ -31,6 +31,13 @@ out for each one, and warns when it's time.
   deposit lost if it expires, the cut a buyback costs and whether it's worth it. Left click
   finds the item, right click stops warnings for it. At the top, while you post: what this
   post would lose if it expires, and how much a buyback would save.
+- **Mailing it back with Cash on Delivery.** When you buy back someone's auction, the addon
+  remembers who sold it and what you paid. At a mailbox a "Send back" list opens next to the
+  mail window: one click takes the item out of the auction house's letter, the next fills in
+  the game's Send Mail form (the seller, the item attached, Cash on Delivery for what you
+  paid, a subject). You check it and press Send. You get your gold back when they take it,
+  and they have the item to post again, out only the auction house cut. Right-click a row to
+  stop listing it; `/deposits mail` lists them in chat.
 - **Sharing.** Each character shares the auctions of every character on its account (as last
   seen) with the guild and the party or raid. For characters on your other accounts or
   friends outside the guild: `/deposits add First Last`. Lists are remembered, so warnings
@@ -51,7 +58,8 @@ out for each one, and warns when it's time.
 `/deposits` (or `/depositsaver`): options. `/deposits list` (every tracked auction),
 `/deposits test` (a sample warning), `/deposits sync` (ask everyone again),
 `/deposits add First Last` / `remove First Last` (share by whisper), `/deposits who` (the
-whisper list), `/deposits panel` (show or hide the buyback list), `/deposits status` (what the
+whisper list), `/deposits panel` (show or hide the buyback list), `/deposits mail` (the items to mail back;
+at a mailbox it also shows or hides the send-back list), `/deposits status` (what the
 addon read and sent), `/deposits clear` (forget other people's auctions).
 
 ## Not yet seen in the live game
@@ -59,4 +67,5 @@ addon read and sent), `/deposits clear` (forget other people's auctions).
 Built against the WoW Forever client's interface code and tested offline. Not yet checked in
 game: the time left the auction house reports for your own auctions, the deposit rates and
 auction lengths, the post hook, the Find it search, whispers to characters on other accounts,
-and how the list looks next to the auction house.
+how the list looks next to the auction house, and the send-back list at the mailbox (whether
+the item attaches, and whether the mail takes the seller's name as "First Last").
