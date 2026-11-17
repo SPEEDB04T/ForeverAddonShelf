@@ -1620,7 +1620,7 @@ local function RefreshSellBox(bags)
   if not r then
     state.sellBoxId = nil
     box.icon:SetTexture(nil)
-    box.name:SetText(Grey(#bags > 0 and "Every piece in your bags is listed" or "No list piece in your bags"))
+    box.name:SetText(Grey(#bags > 0 and "Every piece in your bags is listed" or "No piece to sell in your bags"))
     box.info:SetText("")
     box.note:SetText("")
     box.post:SetEnabled(false)
@@ -1648,11 +1648,20 @@ local function RefreshSell()
   local ahOpen = ns.AuctionHouseOpen()
   local busy = ns.sell.pending ~= nil
   local rows = {}
-  if #bags > 0 then
-    rows[#rows + 1] = { section = ("In your bags (%d)"):format(#bags) }
-    for _, r in ipairs(bags) do
-      rows[#rows + 1] = r
+  local nOff = 0
+  for _, r in ipairs(bags) do
+    if r.off then
+      nOff = nOff + 1
     end
+  end
+  for i, r in ipairs(bags) do
+    if i == 1 and not r.off then
+      rows[#rows + 1] = { section = ("In your bags (%d)"):format(#bags - nOff) }
+    end
+    if r.off and (i == 1 or not bags[i - 1].off) then
+      rows[#rows + 1] = { section = ("Not on the list (%d)"):format(nOff) }
+    end
+    rows[#rows + 1] = r
   end
   if #auctions > 0 then
     rows[#rows + 1] = { section = ("Your auctions (%d)"):format(#auctions) }
@@ -1714,7 +1723,7 @@ local function RefreshSell()
       end
     end
   end
-  sellView.empty:SetText(ahOpen and "No list piece in your bags or on the auction house." or "Open the auction house to sell.")
+  sellView.empty:SetText(ahOpen and "No piece to sell in your bags or on the auction house." or "Open the auction house to sell.")
   sellView.empty:SetShown(#rows == 0)
 end
 

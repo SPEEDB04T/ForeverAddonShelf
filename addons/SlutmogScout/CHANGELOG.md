@@ -1,5 +1,12 @@
 # Changelog
 
+## 1.22.0
+
+- **The Sell tab sees pieces that aren't on the list.** Your bags and auctions now also show
+  Slutmog Shop wares and any other tradeable chest or leg armor of green quality or better. The
+  ones off the list are under "Not on the list", below the list pieces.
+- Dungeon level ranges come from the newer dungeon journal.
+
 ## 1.21.1
 
 - **Season of Discovery items no longer count as same-look twins.** They are in the game files

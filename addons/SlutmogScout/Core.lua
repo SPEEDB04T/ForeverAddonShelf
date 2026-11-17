@@ -2576,10 +2576,44 @@ end
 
 local function PieceName(id)
   local it = items[id]
-  return it and it.name or ("item " .. id)
+  if it and it.name then
+    return it.name
+  end
+  local ok, name = pcall(C_Item.GetItemInfo, id)
+  return ok and type(name) == "string" and not IsSecret(name) and name or ("item " .. id)
 end
 
--- One copy of each list piece in the bags that can be sold: { bag, slot, id, link, count }.
+-- A ware in Slutmog Shop's saved list (another addon's saved variables, read only).
+local function ShopWare(id)
+  local ok, yes = pcall(function()
+    local wares = type(SlutmogShopDB) == "table" and SlutmogShopDB.wares
+    for _, w in ipairs(type(wares) == "table" and wares or {}) do
+      if type(w) == "table" and (Num(w.id) or (type(w.link) == "string" and tonumber(w.link:match("item:(%d+)")))) == id then
+        return true
+      end
+    end
+    return false
+  end)
+  return ok and yes
+end
+
+-- The Sell tab shows list pieces, Slutmog Shop wares, and any other chest or leg armor of
+-- green quality or better (off the list: SuccuDev, 2026-11-16: "it fails to scan my bags for
+-- certain items I bought to sell as slutmog"). quality: the bag copy's, nil when not known.
+-- Second return: true when the piece is neither on the list nor a ware.
+local function SellPiece(id, quality)
+  if items[id] or ShopWare(id) then
+    return true, false
+  end
+  local ok, _, _, _, equipLoc, _, classID = pcall(C_Item.GetItemInfoInstant, id)
+  if ok and Num(classID) == 4 and type(equipLoc) == "string" and not IsSecret(equipLoc) and OFF_SLOTS[equipLoc]
+      and (quality == nil or quality >= 2) then
+    return true, true
+  end
+  return false, false
+end
+
+-- One copy of each piece in the bags that can be sold: { bag, slot, id, link, count, off }.
 local function ReadBags()
   local out, count = {}, {}
   if SellApiPresent() then
@@ -2590,7 +2624,11 @@ local function ReadBags()
       for slot = 1, n do
         local info = SlotItem(bag, slot)
         local id = info and Field(info, "itemID")
-        if id and items[id] and not Flag(info, "isBound") then
+        local show, off = false, false
+        if id and not Flag(info, "isBound") then
+          show, off = SellPiece(id, Field(info, "quality"))
+        end
+        if show then
           count[id] = (count[id] or 0) + 1
           if not first[id] and not Flag(info, "isLocked") then
             local loc = SlotLocation(bag, slot)
@@ -2601,7 +2639,7 @@ local function ReadBags()
             end
             if valid then
               first[id] = true
-              out[#out + 1] = { bag = bag, slot = slot, id = id, link = Text(info, "hyperlink") }
+              out[#out + 1] = { bag = bag, slot = slot, id = id, link = Text(info, "hyperlink"), off = off or nil }
             end
           end
         end
@@ -2616,7 +2654,7 @@ local function ReadBags()
 end
 ns.SellBags = ReadBags
 
--- Your auctions of list pieces, and how many of each are up (sold ones left out).
+-- Your auctions of the pieces the Sell tab shows, and how many of each are up (sold ones left out).
 local function ReadOwned()
   local owned, counts = {}, {}
   local okN, n = pcall(C_AuctionHouse.GetNumOwnedAuctions)
@@ -2626,7 +2664,7 @@ local function ReadOwned()
     if ok and type(a) == "table" then
       local key = Get(a, "itemKey")
       local id = type(key) == "table" and Field(key, "itemID") or nil
-      if id and items[id] then
+      if id and SellPiece(id) then
         local o = { auctionID = Field(a, "auctionID"), id = id, key = key, link = Text(a, "itemLink"),
           buyout = Field(a, "buyoutAmount"), qty = math.max(Field(a, "quantity") or 1, 1),
           left = Field(a, "timeLeftSeconds"), sold = Field(a, "status") == SOLD }
@@ -2969,16 +3007,20 @@ SlutmogScoutAPI = {
   end,
 }
 
--- The rows of the Sell tab: bag pieces (not listed first) and your auctions
--- (undercut first). Status: "listed", "undercut", "lowest", "sold" or nil (not read yet).
+-- The rows of the Sell tab: bag pieces (list pieces and wares first, then the
+-- ones off the list; not listed first) and your auctions (undercut first).
+-- Status: "listed", "undercut", "lowest", "sold" or nil (not read yet).
 function ns.SellRows()
   local bags, auctions = {}, {}
   for _, e in ipairs(sell.bags) do
     local m = sell.market[e.id]
-    bags[#bags + 1] = { kind = "bag", entry = e, id = e.id, link = e.link, count = e.count or 1,
+    bags[#bags + 1] = { kind = "bag", entry = e, id = e.id, link = e.link, count = e.count or 1, off = e.off == true,
       listed = Listed(e.id), market = m, status = Listed(e.id) and "listed" or nil }
   end
   table.sort(bags, function(a, b)
+    if a.off ~= b.off then
+      return not a.off
+    end
     if a.listed ~= b.listed then
       return not a.listed
     end
