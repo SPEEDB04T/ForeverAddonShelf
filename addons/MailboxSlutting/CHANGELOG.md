@@ -1,5 +1,9 @@
 # Changelog
 
+## 1.9.2
+
+- Four more lines at nobody are out, because a strict read found they hint that the dance is getting lewd: "puts a little more hip into it.", "gives up on being subtle.", "gets a little carried away." and "looks far too pleased about something." In their place: "is definitely not AFK.", "could do this all day.", "has not missed a step yet." and "feels like dancing a while longer."
+
 ## 1.9.1
 
 - Five lines at nobody are out, because they could be read as sexual content in public chat: "starts dancing a little dirtier.", "grins at a dirty thought.", "could keep this up all night.", "enjoys this a little too much." and "takes it nice and slow." Eight are left for now. No line the addon sends has a word like "dirty" in it any more.

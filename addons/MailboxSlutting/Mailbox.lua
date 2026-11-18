@@ -220,15 +220,19 @@ M.JAR = {
 -- somebody could report: out went "starts dancing a little dirtier.", "grins at a dirty thought.",
 -- "could keep this up all night.", "enjoys this a little too much." and "takes it nice and slow.".
 -- The eight left are a stopgap he has not approved; the next set comes from his own votes.
+-- 1.9.2: a strict reader, asked only for what could be reported, also failed "puts a little more hip
+-- into it." (claims a move, and suggestive), "gives up on being subtle.", "gets a little carried away."
+-- and "looks far too pleased about something." (all three hint that the dance is getting lewd). Out,
+-- and four that the same reader passed are in: not AFK, all day, a step, a while longer.
 M.IDLE = {
-    "puts a little more hip into it.",
+    "is definitely not AFK.",
     "tries to look innocent.",
     "regrets nothing.",
-    "gives up on being subtle.",
+    "could do this all day.",
     "has no plans to behave.",
-    "gets a little carried away.",
-    "looks far too pleased about something.",
+    "has not missed a step yet.",
     "was raised better than this.",
+    "feels like dancing a while longer.",
     -- about the people who are really there, the most particular first
     "smirks at somebody who has been staring a while.",
     "lets everybody stare.",
