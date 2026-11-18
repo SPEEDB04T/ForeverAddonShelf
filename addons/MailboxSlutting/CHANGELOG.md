@@ -1,5 +1,13 @@
 # Changelog
 
+## 1.9.0
+
+- **The lines at nobody no longer invent onlookers.** Half of them spoke of "whoever is watching" or "somebody staring" whether or not anybody was. Real onlookers already get an emote at their name, so the lines at nobody are now about the mood, the face and the dance, and cheekier. The thirteen: "puts a little more hip into it.", "tries to look innocent.", "starts dancing a little dirtier.", "regrets nothing.", "takes it nice and slow.", "grins at a dirty thought.", "gives up on being subtle.", "could keep this up all night.", "has no plans to behave.", "gets a little carried away.", "enjoys this a little too much.", "looks far too pleased about something.", "was raised better than this."
+- **A line about people is only said while it is true.** Seven are left ("catches somebody staring and winks.", "stares right back at somebody.", "knows exactly who is watching.", "gives the crowd something to look at.", "makes sure everybody gets a good look.", "lets everybody stare.", "smirks at somebody who has been staring a while."). Each needs somebody who really has you targeted; until 1.8.0 most of them were also said on a guess, and always with nameplates off. With nobody looking, or nameplates off, you get the lines about nobody only.
+- **At most every fourth line is about people**, however many are staring. Skip on such a line brings up one about nobody.
+- Gone: "dances a little slower for whoever is watching.", "grins at whoever is staring.", "dances just out of reach.", "enjoys being watched.", "pretends not to notice the staring.", "smirks at the crowd.", "checks out somebody in the crowd."
+- **Tip jar**: "gives the tip jar a wink." in place of "winks at whoever tipped today."
+
 ## 1.8.0
 
 - **The next line is on the counter.** Under "Next line" you see what Say a line will say, before the click. **Skip** passes on it and brings up another; nothing is said. A tip jar line that is due is shown the same way, and Skip drops it.

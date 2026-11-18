@@ -184,7 +184,7 @@ end
 -- asks nobody for anything.
 M.JAR = {
     "dances a little slower beside the tip jar.",
-    "winks at whoever tipped today.",
+    "gives the tip jar a wink.",         -- 1.9.0: was "winks at whoever tipped today." (an invented "whoever")
 }
 -- Now and then while somebody is around, at nobody: something to look at.
 -- The lines fit wherever you dance (SuccuDev, 2026-11-16: "make it compatible with non mailbox dancing
@@ -204,57 +204,76 @@ M.JAR = {
 -- loop. Now 14 lines, one idea each, and more of them pick out "somebody", so each reader wonders if
 -- it is them. Out as stiff: "does not mind the staring at all.", "grins at the ones staring.",
 -- "lets the crowd look.", "eyes somebody in the crowd."
+-- 2026-11-18, SuccuDev: "too many neutral lines go 'whomever' or 'knows who is staring' imagining fake
+-- people, that role is served by the targeted lines and emotes. we need something better and more fun".
+-- So the lines at nobody stand on their own now: the mood, the face, how the dance is danced. No
+-- "somebody", "whoever", "the crowd", no watching or staring; cheek and shamelessness in their place.
+-- 35 candidates went past three hostile readers. Kept by all three: hip, dirtier, nice and slow, subtle,
+-- dirty thought, innocent; by two: carried away, all night, behave, regrets nothing, too pleased, a little
+-- too much. "was raised better than this." is the one line that is closer to a joke (one reader's second
+-- best, a quip to the other two); it is in because he asked for fun. Out: "dances just out of reach."
+-- (invents somebody reaching), "has done worse for less." (a punchline about money), every "is in a
+-- wicked mood"-style adjective, and all the twins.
+-- The lines about people (the second block) are said only while they are true: M.WHEN below.
 M.IDLE = {
-    "dances a little slower for whoever is watching.",
-    "catches somebody staring and winks.",
-    "gives the crowd something to look at.",
-    "knows exactly who is watching.",
     "puts a little more hip into it.",
-    "stares right back at somebody.",
-    "enjoys being watched.",
-    "dances just out of reach.",
-    "smirks at the crowd.",
+    "tries to look innocent.",
     "starts dancing a little dirtier.",
-    "checks out somebody in the crowd.",
-    "pretends not to notice the staring.",
-    "makes sure everybody gets a good look.",
-    "grins at whoever is staring.",
-    "lets everybody stare.",
+    "regrets nothing.",
+    "takes it nice and slow.",
+    "grins at a dirty thought.",
+    "gives up on being subtle.",
+    "could keep this up all night.",
+    "has no plans to behave.",
+    "gets a little carried away.",
+    "enjoys this a little too much.",
+    "looks far too pleased about something.",
+    "was raised better than this.",
+    -- about the people who are really there, the most particular first
     "smirks at somebody who has been staring a while.",
+    "lets everybody stare.",
+    "makes sure everybody gets a good look.",
+    "gives the crowd something to look at.",
+    "catches somebody staring and winks.",
+    "stares right back at somebody.",
+    "knows exactly who is watching.",
 }
 -- Lines that fit the crowd (SuccuDev, 2026-11-17: "I like lines that fit the crowd"). The addon knows
 -- how many players are in view (near), how many have you targeted right now (look) and for how long the
--- longest of them has (stare), so a line can wait until it is true:
---   near:  it needs this many players in view ("the crowd", "everybody"); with fewer it is not said.
---   look:  made for this many lookers or more: it comes sooner then.
---   stare: made for somebody who has kept you targeted this many seconds.
---   only:  said only when it is made for the moment (the two new ones: with nobody targeting you,
---          "lets everybody stare." would be a lie).
--- A line without an entry fits always. With no nameplate in view the addon knows nothing about the
--- crowd (nameplates may be off), and every line but the "only" ones fits, as before 1.8.0.
--- The two new lines went past three hostile readers with twelve others, 2026-11-17. Dead on arrival:
--- every line for exactly one looker ("dances for the one who is watching.": too much at one person),
--- a wink or a slow smile at whoever keeps staring (too eager at a looker).
+-- longest of them has (stare), so a line about people waits until it is true:
+--   look:  this many players have you targeted right now (1 when not given: every line here needs
+--          at least one real looker).
+--   near:  this many players are in view ("the crowd", "everybody").
+--   stare: somebody has kept you targeted this many seconds.
+-- A line without an entry is about nobody and fits always. Since 1.9.0 a line with an entry is never
+-- said on a guess: with nobody targeting you, or with nameplates off (then the addon knows nothing),
+-- only the lines about nobody are left (SuccuDev, 2026-11-18: "imagining fake people").
+-- Three hostile readers picked the lines for a looker; out went "grins at whoever is staring.",
+-- "dances a little slower for whoever is watching." (both "whoever"), "pretends not to notice the
+-- staring." (coy), and by my own cut "smirks at the crowd.", "checks out somebody in the crowd." and
+-- "enjoys being watched." (the readers kept it, but next to "enjoys this a little too much." it is
+-- the same opening twice).
+-- Dead since 1.8.0: every line for exactly one looker (too much at one person).
 M.WHEN = {
-    ["catches somebody staring and winks."] = { look = 1 },
-    ["stares right back at somebody."] = { look = 1 },
-    ["knows exactly who is watching."] = { look = 1 },
-    ["grins at whoever is staring."] = { look = 1 },
-    ["pretends not to notice the staring."] = { look = 2 },
+    ["smirks at somebody who has been staring a while."] = { stare = 30 },
+    ["lets everybody stare."] = { look = 3 },
+    ["makes sure everybody gets a good look."] = { near = 3, look = 2 },
     ["gives the crowd something to look at."] = { near = 3 },
-    ["smirks at the crowd."] = { near = 3 },
-    ["checks out somebody in the crowd."] = { near = 3 },
-    ["makes sure everybody gets a good look."] = { near = 3, look = 3 },
-    ["lets everybody stare."] = { look = 3, only = true },
-    ["smirks at somebody who has been staring a while."] = { stare = 30, only = true },
+    ["catches somebody staring and winks."] = {},
+    ["stares right back at somebody."] = {},
+    ["knows exactly who is watching."] = {},
 }
--- 0: wrong for this crowd, 1: fine, 2: made for it. c = { near, look, stare }.
+-- A line about people at most every fourth line, however many are looking: the rest are about nobody.
+M.PEOPLE_GAP = 3
+-- 0: not true right now, so not said; 1: fits always; 2: about the people who are really there, and
+-- true right now. c = { near, look, stare }.
 function M.Suits(line, c)
     local w = M.WHEN[line]
     if not w then return 1 end
-    if w.near and c.near > 0 and c.near < w.near then return 0 end
-    if (w.look and c.look >= w.look) or (w.stare and c.stare >= w.stare) then return 2 end
-    return w.only and 0 or 1
+    if c.look < (w.look or 1) then return 0 end
+    if w.near and c.near < w.near then return 0 end
+    if w.stare and c.stare < w.stare then return 0 end
+    return 2
 end
 -- The quick answers to a whisper, on the Reply button of a whisperer's row: your click sends one.
 -- Private chat, so these are said, in few words. Nine went past the three readers; these four lived
@@ -1245,18 +1264,23 @@ function M.NextJar(t) if t then nextJar = t end return nextJar end
 local crowd = { near = 0, look = 0, stare = 0 }
 local upcoming                   -- the line that is up next, as the counter shows it
 local saidOn, turnNo, lastLine = {}, 0, nil
-local MADE_BONUS, MADE_AFTER = 5, 4     -- a line made for the crowd: this many turns sooner, once it is this many turns old
+local sincePeople = 1e6                 -- lines about nobody since the last one about people
 local function PickIdle()
-    local best, bestKey
+    local plain, plainAge, people, peopleAge
     for _, line in ipairs(M.IDLE) do
         local level = M.Suits(line, crowd)
         if level > 0 and line ~= lastLine then
             local age = turnNo - (saidOn[line] or -1e6)
-            local key = age + ((level == 2 and age >= MADE_AFTER) and MADE_BONUS or 0)
-            if not bestKey or key > bestKey then best, bestKey = line, key end
+            if level == 2 then
+                if not peopleAge or age > peopleAge then people, peopleAge = line, age end
+            elseif not plainAge or age > plainAge then
+                plain, plainAge = line, age
+            end
         end
     end
-    return best or lastLine or M.IDLE[1]
+    -- A line about the people who are there, when one is true and its turn has come; else one about nobody.
+    if people and sincePeople >= (M.PEOPLE_GAP or 0) then return people end
+    return plain or people or lastLine or M.IDLE[1]
 end
 -- Keeps the line that is up next right for the crowd: one that no longer fits is swapped, and so is a
 -- plain one when a line made for this crowd has come up. Otherwise it stays, so the text on the
@@ -1277,6 +1301,7 @@ local function Take(skipped)
     local line = Peek()
     turnNo = turnNo + 1
     saidOn[line] = turnNo
+    sincePeople = M.WHEN[line] and 0 or sincePeople + 1
     if not skipped then lastLine = line end
     upcoming = nil
     return line
