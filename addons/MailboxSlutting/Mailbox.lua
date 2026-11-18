@@ -215,18 +215,18 @@ M.JAR = {
 -- (invents somebody reaching), "has done worse for less." (a punchline about money), every "is in a
 -- wicked mood"-style adjective, and all the twins.
 -- The lines about people (the second block) are said only while they are true: M.WHEN below.
+-- 2026-11-18, later, on that set: "these really arent good either, dont get me reported etc". The lines
+-- go out in public chat under his character's name, so nothing in them may read as sexual content
+-- somebody could report: out went "starts dancing a little dirtier.", "grins at a dirty thought.",
+-- "could keep this up all night.", "enjoys this a little too much." and "takes it nice and slow.".
+-- The eight left are a stopgap he has not approved; the next set comes from his own votes.
 M.IDLE = {
     "puts a little more hip into it.",
     "tries to look innocent.",
-    "starts dancing a little dirtier.",
     "regrets nothing.",
-    "takes it nice and slow.",
-    "grins at a dirty thought.",
     "gives up on being subtle.",
-    "could keep this up all night.",
     "has no plans to behave.",
     "gets a little carried away.",
-    "enjoys this a little too much.",
     "looks far too pleased about something.",
     "was raised better than this.",
     -- about the people who are really there, the most particular first

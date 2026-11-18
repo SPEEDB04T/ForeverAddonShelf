@@ -1,5 +1,9 @@
 # Changelog
 
+## 1.9.1
+
+- Five lines at nobody are out, because they could be read as sexual content in public chat: "starts dancing a little dirtier.", "grins at a dirty thought.", "could keep this up all night.", "enjoys this a little too much." and "takes it nice and slow." Eight are left for now. No line the addon sends has a word like "dirty" in it any more.
+
 ## 1.9.0
 
 - **The lines at nobody no longer invent onlookers.** Half of them spoke of "whoever is watching" or "somebody staring" whether or not anybody was. Real onlookers already get an emote at their name, so the lines at nobody are now about the mood, the face and the dance, and cheekier. The thirteen: "puts a little more hip into it.", "tries to look innocent.", "starts dancing a little dirtier.", "regrets nothing.", "takes it nice and slow.", "grins at a dirty thought.", "gives up on being subtle.", "could keep this up all night.", "has no plans to behave.", "gets a little carried away.", "enjoys this a little too much.", "looks far too pleased about something.", "was raised better than this."
