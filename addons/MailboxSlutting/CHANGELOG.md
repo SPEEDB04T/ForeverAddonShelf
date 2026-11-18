@@ -1,5 +1,17 @@
 # Changelog
 
+## 1.8.0
+
+- **The next line is on the counter.** Under "Next line" you see what Say a line will say, before the click. **Skip** passes on it and brings up another; nothing is said. A tip jar line that is due is shown the same way, and Skip drops it.
+- **Lines that fit the crowd.** The addon counts who is in view and who has you targeted (nameplates shown). A line about "the crowd" or "everybody" waits until three people are in view; the lines about staring come up sooner while somebody is. Two new lines: "lets everybody stare." (only while three or more have you targeted) and "smirks at somebody who has been staring a while." (only while somebody has for half a minute). With nameplates off it knows nothing and uses the 14 plain lines as before.
+- **Somebody who dances at you gets a smile or a grin.** Until now they got nothing.
+- **The answers by itself take turns.** A wink is answered with a wink most of the time, now and then with a smirk, a grin or a giggle; the same for the other emotes, each within its own kind. The same person never gets the same one twice running, and the same emote does not go out three times in a row.
+- **Lookers, less like clockwork.** The wink came after exactly three seconds for everybody. Now it is a wink, a smile or a smirk after 3 to 7 seconds of looking, picked anew for every look, and about one look in four gets nothing.
+- **Somebody who was rude twice gets nothing more** until you log out: no second pout, no button on their row, no answer to whatever they do after it.
+- **The list says how long somebody has looked** ("is looking at you, 45s", "looked at you for 2m 05s"), and of those looking right now, whoever has looked longest is on top.
+- **The jar count names today's biggest tip**, when it was a gold or more: "counts the tip jar: 9 tips today. The biggest was 20 gold pieces."
+- **Quick whispers.** A whisperer's row has a Reply button: a menu with "hey <3", "glad you like it <3", "dancing for tips <3", "keep watching <3" and the emote. Nothing is whispered without your click.
+
 ## 1.7.0
 
 - A line at nobody goes out only when you click **Say a line** (or **Tip jar**) on the counter. Key presses no longer send one, so walking, jumping or typing says nothing. The button still lights up when a line is due.

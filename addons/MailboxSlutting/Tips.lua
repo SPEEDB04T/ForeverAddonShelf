@@ -341,6 +341,7 @@ local function Done(why)
         if ns.Stat then
             ns.Stat("tips")
             ns.Stat("tipCopper", tip.amount)
+            if ns.StatMax then ns.StatMax("tipMax", tip.amount) end     -- the biggest today: the tip jar count names it
         end
         -- who tipped, so mailbox mode can welcome them back when they come by again
         if tip.who then

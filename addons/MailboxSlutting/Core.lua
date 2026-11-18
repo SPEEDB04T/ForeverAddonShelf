@@ -13,7 +13,7 @@
 -- from the shop is what you had saved there (tips, tippers, numbers), copied once.
 local ADDON, ns = ...
 
-ns.VERSION = "1.7.0"
+ns.VERSION = "1.8.0"
 ns.TITLE = "Mailbox Slutting"
 ns.ICON = "Interface\\Icons\\INV_Letter_15"
 
@@ -144,8 +144,9 @@ local function DayKey(t)
     return ("%08d"):format(floor(t / 86400))
 end
 
-function ns.Stat(key, n)
-    if not db then return end
+-- Today's numbers and the all-time ones, made if they are not there yet.
+local function Today()
+    if not db then return nil end
     db.stats = type(db.stats) == "table" and db.stats or {}
     local s = db.stats
     s.days = type(s.days) == "table" and s.days or {}
@@ -158,9 +159,24 @@ function ns.Stat(key, n)
         table.sort(keys)
         for i = 1, #keys - STAT_DAYS do s.days[keys[i]] = nil end
     end
+    return s.days[d], s.all
+end
+
+function ns.Stat(key, n)
+    local day, all = Today()
+    if not day then return end
     n = n or 1
-    s.days[d][key] = (tonumber(s.days[d][key]) or 0) + n
-    s.all[key] = (tonumber(s.all[key]) or 0) + n
+    day[key] = (tonumber(day[key]) or 0) + n
+    all[key] = (tonumber(all[key]) or 0) + n
+end
+
+-- A number that is the biggest so far, not a sum (tipMax: the biggest tip). Its key ends in "Max".
+function ns.StatMax(key, n)
+    local day, all = Today()
+    n = tonumber(n)
+    if not (day and n) then return end
+    if n > (tonumber(day[key]) or 0) then day[key] = n end
+    if n > (tonumber(all[key]) or 0) then all[key] = n end
 end
 
 -- days nil: all time; 0: today; n: the last n days, today in.
@@ -171,7 +187,11 @@ function ns.Stats(days)
     for i = 0, max(0, days - 1) do
         local t = type(s.days) == "table" and s.days[DayKey(now - i * 86400)]
         if type(t) == "table" then
-            for k, v in pairs(t) do out[k] = (out[k] or 0) + (tonumber(v) or 0) end
+            for k, v in pairs(t) do
+                v = tonumber(v) or 0
+                if type(k) == "string" and k:find("Max$") then out[k] = max(out[k] or 0, v)
+                else out[k] = (out[k] or 0) + v end
+            end
         end
     end
     return out

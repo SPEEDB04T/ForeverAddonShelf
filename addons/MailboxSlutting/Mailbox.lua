@@ -35,6 +35,12 @@ local ALERT_GAP = 3             -- seconds between two alert sounds
 local TICK = 1                  -- seconds between two looks at the nameplates
 local HOLD = 3                  -- seconds somebody must keep you targeted before the shop winks by itself
                                 -- (SuccuDev: "lets only wink at players that keep me targeted for at least 3 seconds")
+-- A wink after three seconds on the dot, at every single looker, is a clock. So the wait is picked anew
+-- for each look, never under the three seconds he asked for, and now and then a looker gets no wink at
+-- all, the way a person misses one. Somebody who looks away and back gets a new roll.
+M.HOLD = { 3, 7 }               -- seconds a looker must keep you targeted, picked per look; nil: HOLD
+M.LOOK_SKIP = 0.25              -- the share of looks that get no wink by itself; 0: every look gets one
+local HECKLE = 2                -- rude emotes from one person before they get nothing more this session
 local JAR_MIN, JAR_MAX = 480, 720       -- seconds between two tip jar lines, picked at random
 local JAR_FIRST_MIN, JAR_FIRST_MAX = 180, 300   -- ... and before the first one
 -- The lines by itself (idle and tip jar) are for a crowd that does nothing (SuccuDev: "we can be a lot
@@ -53,7 +59,7 @@ local BACK_AGAIN = 2 * 3600     -- seconds before a tipper is welcomed back agai
 -- (hugging a stranger back was too much by itself; Hug is still on the button).
 local REPLIES = {
     { "kiss", "KISS", "kiss" }, { "wink", "WINK", "wink" }, { "flirt", "FLIRT", "flirt" },
-    { "whistle", "SMIRK", "wink" }, { "danc", "DANCE", "dance" }, { "wave", "WAVE", "wave" },
+    { "whistle", "SMIRK", "wink" }, { "danc", "SMILE", "dance" }, { "wave", "WAVE", "wave" },
     { "greet", "WAVE", "wave" }, { "hello", "WAVE", "wave" }, { "bow", "CURTSEY", "show" },
     { "hug", "GIGGLE", "hug" }, { "cuddle", "GIGGLE", "hug" }, { "drool", "GIGGLE", "look" },
     { "lick", "PURR", "flirt" }, { "cheer", "GRIN", "any" }, { "applaud", "CURTSEY", "show" },
@@ -88,11 +94,32 @@ M.EMOTES = {
     show = { "CURTSEY", "SMILE" },
     hug = { "GIGGLE", "HUG", "BLUSH" },
     wave = { "WAVE", "SMILE" },
-    dance = { "DANCE" },
+    -- Somebody dances with you. You are dancing already, so a dance back shows nothing; until 1.8.0 that
+    -- meant the most common emote at a dancer got no answer at all. Three readers, 2026-11-17: a smile
+    -- or a grin (split between the two), never a wink (used everywhere else) or a flirt (too eager).
+    dance = { "SMILE", "GRIN", "WINK" },
     whisper = { },
     sad = { "POUT", "SIGH", "CRY" },                          -- after a rude emote, and nothing from "any"
     any = { "WINK", "SMILE", "GIGGLE", "GRIN", "SMIRK" },
 }
+-- What may go back BY ITSELF, per group. The emote that fits what they did (the one in REPLIES) comes
+-- most often; the others here take its place now and then, so that the crowd does not read "winks at
+-- A", "winks at B", "winks at C", and nobody gets the same one twice running. All of them are the
+-- game's own emotes and all are slight: nothing here goes further than what they did. Not by itself:
+-- Hug, Cry, Beckon, Tease and the addon's own ones (those stay on the buttons).
+M.AUTO = {
+    look = { "WINK", "SMILE", "SMIRK" },
+    kiss = { "KISS", "WINK", "BLUSH", "PURR" },
+    wink = { "WINK", "SMIRK", "GRIN", "GIGGLE" },
+    flirt = { "FLIRT", "PURR", "SMIRK", "WINK", "GIGGLE" },
+    show = { "CURTSEY", "SMILE", "GRIN" },
+    hug = { "GIGGLE", "BLUSH", "SMILE" },
+    wave = { "WAVE", "SMILE", "GRIN" },
+    dance = { "SMILE", "GRIN" },
+    sad = { "POUT", "SIGH" },
+    any = { "WINK", "SMILE", "GRIN", "GIGGLE", "SMIRK" },
+}
+M.AUTO_MAIN = 3                 -- how much more often the fitting one comes than each of the others
 -- What the buttons call them.
 M.LABEL = {
     WINK = "Wink", SMILE = "Smile", GIGGLE = "Giggle", WAVE = "Wave", BLUSH = "Blush",
@@ -192,7 +219,47 @@ M.IDLE = {
     "pretends not to notice the staring.",
     "makes sure everybody gets a good look.",
     "grins at whoever is staring.",
+    "lets everybody stare.",
+    "smirks at somebody who has been staring a while.",
 }
+-- Lines that fit the crowd (SuccuDev, 2026-11-17: "I like lines that fit the crowd"). The addon knows
+-- how many players are in view (near), how many have you targeted right now (look) and for how long the
+-- longest of them has (stare), so a line can wait until it is true:
+--   near:  it needs this many players in view ("the crowd", "everybody"); with fewer it is not said.
+--   look:  made for this many lookers or more: it comes sooner then.
+--   stare: made for somebody who has kept you targeted this many seconds.
+--   only:  said only when it is made for the moment (the two new ones: with nobody targeting you,
+--          "lets everybody stare." would be a lie).
+-- A line without an entry fits always. With no nameplate in view the addon knows nothing about the
+-- crowd (nameplates may be off), and every line but the "only" ones fits, as before 1.8.0.
+-- The two new lines went past three hostile readers with twelve others, 2026-11-17. Dead on arrival:
+-- every line for exactly one looker ("dances for the one who is watching.": too much at one person),
+-- a wink or a slow smile at whoever keeps staring (too eager at a looker).
+M.WHEN = {
+    ["catches somebody staring and winks."] = { look = 1 },
+    ["stares right back at somebody."] = { look = 1 },
+    ["knows exactly who is watching."] = { look = 1 },
+    ["grins at whoever is staring."] = { look = 1 },
+    ["pretends not to notice the staring."] = { look = 2 },
+    ["gives the crowd something to look at."] = { near = 3 },
+    ["smirks at the crowd."] = { near = 3 },
+    ["checks out somebody in the crowd."] = { near = 3 },
+    ["makes sure everybody gets a good look."] = { near = 3, look = 3 },
+    ["lets everybody stare."] = { look = 3, only = true },
+    ["smirks at somebody who has been staring a while."] = { stare = 30, only = true },
+}
+-- 0: wrong for this crowd, 1: fine, 2: made for it. c = { near, look, stare }.
+function M.Suits(line, c)
+    local w = M.WHEN[line]
+    if not w then return 1 end
+    if w.near and c.near > 0 and c.near < w.near then return 0 end
+    if (w.look and c.look >= w.look) or (w.stare and c.stare >= w.stare) then return 2 end
+    return w.only and 0 or 1
+end
+-- The quick answers to a whisper, on the Reply button of a whisperer's row: your click sends one.
+-- Private chat, so these are said, in few words. Nine went past the three readers; these four lived
+-- ("enjoying the view?" and "like what you see?" fish for a compliment, "come closer" begs).
+M.WHISPERS = { "hey <3", "glad you like it <3", "dancing for tips <3", "keep watching <3" }
 -- Somebody who has kept you targeted this long gets one look at the tip jar, once an hour at most.
 M.NUDGE = "glances at the tip jar, then at %s."
 local NUDGE_HOLD, NUDGE_AGAIN = 30, 3600
@@ -633,12 +700,48 @@ end
 M.Clip = Clip
 local CTA_CHARS, WHAT_CHARS = 52, 40        -- what the line above the big button and a row hold
 
+-- "45s", "2m 05s": how long somebody has had you targeted.
+local function Span(sec)
+    sec = math.floor(sec)
+    if sec < 60 then return sec .. "s" end
+    return ("%dm %02ds"):format(math.floor(sec / 60), sec % 60)
+end
+local WATCH_SHOWN = 10          -- seconds of looking before the row says how long
+
 local function What(v, now)
     if v.kind == "look" then
-        return (v.seen and now - v.seen < 5) and "is looking at you" or "looked at you"
+        local looking = v.seen and now - v.seen < 5
+        local t = v.watched or 0
+        if t < WATCH_SHOWN then return looking and "is looking at you" or "looked at you" end
+        return looking and ("is looking at you, " .. Span(t)) or ("looked at you for " .. Span(t))
     end
     return v.what
 end
+
+-- The rows, top to bottom: the list as it is (newest first), except that those who are looking at you
+-- right now are put in the order of who has looked longest, in the rows they hold between them.
+local shown = {}
+local function Order(now)
+    for i = #shown, 1, -1 do shown[i] = nil end
+    local slots, lookers = {}, {}
+    for i, v in ipairs(visitors) do
+        shown[i] = v
+        if v.kind == "look" and v.seen and now - v.seen <= TICK + 0.6 then
+            slots[#slots + 1] = i
+            lookers[#lookers + 1] = v
+        end
+    end
+    if #lookers > 1 then
+        table.sort(lookers, function(a, b)
+            local wa, wb = a.watched or 0, b.watched or 0
+            if wa ~= wb then return wa > wb end
+            return a.name < b.name
+        end)
+        for k, i in ipairs(slots) do shown[i] = lookers[k] end
+    end
+    return shown
+end
+M.Order = function() return Order(Now()) end
 
 -- How bright a row is: new ones fade in, answered ones are dimmed, old ones fade out.
 local function Alpha(v, now)
@@ -674,7 +777,7 @@ local function Fade()
     if not (frame and frame:IsShown()) then return end
     local now = Now()
     for r = 1, ROWS do
-        local v = visitors[r]
+        local v = shown[r]
         if v then frame.rows[r]:SetAlpha(Alpha(v, now)) end
     end
     -- the big button pulses the way the game pulses a button that wants a click: its highlight, on and off
@@ -682,7 +785,7 @@ local function Fade()
     local pulse = math.floor(now * 2) % 2 == 0
     if b:IsShown() and b.visitor and pulse then b:LockHighlight() else b:UnlockHighlight() end
     -- and the tip jar button, while its line did not go out
-    if jarOwed and pulse then frame.jar:LockHighlight() else frame.jar:UnlockHighlight() end
+    if M.JarOwed() and pulse then frame.jar:LockHighlight() else frame.jar:UnlockHighlight() end
     -- and Say a line, while a line is due
     local say = frame.cta.say
     if say:IsShown() and M.Queued() > 0 and pulse then say:LockHighlight() else say:UnlockHighlight() end
@@ -691,14 +794,17 @@ end
 Sync = function()
     if not (frame and frame:IsShown()) then return end
     local now = Now()
+    local list = Order(now)
     for r = 1, ROWS do
-        local row, v = frame.rows[r], visitors[r]
+        local row, v = frame.rows[r], list[r]
         if v then
             row.name:SetText(Short(v.name))
             row.what:SetText(Clip(What(v, now), WHAT_CHARS))
             row.age:SetText(Ago(now - v.at))
             if v.reply then
-                row.emote:SetText(Label(v) or "Emote")
+                -- a whisperer's button opens the quick answers (and the emote); everybody else's does the emote
+                row.emote.menu = v.kind == "whisper" and M.CanMenu() or nil
+                row.emote:SetText(row.emote.menu and "Reply" or Label(v) or "Emote")
                 Fit(row.emote, 62)
                 SetReply(row.emote, v)
                 row.emote:SetEnabled(CanReply(v, now))
@@ -748,6 +854,11 @@ Sync = function()
         cta.say.place(true)
     end
     cta.say:SetShown(on)
+    -- what Say a line says next, so the click is not blind
+    local line = on and M.Upcoming() or nil
+    cta.next:SetText(line and ((NORMAL_FONT_COLOR_CODE or "") .. "Next line:" .. (NORMAL_FONT_COLOR_CODE and "|r" or "") .. " " .. line) or "")
+    cta.next:SetShown(line ~= nil)
+    cta.skip:SetShown(line ~= nil)
     if Away() then
         frame.status:SetText("You are AFK: nothing goes out by itself until you are back.")
     else
@@ -815,13 +926,48 @@ local function MayAuto(v, gap)
     if v.reply[2] == "DANCE" and (dancing or now - lastDance < DANCE_GAP) then return false end
     return true
 end
+-- Which emote goes back by itself this time: mostly the one that fits what they did, now and then
+-- another of its group (M.AUTO). Never the one this person got last, and never a third of the same in
+-- a row to the crowd. Until 1.8.0 it was the fitting one every time, and a wink is the fitting one for
+-- most things, so the chat read "winks at A", "winks at B", "winks at C": a bot.
+local recent = {}                -- the last two that went out by itself
+local function AutoToken(v)
+    local main = v.reply[2]
+    local pool, has = { main }, { [main] = true }
+    for _, t in ipairs(M.AUTO[v.reply[3] or "any"] or {}) do
+        if not has[t] then has[t] = true; pool[#pool + 1] = t end
+    end
+    local function pick(strict)
+        local list, total = {}, 0
+        for i, t in ipairs(pool) do
+            local out = t == v.autoToken or (strict and recent[1] == t and recent[2] == t)
+            if not out then
+                local w = i == 1 and M.AUTO_MAIN or 1
+                list[#list + 1] = { t, w }
+                total = total + w
+            end
+        end
+        if #list == 0 then return nil end
+        local roll, sum = M.Random(0, total), 0
+        for _, e in ipairs(list) do
+            sum = sum + e[2]
+            if roll < sum then return e[1] end
+        end
+        return list[#list][1]
+    end
+    return pick(true) or pick(false) or main
+end
+M.AutoToken = AutoToken
 local function Auto(v, gap)
     if not MayAuto(v, gap) then return false end
-    if not Emote(v.reply[2], v.name, "event") then
+    local token = AutoToken(v)
+    if not Emote(token, v.name, "event") then
         Missed()
         return false
     end
     lastAuto, v.emotedAt = Now(), Now()
+    v.autoToken = token
+    recent[2], recent[1] = recent[1], token
     return true
 end
 
@@ -853,6 +999,12 @@ local function Later(v, gap, look)
         if sent and Sync then Sync() end
     end)
     return true
+end
+
+-- Who was rude, and how often, since you logged in. Twice, and they are ignored until you log out.
+local rude = {}
+function M.Ignored(name)
+    return name ~= nil and (rude[name] or 0) >= HECKLE
 end
 
 local function ReplyFor(text)
@@ -900,6 +1052,17 @@ local function OnEmote(text, sender, guid)
     end
     if not text:lower():find("%f[%a]you%f[%A]") then return end        -- only what is aimed at you
     local reply = ReplyFor(text)
+    if reply == SAD_REPLY then rude[sender] = (rude[sender] or 0) + 1 end
+    if M.Ignored(sender) then
+        -- Their second rude emote, and whatever they do after it: listed, so you see it, and that is all.
+        -- No pout, no button, no flash of the taskbar, and the lines at nobody do not wait for them.
+        -- A pout every two minutes is what somebody who spits for a reaction came for.
+        local engaged = lastEngage
+        Visit(sender, "emote", text, false, false)
+        lastEngage = engaged
+        Sync()
+        return
+    end
     local v = Visit(sender, "emote", text, reply, reply ~= SAD_REPLY)
     if reply then Later(v, PERSON_GAP) end
     Sync()
@@ -964,15 +1127,24 @@ local function Look()
             if name and ok and Readable(hit) and hit then
                 local v = Find(name)
                 if not v then
-                    v = Visit(name, "look", nil, LOOK_REPLY, false)
+                    v = Visit(name, "look", nil, not M.Ignored(name) and LOOK_REPLY, false)
                 elseif v.kind == "look" and now - math.max(v.at, v.seen or 0) > RELOOK then
                     v = Visit(name, "look", nil, nil, false)      -- looked away and came back
                 elseif v.kind == "look" and now - (v.seen or v.at) > STILL then
                     v.at = now                                    -- targeted you again: a new ten seconds, quietly
                 end
-                if not (v.seen and now - v.seen <= TICK + 0.6) then v.since = now end   -- a new look starts
+                if not (v.seen and now - v.seen <= TICK + 0.6) then
+                    -- a new look starts: how long it must last this time, and whether it gets a wink at all
+                    v.since = now
+                    v.hold = M.HOLD and M.Random(M.HOLD[1], M.HOLD[2]) or HOLD
+                    v.pass = (M.LOOK_SKIP or 0) > 0 and M.Random(0, 1) > 1 - M.LOOK_SKIP
+                else
+                    v.watched = (v.watched or 0) + (now - v.seen)       -- how long they have had you targeted, all told
+                end
                 v.seen = now
-                if now - (v.since or now) >= HOLD then Later(v, LOOK_GAP, true) end
+                if not v.pass and not M.Ignored(name) and now - (v.since or now) >= (v.hold or HOLD) then
+                    Later(v, LOOK_GAP, true)
+                end
             end
         end
     end
@@ -998,8 +1170,10 @@ Flush = function(from)
     q.fn(from)
     return true
 end
-Queue = function(fn, old, soft)
-    queue[#queue + 1] = { fn = fn, at = Now(), old = old, soft = soft }
+-- line: what it will say, when that is settled already (a tip jar line, a line that is tried again).
+-- A line at nobody has none until it goes out: it says whatever is up next then.
+Queue = function(fn, old, soft, line)
+    queue[#queue + 1] = { fn = fn, at = Now(), old = old, soft = soft, line = line }
     while #queue > QUEUE_KEEP do table.remove(queue, 1) end
     if not M.HARDWARE_ONLY then Flush() end
 end
@@ -1026,17 +1200,32 @@ function M.TipCount()
     return n
 end
 
-function M.Jar(from)
-    local line = jarOwed
-    if not line then
-        jarCount = jarCount + 1
-        if jarCount % COUNT_EVERY == 0 then
-            line = M.JAR_COUNT:format(M.TipCount())
-        else
-            jarTurn = jarTurn % #M.JAR + 1
-            line = M.JAR[jarTurn]
-        end
+-- The count names today's biggest tip when there is one worth naming (SuccuDev, 2026-11-17, picked it
+-- from a list of ideas): it tells whoever reads it what people tip, and asks nobody for anything. The
+-- amount is real, in whole gold, and under a gold nothing is named: "the biggest was 40 copper" would
+-- set the bar on the floor.
+M.JAR_BIG = "counts the tip jar: %d tips today. The biggest was %s."
+M.JAR_BIG_MIN = 10000           -- copper: the smallest tip worth naming
+function M.BiggestTip()
+    local big = ns.Stats and tonumber((ns.Stats(0) or {}).tipMax) or 0
+    return big >= M.JAR_BIG_MIN and math.floor(big / 10000) * 10000 or nil
+end
+
+-- The next tip jar line.
+local function JarLine()
+    jarCount = jarCount + 1
+    if jarCount % COUNT_EVERY == 0 then
+        local big = M.BiggestTip()
+        if big then return M.JAR_BIG:format(M.TipCount(), ns.PriceText(big, "words")) end
+        return M.JAR_COUNT:format(M.TipCount())
     end
+    jarTurn = jarTurn % #M.JAR + 1
+    return M.JAR[jarTurn]
+end
+
+-- Says a tip jar line: the one given (it was shown on the counter), the one still owed, or the next.
+function M.Jar(from, line)
+    line = line or jarOwed or JarLine()
     jarOwed = nil
     if Sync then Sync() end
     return Say(line, from, function()
@@ -1047,18 +1236,74 @@ end
 function M.JarOwed() return jarOwed end
 function M.NextJar(t) if t then nextJar = t end return nextJar end
 
+-- The line at nobody that goes out next. It is picked ahead of time, so the counter can show it before
+-- the click (a line goes out only on Say a line, and until 1.8.0 that click was blind), and it is picked
+-- for the crowd that is there (M.WHEN).
+-- Which one: of the lines that fit, the one said longest ago, in the order of the list while none has
+-- been said yet. A line that is made for this crowd comes back a few turns sooner than the others, but
+-- never straight after itself.
+local crowd = { near = 0, look = 0, stare = 0 }
+local upcoming                   -- the line that is up next, as the counter shows it
+local saidOn, turnNo, lastLine = {}, 0, nil
+local MADE_BONUS, MADE_AFTER = 5, 4     -- a line made for the crowd: this many turns sooner, once it is this many turns old
+local function PickIdle()
+    local best, bestKey
+    for _, line in ipairs(M.IDLE) do
+        local level = M.Suits(line, crowd)
+        if level > 0 and line ~= lastLine then
+            local age = turnNo - (saidOn[line] or -1e6)
+            local key = age + ((level == 2 and age >= MADE_AFTER) and MADE_BONUS or 0)
+            if not bestKey or key > bestKey then best, bestKey = line, key end
+        end
+    end
+    return best or lastLine or M.IDLE[1]
+end
+-- Keeps the line that is up next right for the crowd: one that no longer fits is swapped, and so is a
+-- plain one when a line made for this crowd has come up. Otherwise it stays, so the text on the
+-- counter does not change under your cursor.
+local function Peek()
+    if upcoming then
+        local level = M.Suits(upcoming, crowd)
+        if level == 2 then return upcoming end
+        local best = PickIdle()
+        if level == 0 or M.Suits(best, crowd) == 2 then upcoming = best end
+        return upcoming
+    end
+    upcoming = PickIdle()
+    return upcoming
+end
+-- It goes out (or is passed on): to the back of the row.
+local function Take(skipped)
+    local line = Peek()
+    turnNo = turnNo + 1
+    saidOn[line] = turnNo
+    if not skipped then lastLine = line end
+    upcoming = nil
+    return line
+end
+M.Crowd = function(near, look, stare)       -- for the tests: the crowd as the addon sees it
+    if near then crowd.near, crowd.look, crowd.stare = near, look or 0, stare or 0 end
+    return crowd
+end
+
+-- What Say a line would say right now: the line that is waiting, or the line at nobody that is up next.
+function M.Upcoming()
+    if not on then return nil end
+    Purge()
+    return (queue[1] and queue[1].line) or Peek()
+end
+
 -- An idle line, at nobody.
-local idleTurn, nextIdle = 0, nil
+local nextIdle
 function M.Idle(from)
-    idleTurn = idleTurn % #M.IDLE + 1
-    local line = M.IDLE[idleTurn]
     local function done() Stat("idle") end
-    if from ~= "timer" then return Say(line, from, nil, done) end
-    local tries = 0
+    if from ~= "timer" then return Say(Take(), from, nil, done) end
+    local tries, line = 0, nil
     local function send(f)
+        line = line or Take()
         Say(line, f or "timer", function()
             tries = tries + 1
-            if tries < 2 and M.HARDWARE_ONLY then Queue(send, nil, true) end     -- once more, on the next click of the button
+            if tries < 2 and M.HARDWARE_ONLY then Queue(send, nil, true, line) end     -- once more, on the next click of the button
         end, done)
     end
     Queue(send, nil, true)
@@ -1072,9 +1317,67 @@ function M.SayLine()
     if not on then return false end
     local now = Now()
     lastAuto = now
-    if queue[1] then return Flush("click") end
-    nextIdle = now + M.Random(IDLE_MIN, IDLE_MAX)
-    return M.Idle("click")
+    local sent
+    if queue[1] then
+        sent = Flush("click")
+    else
+        nextIdle = now + M.Random(IDLE_MIN, IDLE_MAX)
+        sent = M.Idle("click")
+    end
+    if Sync then Sync() end
+    return sent
+end
+
+-- The Skip button: the line shown on the counter is passed on, nothing is said, and the next one comes
+-- up. A tip jar line that was waiting is dropped (the next comes due in its own time); a line at nobody
+-- goes to the back of the row, and one that is due stays due.
+function M.SkipLine()
+    if not on then return false end
+    Purge()
+    if queue[1] and queue[1].line then
+        table.remove(queue, 1)
+    else
+        Take(true)
+    end
+    if Sync then Sync() end
+    return true
+end
+
+-- The quick answers to a whisper. The game's context menu, when this client has it.
+function M.CanMenu()
+    return MenuUtil ~= nil and type(MenuUtil.CreateContextMenu) == "function"
+end
+local lastWhisper = -1e9
+-- Whispers one of them to a visitor, on your click.
+function M.Whisper(v, line)
+    if not (v and v.name and type(line) == "string") then return false end
+    local now = Now()
+    if now - lastWhisper < SEND_GAP then return false end
+    local send = (C_ChatInfo and C_ChatInfo.SendChatMessage) or SendChatMessage
+    if type(send) ~= "function" or not pcall(send, line, "WHISPER", nil, v.name) then
+        ns.Print("the game refused the whisper.")
+        return false
+    end
+    Log("click whisper to " .. tostring(v.name) .. ": " .. line)
+    lastWhisper = now
+    Stat("whispers")
+    v.doneAt = now
+    Sync()
+    return true
+end
+-- The menu on a whisperer's Reply button: the quick answers, then the emote the button would have done.
+function M.ReplyMenu(owner, v)
+    if not (v and v.reply and M.CanMenu()) then return false end
+    local ok = pcall(MenuUtil.CreateContextMenu, owner, function(_, root)
+        root:CreateTitle("Whisper " .. Short(v.name))
+        for _, line in ipairs(M.WHISPERS) do
+            root:CreateButton(line, function() M.Whisper(v, line) end)
+        end
+        if v.token then
+            root:CreateButton((Label(v) or "Emote") .. " at " .. Short(v.name), function() M.Reply(v) end)
+        end
+    end)
+    return ok
 end
 
 -- For a tip: a dance to their name, a few seconds after the thank-you. Only while the shop is open.
@@ -1128,6 +1431,15 @@ local function Tick()
     if not away then Stat("open", TICK) end
     local near = Look()
     local now = Now()
+    -- the crowd, for the lines that fit it: who is in view, who has you targeted, and for how long
+    local look, stare = 0, 0
+    for _, v in ipairs(visitors) do
+        if v.seen and now - v.seen <= TICK + 0.6 then
+            look = look + 1
+            stare = math.max(stare, now - (v.since or now))
+        end
+    end
+    crowd.near, crowd.look, crowd.stare = near, look, stare
     nextJar = nextJar or (now + M.Random(JAR_FIRST_MIN, JAR_FIRST_MAX))
     local quiet = now - lastEngage >= ENGAGE_HOLD
     Purge()
@@ -1144,7 +1456,8 @@ local function Tick()
     if now >= nextJar and near > 0 and not away and quiet and not queue[1] and now - lastAuto >= GLOBAL_GAP then
         nextJar = now + M.Random(JAR_MIN, JAR_MAX)
         lastAuto = now
-        Queue(function(from) M.Jar(from or "timer") end, nil, true)
+        local line = jarOwed or JarLine()       -- settled now, so the counter can show it before the click
+        Queue(function(from) M.Jar(from or "timer", line) end, nil, true, line)
     end
     nextIdle = nextIdle or (now + M.Random(IDLE_FIRST_MIN, IDLE_FIRST_MAX))
     if now >= nextIdle and near > 0 and not away and quiet and not queue[1] and now - lastAuto >= GLOBAL_GAP then
@@ -1168,7 +1481,10 @@ end
 -- A reply button: the game's panel button. Its click is what lets the emote go out.
 local function ReplyButton(parent, label, w, h)
     local b = Button(parent, label, w, h)
-    b:SetScript("OnClick", function(self) M.Reply(self.visitor) end)
+    b:SetScript("OnClick", function(self)
+        if self.menu and self.visitor and M.ReplyMenu(self, self.visitor) then return end
+        M.Reply(self.visitor)
+    end)
     return b
 end
 
@@ -1193,6 +1509,12 @@ local function ReplyTip(self)
     local v = self.visitor
     if not (GameTooltip and v and v.reply) then return end
     GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
+    if self.menu then
+        GameTooltip:SetText("Reply to " .. Short(v.name))
+        GameTooltip:AddLine("Opens the quick answers: pick one and it is whispered to them. The emote is in there too.", 1, 0.82, 0, true)
+        GameTooltip:Show()
+        return
+    end
     GameTooltip:SetText((Label(v) or "Emote") .. " at " .. Short(v.name))
     GameTooltip:AddLine(v.say and ("/e " .. v.say) or ("Does the game's /" .. v.token:lower() .. " at them."), 1, 0.82, 0, true)
     GameTooltip:Show()
@@ -1202,7 +1524,7 @@ local function HideTip()
     if GameTooltip then GameTooltip:Hide() end
 end
 
-local TOP = 96                  -- title, who is waiting, the big button
+local TOP = 122                 -- title, who is waiting, the big button, the line that is up next
 
 local embedded = false
 local DY = 0                    -- how much higher everything sits inside the counter (no title bar)
@@ -1279,12 +1601,30 @@ local function Build(host)
         if not GameTooltip then return end
         GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
         GameTooltip:SetText("Say a line")
-        GameTooltip:AddLine("Says the next line at nobody in /e, right now. Nothing else says one: no key press and no "
-            .. "click in the world. The button lights up when a line is due.", 1, 0.82, 0, true)
+        GameTooltip:AddLine("Says the line shown under \"Next line\" in /e, right now. Nothing else says one: no key "
+            .. "press and no click in the world. The button lights up when a line is due.", 1, 0.82, 0, true)
         GameTooltip:Show()
     end)
     cta.say:SetScript("OnLeave", HideTip)
     cta.say:Hide()
+    -- The line Say a line says next, and a way to pass on it. Two lines of small text in a box of their
+    -- own, left of the Skip button and clear of the list under it.
+    cta.next = Text(f, "GameFontHighlightSmall", 2)
+    cta.next:SetPoint("TOPLEFT", f, "TOPLEFT", 16, -93 + DY)
+    cta.next:SetPoint("RIGHT", f, "RIGHT", -76, 0)
+    cta.next:Hide()
+    cta.skip = Button(f, "Skip", 56, 20)
+    cta.skip:SetPoint("TOPRIGHT", f, "TOPRIGHT", -14, -94 + DY)
+    cta.skip:SetScript("OnClick", function() M.SkipLine() end)
+    cta.skip:SetScript("OnEnter", function(self)
+        if not GameTooltip then return end
+        GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
+        GameTooltip:SetText("Skip")
+        GameTooltip:AddLine("Passes on the line shown and brings up another. Nothing is said.", 1, 0.82, 0, true)
+        GameTooltip:Show()
+    end)
+    cta.skip:SetScript("OnLeave", HideTip)
+    cta.skip:Hide()
 
     f.rows = {}
     for r = 1, ROWS do
@@ -1379,6 +1719,7 @@ function M.Start()
     on, manual, misses, pend, dancing, due = true, false, 0, nil, false, nil
     nextJar, nextIdle, nextRefresh, wasAway, lastEngage, lastOwn = nil, nil, nil, false, -1e9, -1e9
     for i = #queue, 1, -1 do queue[i] = nil end
+    crowd.near, crowd.look, crowd.stare = 0, 0, 0
     -- Nothing listens to the keyboard or to clicks in the world: the click that brings the game's window
     -- back to the front set a line off each time (SuccuDev, 2026-11-17: "stop auto emoting when I click
     -- into the window"), and a key press did the same ("just leave it on the button not the clicks").
