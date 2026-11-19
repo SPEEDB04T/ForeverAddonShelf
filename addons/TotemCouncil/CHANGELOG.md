@@ -1,5 +1,13 @@
 # Changelog
 
+## 1.4.1
+
+- The Tremor pulse bar's marks are much bigger and bolder. The moment to drop is now a green stretch of the bar with a large orange arrow standing over its middle: drop while the spark is in the green, best right under the arrow. It used to be a thin grey peg.
+- The other shamans' pulses are tall blue pegs through the bar. They used to be a dark hairline.
+- The line under the bar now says "Drop Tremor in the green" or "Re-drop in the green".
+- The pulse bar sits a little lower, so the arrow does not cover the time left under the totem buttons.
+- Update: copy the new folder over the old one and type `/reload`.
+
 ## 1.4.0
 
 - New: a Tremor Totem pulse bar. A Tremor Totem breaks fear, charm and sleep once every 4 seconds, so two shamans whose totems pulse at the same moment get nothing from the second one. While a Tremor Totem is down in your party, a small cast bar under the totem bar fills up to each pulse. The other shamans' pulses are notches on it, and a mark shows when to drop (or re-drop) yours so the pulses land evenly apart: one every 2 seconds with two totems.

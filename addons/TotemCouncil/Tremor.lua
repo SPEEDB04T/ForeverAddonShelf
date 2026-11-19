@@ -4,8 +4,8 @@
 -- 8146, party only). Two shamans whose totems pulse at the same moment leave
 -- a fear running for up to 4 seconds; half a period apart it is 2. This file
 -- works out when each Tremor in the party pulses and shows it on a small cast
--- bar under the totem bar, with a mark for the moment to drop (or re-drop)
--- yours so the pulses end up evenly spread.
+-- bar under the totem bar, with a green stretch and an arrow for the moment
+-- to drop (or re-drop) yours so the pulses end up evenly spread.
 --
 -- Whose pulse is known how:
 --   mine          from my own cast
@@ -244,12 +244,27 @@ end
 ----------------------------------------------------------------------
 -- The bar: the game's own player cast bar (CastingBarFrameBaseTemplate,
 -- Blizzard_UIPanels_Game/Mainline/CastingBarFrame.xml), 11 high, with its
--- fill, background, frame, spark and the text box under it. Other shamans'
--- pulses are the cast bar's own stage pips (CastingBarFrameStagePipTemplate,
--- the marks on an empowered cast). The moment to drop is the experience
--- bar's rested mark (ExhaustionTick, Blizzard_StatusTrackingBar/Mainline/
--- ExpBar.xml), the game's "a point on a bar" marker.
+-- fill, background, frame, spark and the text box under it.
+--
+-- Other shamans' pulses are the peg an empowered cast is held on
+-- (ui-castingbar-empower-cursor, 12 x 17 in the same file), drawn 14 x 20
+-- and tinted the shaman class colour. The stage pip used before
+-- (ui-castingbar-empower-pip) is a dark line 2 pixels wide: not seen.
+--
+-- The moment to drop is two things (1.4.1; the experience bar's rested tick
+-- used before is a thin grey peg):
+--   the stretch of bar where a drop keeps the pulses even, drawn like a
+--   stage of an empowered cast (CastingBarFrameStageTierTemplate, a slice of
+--   the bar in another fill), in the channel fill's green;
+--   over its middle the waypoint arrow (SuperTrackedFrame.Arrow,
+--   Blizzard_QuestNavigation/SuperTrackedFrame.xml, Navigation-Tracked-Arrow
+--   22 x 18), turned to point down at the bar.
 ----------------------------------------------------------------------
+local ARROW_W, ARROW_H = 22, 18     -- Navigation-Tracked-Arrow's own size
+local ARROW_IN = 6                  -- how far its tip reaches into the bar
+local PEG_W, PEG_H = 14, 20
+T.ZONE = T.TOLERANCE / P * W        -- half the green stretch, in pixels
+
 local function Atlas(tex, atlas, useSize)
     if tex.SetAtlas then tex:SetAtlas(atlas, useSize and true or false) end
 end
@@ -275,11 +290,11 @@ local function OnEnter(self)
     end
     if st.move and st.best then
         GameTooltip:AddLine(" ")
-        GameTooltip:AddLine((st.mine and "Re-drop" or "Drop") .. (" yours when the spark reaches the mark: the longest wait is then %.1f s."):format(st.best),
+        GameTooltip:AddLine((st.mine and "Re-drop" or "Drop") .. (" yours when the spark is in the green, best at the arrow: the longest wait is then %.1f s."):format(st.best),
             C.gold[1], C.gold[2], C.gold[3], true)
     elseif st.mover then
         GameTooltip:AddLine(" ")
-        GameTooltip:AddLine(st.mover .. " dropped later and is shown the mark to re-drop on.", C.gold[1], C.gold[2], C.gold[3], true)
+        GameTooltip:AddLine(st.mover .. " dropped later and is shown when to re-drop.", C.gold[1], C.gold[2], C.gold[3], true)
     end
     if #st.unknown > 0 then
         GameTooltip:AddLine(" ")
@@ -287,7 +302,7 @@ local function OnEnter(self)
             C.gray[1], C.gray[2], C.gray[3], true)
     end
     GameTooltip:AddLine(" ")
-    GameTooltip:AddLine("A full bar is a pulse of " .. ((st.origin and not st.origin.mine) and (st.origin.name .. "'s") or "your") .. " totem. Each notch is another shaman's.",
+    GameTooltip:AddLine("A full bar is a pulse of " .. ((st.origin and not st.origin.mine) and (st.origin.name .. "'s") or "your") .. " totem. Each blue peg is another shaman's.",
         C.gray[1], C.gray[2], C.gray[3], true)
     GameTooltip:Show()
 end
@@ -297,15 +312,70 @@ local function OnLeave()
     GameTooltip:Hide()
 end
 
+-- frame levels above the bar: the green stretch, the pegs, then the spark
+-- and the arrow, so the spark is never hidden while it crosses the green
+local function Level(frame, bar, above)
+    local level = bar.GetFrameLevel and bar:GetFrameLevel()
+    if type(level) == "number" and frame.SetFrameLevel then frame:SetFrameLevel(level + above) end
+end
+
 local function NewPip(bar)
-    -- CastingBarFrameStagePipTemplate: a 7 x 10 frame, BasePip at its own size
     local pip = CreateFrame("Frame", nil, bar)
-    pip:SetSize(7, 10)
+    Level(pip, bar, 2)
+    pip:SetSize(PEG_W, PEG_H)
     pip.BasePip = pip:CreateTexture(nil, "ARTWORK", nil, 2)
-    Atlas(pip.BasePip, "ui-castingbar-empower-pip", true)
-    pip.BasePip:SetPoint("CENTER")
+    Atlas(pip.BasePip, "ui-castingbar-empower-cursor")
+    pip.BasePip:SetAllPoints()
+    local c = type(RAID_CLASS_COLORS) == "table" and RAID_CLASS_COLORS.SHAMAN
+    if type(c) == "table" and type(c.r) == "number" then
+        pip.BasePip:SetVertexColor(c.r, c.g, c.b)
+    else
+        pip.BasePip:SetVertexColor(0, 0.44, 0.87)
+    end
     pip:Hide()
     return pip
+end
+
+-- Navigation-Tracked-Arrow points up; turn it over so it points at the bar.
+local function PointDown(tex)
+    local ulx, uly, llx, lly, urx, ury, lrx, lry
+    if tex.GetTexCoord then ulx, uly, llx, lly, urx, ury, lrx, lry = tex:GetTexCoord() end
+    if type(lry) == "number" then
+        tex:SetTexCoord(llx, lly, ulx, uly, lrx, lry, urx, ury)
+    elseif tex.SetRotation then
+        tex:SetRotation(math.pi)
+    end
+end
+
+-- one slice of the green stretch, from l to r pixels along the bar
+local function Slice(bar, tex, l, r)
+    tex:ClearAllPoints()
+    tex:SetPoint("TOPLEFT", bar, "TOPLEFT", l, 0)
+    tex:SetPoint("BOTTOMRIGHT", bar, "BOTTOMLEFT", r, 0)
+    tex:Show()
+end
+
+-- The mark at x pixels along the bar: the arrow there, the green stretch
+-- T.ZONE either side of it, carried over to the other end where it runs
+-- off the bar (the bar is a loop).
+function T.PlaceMark(bar, x)
+    local mark = bar.mark
+    mark.x = x
+    mark.arrow:ClearAllPoints()
+    mark.arrow:SetPoint("BOTTOM", bar, "TOPLEFT", x, -ARROW_IN)
+    local l, r = x - T.ZONE, x + T.ZONE
+    mark.left, mark.right, mark.wrap = math.max(0, l), math.min(W, r), nil
+    Slice(bar, mark.zone, mark.left, mark.right)
+    if l < 0 then
+        mark.wrap = { W + l, W }
+    elseif r > W then
+        mark.wrap = { 0, r - W }
+    end
+    if mark.wrap then
+        Slice(bar, mark.zone2, mark.wrap[1], mark.wrap[2])
+    else
+        mark.zone2:Hide()
+    end
 end
 
 function T.Create()
@@ -314,8 +384,9 @@ function T.Create()
     local bar = CreateFrame("StatusBar", "TotemCouncilTremorBar", hud)
     T.bar = bar
     bar:SetSize(W, H)
-    -- under the totem bar, below the time-left text of its buttons
-    bar:SetPoint("TOPLEFT", hud, "BOTTOMLEFT", 0, -16)
+    -- under the totem bar, below the time-left text of its buttons and with
+    -- room for the arrow that stands on the bar
+    bar:SetPoint("TOPLEFT", hud, "BOTTOMLEFT", 0, -22)
     -- the fill by atlas name, as CastingBarMixin does; and on the texture
     -- itself, in case this client's status bar wants a file there
     bar:SetStatusBarTexture("ui-castingbar-filling-standard")
@@ -339,7 +410,13 @@ function T.Create()
     bar.Border:SetPoint("TOPLEFT", -2, 2)
     bar.Border:SetPoint("BOTTOMRIGHT", 2, -2)
 
-    bar.spark = bar:CreateTexture(nil, "OVERLAY", nil, 2)
+    -- the spark and the arrow sit on a frame of their own, above the green
+    -- stretch and the pegs
+    bar.top = CreateFrame("Frame", nil, bar)
+    bar.top:SetAllPoints(bar)
+    Level(bar.top, bar, 3)
+
+    bar.spark = bar.top:CreateTexture(nil, "OVERLAY", nil, 2)
     Atlas(bar.spark, "ui-castingbar-pip")
     bar.spark:SetSize(8, 20)
     bar.spark:SetPoint("CENTER", bar, "LEFT", 0, 0)
@@ -350,13 +427,23 @@ function T.Create()
 
     bar.pips = {}
 
-    -- ExhaustionTick: 10 x 14, centred on its place along the bar
-    bar.mark = CreateFrame("Frame", nil, bar)
-    bar.mark:SetSize(10, 14)
-    bar.mark.tex = bar.mark:CreateTexture(nil, "OVERLAY", nil, 3)
-    Atlas(bar.mark.tex, "UI-HUD-ExperienceBar-Frame-Pip")
-    bar.mark.tex:SetAllPoints()
-    bar.mark:Hide()
+    -- the mark: the green stretch (two slices, for when it runs round the
+    -- end of the bar) and the arrow over its middle
+    local mark = CreateFrame("Frame", nil, bar)
+    bar.mark = mark
+    mark:SetAllPoints(bar)
+    Level(mark, bar, 1)
+    mark.zone = mark:CreateTexture(nil, "ARTWORK", nil, 1)
+    Atlas(mark.zone, "ui-castingbar-filling-channel")
+    mark.zone2 = mark:CreateTexture(nil, "ARTWORK", nil, 1)
+    Atlas(mark.zone2, "ui-castingbar-filling-channel")
+    mark.zone2:Hide()
+    mark.arrow = bar.top:CreateTexture(nil, "OVERLAY", nil, 4)
+    Atlas(mark.arrow, "Navigation-Tracked-Arrow")
+    mark.arrow:SetSize(ARROW_W, ARROW_H)
+    PointDown(mark.arrow)
+    mark.arrow:Hide()
+    mark:Hide()
 
     bar:SetScript("OnEnter", OnEnter)
     bar:SetScript("OnLeave", OnLeave)
@@ -366,10 +453,10 @@ function T.Create()
 end
 
 local function BarText(st)
-    if not st.mine then return "Drop Tremor on the mark" end
+    if not st.mine then return "Drop Tremor in the green" end
     if st.count == 1 then return "Tremor pulse" end
     if st.even then return ("Longest wait %.1f s"):format(st.worst) end
-    if st.move then return "Re-drop on the mark" end
+    if st.move then return "Re-drop in the green" end
     if st.mover then return FirstName(st.mover) .. " to re-drop" end
     return ("Longest wait %.1f s"):format(st.worst)
 end
@@ -406,7 +493,7 @@ function T.Update()
         bar.shownText = text
     end
 
-    -- a notch for every pulse that is not the bar's own
+    -- a peg for every pulse that is not the bar's own
     local n = 0
     for _, e in ipairs(st.list) do
         if e ~= st.origin then
@@ -419,8 +506,7 @@ function T.Update()
             local x = math.floor(math.max(3, math.min(W - 3, Along(bar, e.drop))) + 0.5)
             if pip.x ~= x then
                 pip:ClearAllPoints()
-                pip:SetPoint("TOP", bar, "TOPLEFT", x, -1)
-                pip:SetPoint("BOTTOM", bar, "BOTTOMLEFT", x, 1)
+                pip:SetPoint("CENTER", bar, "LEFT", x, 0)
                 pip.x = x
             end
             pip.owner = e.name
@@ -429,18 +515,15 @@ function T.Update()
     end
     for i = n + 1, #bar.pips do bar.pips[i]:Hide() end
 
-    -- the mark: press when the spark gets there. My totem lands one round
-    -- trip after the key press, so the mark sits that much early.
+    -- the mark: press when the spark is under the arrow. My totem lands one
+    -- round trip after the key press, so the mark sits that much early.
     local markAt = st.move and st.target and ((st.target - T.Latency()) % P) or nil
     if markAt then
         local x = math.floor(Along(bar, markAt) + 0.5)
-        if bar.mark.x ~= x then
-            bar.mark:ClearAllPoints()
-            bar.mark:SetPoint("CENTER", bar, "LEFT", x, 0)
-            bar.mark.x = x
-        end
+        if bar.mark.x ~= x then T.PlaceMark(bar, x) end
     end
     bar.mark:SetShown(markAt ~= nil)
+    bar.mark.arrow:SetShown(markAt ~= nil)
     T.Draw()
 end
 

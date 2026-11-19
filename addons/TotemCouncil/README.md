@@ -34,9 +34,9 @@ In a raid, conflicts are checked per party, since totems only reach your own par
 **Tremor Totem pulses.** A Tremor Totem breaks fear, charm and sleep once every 4 seconds, counted from the moment it was dropped. Two shamans whose totems pulse together leave a fear running for up to 4 seconds; half a period apart it is 2. While a Tremor Totem is down in your party, a small cast bar appears under the totem bar:
 
 - The bar fills up to the next pulse of your Tremor Totem (or of the oldest one, when you have none down).
-- Each notch on it is another shaman's pulse.
-- The mark is the moment to drop yours: press when the spark reaches it. It already allows for your delay to the server.
-- The line under the bar says what to do: "Drop Tremor on the mark", "Re-drop on the mark", "Bo to re-drop" when the other shaman is the one to move, or "Longest wait 2.0 s" once the pulses are spread out. Of two bunched-up totems the one dropped later moves, so you don't both re-drop.
+- Each tall blue peg on it is another shaman's pulse.
+- The green stretch with the orange arrow over it is the moment to drop yours: press while the spark is in the green, best right under the arrow. It already allows for your delay to the server.
+- The line under the bar says what to do: "Drop Tremor in the green", "Re-drop in the green", "Bo to re-drop" when the other shaman is the one to move, or "Longest wait 2.0 s" once the pulses are spread out. Of two bunched-up totems the one dropped later moves, so you don't both re-drop.
 - Hover the bar for each totem's next pulse.
 
 Shamans with Totem Council 1.4.0 or newer tell each other the exact moment of the drop. Anyone else is timed from their cast when the game reports it; when it doesn't, the tooltip lists their totem as not known. `/totems tremor` turns the bar off.
