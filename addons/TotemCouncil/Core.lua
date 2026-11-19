@@ -13,6 +13,7 @@ local defaults = {
     warnAlways = false,     -- warn about missing totems out of combat too
     soonSeconds = 10,       -- in combat a kept-up totem fades like a running-out buff below this
     autoAdopt = true,       -- an empty plan slot adopts the first totem dropped in it
+    tremorBar = true,       -- the Tremor Totem pulse bar under the totem bar
     point = nil,
     boardPoint = nil,
     learned = {},           -- spellID -> { slot, name, icon, dur } for totems not in Data.lua
@@ -489,6 +490,7 @@ local function Tick(_, elapsed)
     -- each step on its own, so a problem in one does not stop the others
     ns.Safe(CheckAlerts)
     ns.Safe(ns.HUD.Update)
+    if ns.Tremor then ns.Safe(ns.Tremor.Update) end
     if ns.dirty then
         ns.dirty = false
         ns.Safe(ns.Board.Refresh)
@@ -580,6 +582,8 @@ local function Init()
     -- each part on its own, so one failing does not take the others with it
     ns.Safe(ns.Group.Init)
     ns.Safe(ns.HUD.Create)
+    -- Tremor.lua is new in 1.4.0: guarded everywhere, in case it did not load
+    if ns.Tremor then ns.Safe(ns.Tremor.Create) end
     ns.Safe(ns.Board.Create)
     -- Kit.lua and Options.lua are new in 1.1.0. After an update the game only
     -- loads new files once it has been restarted, so a /reload runs without
@@ -650,6 +654,7 @@ local function Help()
     ns.Print("  /totems sound  - ping when a planned totem goes missing or doubles up (" .. OnOff(ns.db.sound) .. ")")
     ns.Print("  /totems warn  - warn out of combat too (" .. OnOff(ns.db.warnAlways) .. ")")
     ns.Print("  /totems adopt  - empty plan slots adopt what you drop (" .. OnOff(ns.db.autoAdopt) .. ")")
+    ns.Print("  /totems tremor  - the Tremor Totem pulse bar under the totem bar (" .. OnOff(ns.db.tremorBar ~= false) .. ")")
     ns.Print("  /totems clear | status | demo | reset")
     ns.Print("  /totems debug  - record what the game reports about your group, to track down a problem (" .. OnOff(ns.db.debug) .. ")")
 end
@@ -671,6 +676,7 @@ local function Status()
             hidden))
     end
     ns.Group.PrintStatus()
+    if ns.Tremor then ns.Tremor.PrintStatus() end
     if ns.db.debug then ns.Group.DebugSnapshot() end
 end
 
@@ -751,6 +757,10 @@ SlashCmdList.TOTEMCOUNCIL = function(msg)
     elseif cmd == "adopt" then
         db.autoAdopt = not db.autoAdopt
         ns.Print("adopting dropped totems into empty plan slots " .. OnOff(db.autoAdopt))
+    elseif cmd == "tremor" or cmd == "pulse" or cmd == "pulses" then
+        db.tremorBar = (db.tremorBar == false)
+        ns.Print(db.tremorBar and "Tremor pulse bar on: it shows under the totem bar while a Tremor Totem is down in your party."
+            or "Tremor pulse bar off.")
     elseif cmd == "clear" then
         ns.ClearPlan()
     elseif cmd == "reset" then
@@ -772,5 +782,6 @@ LookShotsTargets[ADDON] = {
         { label = "group plan", frame = function() return TotemCouncilBoard end },
         { label = "accept box", frame = function() return TotemCouncilToast end },
         { label = "totem menu", frame = function() return TotemCouncilMenu end },
+        { label = "tremor pulse bar", frame = function() return ns.Tremor and ns.Tremor.bar end, pad = 40 },
     },
 }

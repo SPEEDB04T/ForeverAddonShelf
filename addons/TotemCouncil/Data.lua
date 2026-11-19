@@ -2,7 +2,7 @@
 local ADDON, ns = ...
 
 ns.ADDON = ADDON
-ns.VERSION = "1.3.3"
+ns.VERSION = "1.4.0"
 
 -- WoW Forever hides some values from addons in combat ("secret values").
 -- Comparing or indexing one throws, so every API result is checked first.
@@ -34,7 +34,8 @@ ns.TOTEMS = {
            ids = { 8075, 8160, 8161, 10442, 25361 }, dur = 120, icon = "Spell_Nature_EarthBindTotem" },
     ss = { slot = 2, english = "Stoneskin Totem", short = "Stoneskin",
            ids = { 8071, 8154, 8155, 10406, 10407, 10408 }, dur = 120, icon = "Spell_Nature_StoneSkinTotem" },
-    tr = { slot = 2, english = "Tremor Totem", short = "Tremor",
+    -- two Tremors are worth having: Tremor.lua spreads their pulses apart
+    tr = { slot = 2, english = "Tremor Totem", short = "Tremor", stack = true,
            ids = { 8143 }, dur = 120, icon = "Spell_Nature_TremorTotem" },
     eb = { slot = 2, english = "Earthbind Totem", short = "Earthbind", stack = true, temp = true,
            ids = { 2484 }, dur = 45, icon = "Spell_Nature_StrengthOfEarthTotem02" },

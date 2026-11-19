@@ -425,7 +425,8 @@ function G.ObserveCast(unit, spellID)
     local now = GetTime()
     local s = m.seen[slot]
     if s and s.key == key and now - s.start < 0.5 then return end   -- same cast reported as raidN and partyN
-    m.seen[slot] = { key = key, start = now, expires = now + ns.Duration(key, spellID) }
+    -- drop: the moment it went down, which Tremor.lua counts the pulses from
+    m.seen[slot] = { key = key, start = now, expires = now + ns.Duration(key, spellID), drop = now, dropSrc = "cast" }
     -- a Grounding or Earthbind thrown in between does not change what they usually keep up
     if not info.temp then m.habit[slot] = key end
     G.Touch()
@@ -440,6 +441,7 @@ local function Near(m)
     if not ok or issecret(inRange) or issecret(checked) or not checked then return true end
     return inRange and true or false
 end
+G.Near = Near
 
 -- Names of subgroup mates who have the same totem down as the player right now.
 function G.Overlaps(slot)
@@ -566,6 +568,7 @@ end
 local function ResendLive()
     for slot = 1, 4 do sentLive[slot] = nil end
     G.liveDirty = true
+    if ns.Tremor then ns.Tremor.Resend() end
 end
 
 local function AddonPeers()
@@ -592,9 +595,15 @@ local function Flush()
     end
     if G.CommsBlocked() then return end
     if G.liveDirty and not (ns.isShaman and AddonPeers() and LiveChanged()) then G.liveDirty = false end
+    -- when my Tremor Totem went down, to the millisecond ("X", see Tremor.lua):
+    -- once per drop, ahead of the plan and the live totems
+    local tremorMsg, tremorDrop
+    if ns.Tremor and ns.isShaman and AddonPeers() then tremorMsg, tremorDrop = ns.Tremor.Outgoing() end
     local msg, kind
     if G.wantRequest then
         msg, kind = "Q", "request"
+    elseif tremorMsg then
+        msg, kind = tremorMsg, "tremor"
     elseif (G.stateDirty or G.liveDirty) and ns.isShaman and not (lastBroadcast and #queue > 0) then
         if G.stateDirty then
             msg, kind = StateMessage(), "state"
@@ -625,9 +634,11 @@ local function Flush()
         end
     end
     sendErrors, refused = 0, nil
-    if kind ~= "request" then lastBroadcast = (kind ~= "queue") end
+    if kind ~= "request" and kind ~= "tremor" then lastBroadcast = (kind ~= "queue") end
     if kind == "request" then
         G.wantRequest = false
+    elseif kind == "tremor" then
+        ns.Tremor.Sent(tremorDrop)
     elseif kind == "state" then
         G.stateDirty = false
     elseif kind == "live" then
@@ -1035,12 +1046,21 @@ function G.OnAddonMessage(prefix, text, channel, sender)
             local key, secs = (toks[i] or ""):match("^([^:]+):(%d+)$")
             secs = tonumber(secs)
             if key and secs and secs > 0 and secs <= 3600 and ns.ValidKey(key, slot) then
-                m.seen[slot] = { key = key, start = now, expires = now + secs }
+                -- the same totem as before (same key, same end): what is known
+                -- about the moment it was dropped still holds
+                local prev = m.seen[slot]
+                local same = prev and prev.key == key and math.abs((now + secs) - prev.expires) < 3
+                m.seen[slot] = { key = key, start = now, expires = now + secs,
+                    drop = same and prev.drop or nil, dropSrc = same and prev.dropSrc or nil }
             else
                 m.seen[slot] = nil
             end
         end
         G.Touch()
+    elseif kind == "X" then
+        -- when their Tremor Totem was dropped (1.4.0 and newer)
+        local m = G.members[from]
+        if m and ns.Tremor then ns.Tremor.OnMessage(m, f[2], f[3]) end
     elseif kind == "G" then
         OnSuggestion(from, f[2], f[3], f[4], f[5])
     elseif kind == "R" then
@@ -1141,6 +1161,17 @@ function G.Tick(now)
                     changed = true
                 end
             end
+        end
+        -- the pretend shaman with the addon keeps a Tremor Totem down, always
+        -- pulsing at the same moments, so the pulse bar has something to show
+        local kara = G.members["Demo Kara"]
+        if kara and ns.Tremor and not kara.seen[2] then
+            local period = ns.Tremor.PERIOD
+            kara.tremorPhase = kara.tremorPhase or (now % period)
+            local drop = now - ((now - kara.tremorPhase) % period)
+            kara.seen[2] = { key = ns.Tremor.KEY, start = now, expires = drop + 120, drop = drop, dropSrc = "cast" }
+            kara.cue = true
+            changed = true
         end
     end
     Flush()

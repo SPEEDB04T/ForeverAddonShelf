@@ -1,5 +1,14 @@
 # Changelog
 
+## 1.4.0
+
+- New: a Tremor Totem pulse bar. A Tremor Totem breaks fear, charm and sleep once every 4 seconds, so two shamans whose totems pulse at the same moment get nothing from the second one. While a Tremor Totem is down in your party, a small cast bar under the totem bar fills up to each pulse. The other shamans' pulses are notches on it, and a mark shows when to drop (or re-drop) yours so the pulses land evenly apart: one every 2 seconds with two totems.
+- The line under the bar says what to do: "Drop Tremor on the mark", "Re-drop on the mark", or the longest wait for a pulse once the totems are spread out. Of two shamans whose pulses are bunched up, only the one who dropped later is asked to move, so you don't both re-drop at once. Hover the bar for each totem's next pulse.
+- Shamans with Totem Council 1.4.0 tell each other the exact moment of the drop. Shamans without it, or on an older version, are timed from their cast when the game reports it; if it doesn't, the bar's tooltip lists their totem as "not known".
+- Two Tremor Totems in one party no longer count as a clash: no red dot, and Sort it out leaves them alone.
+- `/totems tremor` or the tick box in the options window turns the bar off. `/totems demo` shows it without a group.
+- After updating, type `/reload`.
+
 ## 1.3.3
 
 - The totem icons fill their buttons again, as on the game's own totem bar. They were drawn smaller, so the slot art showed as a coloured smudge under each icon.

@@ -49,6 +49,13 @@ local function Rows()
         add({ kind = "check", label = "Bar ignores the mouse",
               tip = "Clicks go straight through the bar. Untick it here to get the bar's clicks and tooltips back.",
               get = Get("clickThrough"), set = SetBar("clickThrough") })
+        if ns.Tremor then
+            add({ kind = "check", label = "Show Tremor Totem pulses",
+                  tip = "A small bar under the totem bar while a Tremor Totem is down in your party. It fills up to each "
+                      .. "pulse, marks the other shamans' pulses, and marks when to drop yours so the pulses are spread "
+                      .. "evenly. Same as /totems tremor.",
+                  get = function() return ns.db.tremorBar ~= false end, set = Set("tremorBar") })
+        end
 
         add({ kind = "header", text = "Warnings" })
         add({ kind = "check", label = "Sound for missing totems",
