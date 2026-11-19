@@ -55,11 +55,17 @@ local function Rows()
         { kind = "check", label = "Hits by spells count too",
           tip = "The shield fires on spell, melee and ranged hits. Untick to count only physical hits (fewer false orbs from damage over time).",
           get = Get("spellHits"), set = Set("spellHits") },
+        { kind = "check", label = "Count Mana Spring Totem too",
+          tip = "Every second of a fight with no Mana Spring on you counts as the mana it would have restored, while your mana is not full. "
+              .. "Another shaman's Mana Spring on you is fine, and so is another water totem of yours: that is a choice, not a gap. "
+              .. "/shame shows the total over your logged fights. Same as /shame spring.",
+          get = Get("spring"), set = Set("spring") },
 
         { kind = "header", text = "Shaming" },
         { kind = "check", label = "Tell me after a fight that hurt",
-          tip = "One line in your own chat after a fight that took your mana (Water Shield) or health (Lightning Shield) "
-              .. "below the line below while a shield was missing: how low you went and what the shield would have given you. "
+          tip = "One line in your own chat after a fight that took your mana (Water Shield, Mana Spring Totem) or health (Lightning Shield) "
+              .. "below the line below while it was missing: how low you went and what it would have given you. "
+              .. "Mana Spring only counts here once it would have given back more than it costs to drop. "
               .. "Other fights say nothing. Nobody else sees it.",
           get = Get("hurtLine"), set = Set("hurtLine") },
         { kind = "slider", label = "A fight hurt below", min = 10, max = 90, step = 5,
@@ -96,11 +102,12 @@ local function Status()
         lines[#lines + 1] = ("Lost %s: %s%s"):format(ns.fight and "this fight" or "last fight", ns.LostText(f),
             up and (" (shield up %s of it)"):format(ns.Pct(up)) or "")
     end
-    local n, damage, mana, of = ns.RecentHurt()
+    local n, damage, mana, of, spring = ns.RecentHurt()
     if of > 0 then
         lines[#lines + 1] = ("Fights that hurt: %d of the last %d%s"):format(n, of,
-            n > 0 and (", " .. ns.LostText({ damage = damage, mana = mana })) or "")
+            n > 0 and (", " .. ns.LostText({ damage = damage, mana = mana, spring = spring })) or "")
     end
+    lines[#lines + 1] = ns.SpringSummary()
     lines[#lines + 1] = ns.shield and "Shield up. For now." or "No shield up."
     return lines
 end

@@ -63,6 +63,8 @@ local function ShowTooltip(self)
         GameTooltip:AddDoubleLine("Lost " .. this, ns.LostText(f), C(NORMAL), C(WHITE))
         local up = ns.Uptime(f)
         if up then GameTooltip:AddDoubleLine("Shield up", ns.Pct(up) .. " of it", C(NORMAL), C(WHITE)) end
+        local spring = ns.SpringUptime(f)
+        if spring then GameTooltip:AddDoubleLine("Mana Spring on you", ns.Pct(spring) .. " of it", C(NORMAL), C(WHITE)) end
         local i = ns.fight and ns.fightInfo or f
         local low = {}
         if i and i.lowMana then low[#low + 1] = ns.Pct(i.lowMana) .. " mana" end
@@ -71,11 +73,13 @@ local function ShowTooltip(self)
     else
         GameTooltip:AddLine("No fight yet since you logged in.", C(WHITE))
     end
-    local n, damage, mana, of = ns.RecentHurt()
+    local n, damage, mana, of, spring = ns.RecentHurt()
     if n > 0 then
-        GameTooltip:AddLine(("%d of your last %d fights took you below %d%% with a shield missing: %s."):format(
-            n, of, ns.db.hurtPct, ns.LostText({ damage = damage, mana = mana })), C(GRAY), true)
+        GameTooltip:AddLine(("%d of your last %d fights took you below %d%% with %s: %s."):format(
+            n, of, ns.db.hurtPct, ns.MissingText(), ns.LostText({ damage = damage, mana = mana, spring = spring })), C(GRAY), true)
     end
+    local totem = ns.SpringSummary()
+    if totem then GameTooltip:AddLine(totem, C(GRAY), true) end
     GameTooltip:AddLine(" ")
     if LossUnder(kind) then GameTooltip:AddLine(("The number under the icon: lost %s."):format(ns.fight and "this fight" or "last fight"), C(GRAY)) end
     GameTooltip:AddLine("Left-click: the last fight, in chat", C(GRAY))

@@ -1,5 +1,24 @@
 # Changelog
 
+## 1.3.0 (2026-11-18)
+
+- Mana Spring Totem (SuccuDev: "add mana spring totem to the water shield addon to check how
+  much mana is being wasted by not using it"). Every second of a fight with no Mana Spring on
+  you counts as the mana the totem would have restored (your best rank: 4, 6, 8 or 10 mana
+  every 2 seconds), while your mana is not full. Another shaman's Mana Spring on you counts
+  as having one. Another water totem of yours down (Healing Stream, a cleansing totem, Mana
+  Tide, a resistance totem) is a choice, not a gap: those seconds are not judged.
+- `/shame` adds it up over your logged fights: "Mana Spring Totem: on you for 35% of the
+  fighting in your last 12 fights (8m 20s). Going without left 1,840 mana in the ground; a
+  totem costs 60." The same line is in the icon's tooltip and the minimap button's.
+- After a fight that took your mana below the line (50%) with no Mana Spring down, the chat
+  line says what it would have given you and where you would have bottomed out with it down.
+  It only speaks up once the totem would have given back more than it costs to drop (about
+  20 seconds without it). With Water Shield missing too, one line names both.
+- `/shame log` and `/shame status` show what the addon read: the water totem at the start of
+  the fight, seconds with no Mana Spring, totems dropped, the rank's numbers and its cost.
+- New option "Count Mana Spring Totem too" (on), or `/shame spring`. A `/reload` is enough.
+
 ## 1.2.2 (2026-11-15)
 
 - Fix: ShieldShame no longer stops `/tm` raid marking and `/invite` from working. It used to

@@ -11,6 +11,9 @@
 --   * Everything is per fight. After a fight that took your mana (Water Shield) or health
 --     (Lightning Shield) below a line, 50% by default, with a shield missing, one line says
 --     what that cost. Other fights are only logged.
+--   * Mana Spring Totem (1.3.0): every second of a fight with no Mana Spring on you and no
+--     other water totem of yours down is the mana it would have restored, while your mana is
+--     not full.
 --
 -- Auras can be secret in a fight. The shield's state from before the fight then stands in,
 -- with its orbs spent by the hits you take and topped up when you cast a shield.
@@ -18,7 +21,7 @@ local ADDON, ns = ...
 
 local floor, max, min = math.floor, math.max, math.min
 
-ns.VERSION = "1.2.2"
+ns.VERSION = "1.3.0"
 
 ----------------------------------------------------------------------
 -- The shields on WoW Forever (talentsforever.com data.json, beta client 1.60.1.70755,
@@ -56,11 +59,43 @@ ns.OTHER_SHIELD_NAMES = { ["Earth Shield"] = true }
 ns.CHARGES = 3        -- orbs a shield starts with (WoW Forever text: "3 balls", "3 globes")
 ns.DURATION = 600     -- "Lasts 10 min."
 
+----------------------------------------------------------------------
+-- Mana Spring Totem on WoW Forever (wago.tools, product wowf, tables SpellEffect, SpellPower,
+-- SpellMisc and SpellDuration, read 2026-11-18; not yet confirmed in the live game). The
+-- numbers are fallbacks: the live tooltip and the game's own mana cost win when readable.
+-- "Summons a Mana Spring Totem with 5 health at the feet of the caster for 5 min that restores
+-- 4 mana every 2 seconds to group members within 30 yards."
+----------------------------------------------------------------------
+ns.SPRING = {
+    english = "Mana Spring Totem",
+    aura = "Mana Spring",                           -- the buff it puts on everyone in range
+    ids = { 5675, 10495, 10496, 10497 },            -- ranks 1-4, learned at 26, 36, 46, 56
+    auraIds = { 5677, 10491, 10493, 10494, 24853 }, -- 24853: the trinket's Mana Spring
+    mana = { 4, 6, 8, 10 },                         -- a pulse
+    period = 2,                                     -- seconds between pulses
+    cost = { 40, 60, 80, 100 },                     -- mana to drop it
+    lasts = 300,                                    -- 5 min (Classic's stood for 1)
+    learnLevel = 26,
+    iconPath = "Interface\\Icons\\Spell_Nature_ManaRegenTotem",
+}
+-- Your other water totems, [spell id] = seconds it stands. With one of them down the water
+-- slot is taken on purpose, so nothing is counted against Mana Spring.
+ns.OTHER_WATER = {
+    [5394] = 300, [6375] = 300, [6377] = 300, [10462] = 300, [10463] = 300,   -- Healing Stream
+    [8166] = 300, [8170] = 300,                                               -- Poison / Disease Cleansing
+    [8184] = 300, [10537] = 300, [10538] = 300,                               -- Fire Resistance
+    [16190] = 13, [17354] = 13, [17359] = 13, [1325256] = 13,                 -- Mana Tide
+    [8262] = 30, [79429] = 300,                                               -- Elemental Protection / Resistance
+}
+ns.RECALL_IDS = { [36936] = true, [39104] = true, [1323420] = true }          -- Totemic Recall
+ns.WATER_SLOT = 3     -- GetTotemInfo: 1 fire, 2 earth, 3 water, 4 air
+
 ns.DEFAULTS = {
     enabled = true,
     measure = "auto",       -- "auto" (the shield you used last), "lightning" or "water"
     icd = 3,                -- seconds between orbs ("every few seconds"): an estimate
     spellHits = true,       -- hits by spells count too ("a spell, melee or ranged attack")
+    spring = true,          -- count fight seconds without Mana Spring Totem too
     remind = true,          -- the missing-shield icon
     remindCombat = true,    -- ... also in a fight
     hideResting = true,     -- no icon in an inn or city
@@ -163,8 +198,10 @@ end
 
 -- What one fight cost: damage and mana lost, orbs missed, seconds fought, and seconds of those
 -- with no shield up. Everything is per fight (SuccuDev, 2026-11-15: "theres no point to all
--- time it should be per fight").
-local TALLY = { damage = 0, mana = 0, hits = 0, fought = 0, bare = 0 }
+-- time it should be per fight"). For Mana Spring Totem: spring is the mana it would have
+-- restored, dry the seconds with none on you, stime the seconds that were judged at all
+-- (not the ones with another water totem of yours down).
+local TALLY = { damage = 0, mana = 0, hits = 0, fought = 0, bare = 0, spring = 0, dry = 0, stime = 0 }
 local function NewTally()
     local t = {}
     for k, v in pairs(TALLY) do t[k] = v end
@@ -175,7 +212,8 @@ ns.NewTally = NewTally
 ns.fight = nil          -- the fight going on now
 ns.lastFight = nil      -- the one before
 
-local LOG_FIELDS = { len = 0, seen = 0, shielded = 0, cooldown = 0, lost = 0, casts = 0, damage = 0, mana = 0, bare = 0 }
+local LOG_FIELDS = { len = 0, seen = 0, shielded = 0, cooldown = 0, lost = 0, casts = 0, damage = 0, mana = 0, bare = 0,
+    spring = 0, dry = 0, stime = 0, drops = 0 }
 
 local function LoadSaved()
     if type(ShieldShameDB) ~= "table" then ShieldShameDB = {} end
@@ -320,6 +358,35 @@ function ns.ParseWater(desc)
     return r
 end
 
+-- "... for 5 min that restores 4 mana every 2 seconds to group members within 30 yards."
+-- -> { mana = 4, period = 2, lasts = 300 }
+function ns.ParseSpring(desc)
+    local d = Clean(desc)
+    if not d then return nil end
+    local mana, period = d:match("(%d+%.?%d*) mana every (%d+%.?%d*) sec")
+    mana, period = tonumber(mana), tonumber(period)
+    if not mana or not period or period <= 0 then return nil end
+    local lasts = tonumber(d:match("for (%d+%.?%d*) min"))
+    if lasts then lasts = lasts * 60 else lasts = tonumber(d:match("for (%d+%.?%d*) sec")) end
+    return { mana = mana, period = period, lasts = lasts }
+end
+
+-- What the game says a spell costs in mana, or nil.
+local function ManaCost(id)
+    local costs
+    if C_Spell and C_Spell.GetSpellPowerCost then costs = Call(C_Spell.GetSpellPowerCost, id) end
+    if type(costs) ~= "table" and GetSpellPowerCost then costs = Call(GetSpellPowerCost, id) end
+    if type(costs) ~= "table" then return nil end
+    for _, c in ipairs(costs) do
+        if not Secret(c) and type(c) == "table" and Num(c.type) == 0 then
+            local cost = Num(c.cost)
+            if cost and cost > 0 then return cost end
+        end
+    end
+    return nil
+end
+ns.ManaCost = ManaCost
+
 local function MaxMana()
     local v = Num(Call(UnitPowerMax, "player", 0))
     if v and v > 0 then ns.maxMana = v end
@@ -329,8 +396,10 @@ ns.MaxMana = MaxMana
 
 -- ns.values.lightning = { id, rank, name, damage, source = "tooltip"|"estimate", charges, lasts, icd }
 -- ns.values.water     = { id, name, pct, flat, mp5, source, charges, lasts, icd }
+-- ns.values.spring    = { id, rank, name, mana, period, lasts, source, cost, costSource = "game"|"estimate" }
 -- Kept from the last plain read, so a fight (where the tooltip may be hidden) still counts.
 ns.values = {}
+local VALUE_KEYS = { "lightning", "water", "spring" }
 
 function ns.ReadValues()
     local v = {}
@@ -366,9 +435,27 @@ function ns.ReadValues()
             break
         end
     end
+    local S = ns.SPRING
+    for rank = #S.ids, 1, -1 do
+        local id = S.ids[rank]
+        if Knows(id) then
+            local parsed = ns.ParseSpring(Description(id))
+            local e = { id = id, rank = rank, name = SpellInfo(id) or S.english }
+            if parsed then
+                e.mana, e.period, e.lasts, e.source = parsed.mana, parsed.period, parsed.lasts, "tooltip"
+            else
+                e.mana, e.period, e.source = S.mana[rank], S.period, "estimate"
+            end
+            e.lasts = e.lasts or S.lasts
+            local cost = ManaCost(id)
+            e.cost, e.costSource = cost or S.cost[rank], cost and "game" or "estimate"
+            v.spring = e
+            break
+        end
+    end
     -- a fight can hide the tooltips: keep the last good read rather than forget a shield
     if InCombatLockdown and Call(InCombatLockdown) == true then
-        for _, k in ipairs(ns.KINDS) do
+        for _, k in ipairs(VALUE_KEYS) do
             if not v[k] or (v[k].source == "estimate" and ns.values[k] and ns.values[k].source == "tooltip") then
                 v[k] = ns.values[k] or v[k]
             end
@@ -431,26 +518,102 @@ local function KindOf(spellId, name)
 end
 ns.KindOf = KindOf
 
+local springAuraId
+local function IsSpringAura(spellId, name)
+    if not springAuraId then
+        springAuraId = {}
+        for _, id in ipairs(ns.SPRING.auraIds) do springAuraId[id] = true end
+    end
+    return (spellId and springAuraId[spellId]) or name == ns.SPRING.aura or false
+end
+
 -- Reads your buffs. Returns the shield (a table), false for none, or nil if auras are hidden.
+-- The same pass notes whether a Mana Spring buff is on you, from your totem or another
+-- shaman's: ns.springAura keeps the last readable answer (true or false).
 local function ReadShield()
     if not C_UnitAuras or type(C_UnitAuras.GetAuraDataByIndex) ~= "function" then return nil end
+    local shield, spring = false, false
     for i = 1, 255 do
         local ok, aura = pcall(C_UnitAuras.GetAuraDataByIndex, "player", i, "HELPFUL")
         if not ok or Secret(aura) then return nil end
-        if type(aura) ~= "table" then return false end
+        if type(aura) ~= "table" then break end
         local name, id = Plain(aura.name), Plain(aura.spellId)
         if name == nil and id == nil then return nil end
-        local kind = KindOf(id, name)
+        if IsSpringAura(id, name) then spring = true end
+        local kind = not shield and KindOf(id, name)
         local source = Plain(aura.sourceUnit)
         if kind and (source == nil or source == "player") then
             local stacks = Num(aura.applications) or 0
             local ends = Num(aura.expirationTime) or 0
-            return { kind = kind, charges = stacks > 0 and stacks or ns.CHARGES, ends = ends, live = true }
+            shield = { kind = kind, charges = stacks > 0 and stacks or ns.CHARGES, ends = ends, live = true }
         end
     end
-    return false
+    ns.springAura = spring
+    return shield
 end
 ns.ReadShield = ReadShield
+
+----------------------------------------------------------------------
+-- Is Mana Spring on you? ns.totem = { kind = "spring"|"other", ends } is your water totem:
+-- from the game's totem slot when it can be read, else from your own casts and how long the
+-- totem stands. A Mana Spring buff on you (your totem's or another shaman's) also counts.
+----------------------------------------------------------------------
+local function StartsWith(text, prefix)
+    return type(prefix) == "string" and prefix ~= "" and text:sub(1, #prefix) == prefix:lower()
+end
+
+-- Your water slot: "spring" or "other" and when it ends, false for empty, nil if the game hides it.
+local function ReadTotem(now)
+    if type(GetTotemInfo) ~= "function" then return nil end
+    local ok, have, name, start, dur = pcall(GetTotemInfo, ns.WATER_SLOT)
+    if not ok or Secret(have) or Secret(name) or Secret(start) or Secret(dur) then return nil end
+    if not have or type(name) ~= "string" or name == "" or type(start) ~= "number" or type(dur) ~= "number"
+        or start <= 0 or dur <= 0 or start + dur <= now then
+        return false
+    end
+    -- the slot's name can carry a rank ("Mana Spring Totem IV")
+    local lower, e = name:lower(), ns.values.spring
+    if StartsWith(lower, ns.SPRING.english) or StartsWith(lower, e and e.name) then return "spring", start + dur end
+    return "other", start + dur
+end
+ns.ReadTotem = ReadTotem
+
+-- What stands in for Mana Spring now: "spring" (it is on you), "other" (another water totem of
+-- yours is down) or nil (nothing: this is the gap that is counted).
+function ns.CurrentWater(now)
+    now = now or Now()
+    local live, ends = ReadTotem(now)
+    if live ~= nil then
+        ns.totemLive = true
+        ns.totem = live and { kind = live, ends = ends } or nil
+    else
+        ns.totemLive = false
+        local t = ns.totem
+        if t and (t.ends or 0) > 0 and now >= t.ends then ns.totem = nil end
+    end
+    if ns.springAura == true then return "spring" end
+    return ns.totem and ns.totem.kind or nil
+end
+
+-- You cast a water totem, or took your totems back.
+local springCastId
+local function OnTotemCast(spellID, now)
+    if not springCastId then
+        springCastId = {}
+        for _, id in ipairs(ns.SPRING.ids) do springCastId[id] = true end
+    end
+    if springCastId[spellID] then
+        local e = ns.values.spring
+        ns.totem = { kind = "spring", ends = now + ((e and e.lasts) or ns.SPRING.lasts) }
+        if ns.fightInfo then ns.fightInfo.drops = ns.fightInfo.drops + 1 end
+        return
+    end
+    local other = ns.OTHER_WATER[spellID]
+    if not other and not ns.RECALL_IDS[spellID] then return end
+    -- your Mana Spring just went: with auras hidden, its buff from the last read went with it
+    if ns.totem and ns.totem.kind == "spring" and not ns.auraLive then ns.springAura = false end
+    ns.totem = other and { kind = "other", ends = now + other } or nil
+end
 
 -- The shield to count with: live if the game lets us read it, else the last one we know of,
 -- run out at its time or when its orbs are spent.
@@ -479,10 +642,11 @@ end
 function ns.OnCast(spellID)
     spellID = Num(spellID)
     if not spellID then return end
+    local now = Now()
+    OnTotemCast(spellID, now)
     local kind = KindOf(spellID)
     if kind ~= "lightning" and kind ~= "water" then return end
     local e = ns.values[kind]
-    local now = Now()
     ns.shield = { kind = kind, charges = (e and e.charges) or ns.CHARGES, ends = now + ((e and e.lasts) or ns.DURATION) }
     ns.char.lastUsed = kind
     if ns.fightInfo then ns.fightInfo.casts = ns.fightInfo.casts + 1 end
@@ -497,15 +661,18 @@ local function Fighting()
     return Call(UnitAffectingCombat, "player") == true
 end
 
--- Whether a hit or a second now counts: switched on, a shield to count against, in a fight,
--- alive and not on a flight path.
-function ns.Counting()
+-- Switched on, in a fight, alive and not on a flight path.
+function ns.InFight()
     if not ns.db or not ns.db.enabled or ns.disabled then return false end
-    if not ns.Measured() then return false end
     if not Fighting() then return false end
     if Call(UnitIsDeadOrGhost, "player") == true then return false end
     if Call(UnitOnTaxi, "player") == true then return false end
     return true
+end
+
+-- Whether a hit or a second now counts against a shield: the above, and a shield to count against.
+function ns.Counting()
+    return ns.InFight() and ns.Measured() ~= nil
 end
 
 local function Add(field, amount)
@@ -575,18 +742,43 @@ function ns.Tick(now)
     local last = ns.lastTick
     ns.lastTick = now
     if ns.fightInfo then ns.SampleLow(ns.fightInfo) end
-    if not last or not ns.Counting() then return end
+    if not last or not ns.InFight() then return end
     local dt = min(now - last, 5)
     if dt <= 0 then return end
-    Add("fought", dt)
     local had = ns.shield ~= nil
-    local s = ns.CurrentShield(now)
-    if (s ~= nil) ~= had and ns.UI then ns.UI.Update() end
-    if s then return end
-    Add("bare", dt)
+    local s = ns.CurrentShield(now)         -- the same read says whether a Mana Spring buff is on you
     local kind = ns.Measured()
-    local e = ns.values[kind]
-    if kind == "water" and e and e.mp5 and e.mp5 > 0 then Add("mana", e.mp5 / 5 * dt) end
+    if kind then
+        Add("fought", dt)
+        if (s ~= nil) ~= had and ns.UI then ns.UI.Update() end
+        if not s then
+            Add("bare", dt)
+            local e = ns.values[kind]
+            if kind == "water" and e and e.mp5 and e.mp5 > 0 then Add("mana", e.mp5 / 5 * dt) end
+        end
+    end
+    ns.TickSpring(dt, now)
+end
+
+-- Mana Spring Totem's share of a tick: dt seconds of a fight. Nothing is counted while a Mana
+-- Spring is on you or another water totem of yours is down, and no mana while your bar is full.
+function ns.TickSpring(dt, now)
+    local e = ns.values.spring
+    if not e or not ns.db.spring then return end
+    local water = ns.CurrentWater(now)
+    if water == "other" then return end
+    Add("stime", dt)
+    if water then return end
+    Add("dry", dt)
+    local mp = ns.ManaPct()
+    if mp and mp >= 100 then return end
+    Add("spring", e.mana / e.period * dt)
+end
+
+-- Mana Spring's share of a fight, 0-100, or nil if none of it was judged.
+function ns.SpringUptime(t)
+    if not t or (t.stime or 0) < 1 then return nil end
+    return max(0, min(100, 100 * (1 - (t.dry or 0) / t.stime)))
 end
 
 ----------------------------------------------------------------------
@@ -608,6 +800,8 @@ ns.TEASE = {
 ns.JABS = {
     mana = { "Drink your shame.", "One click. One.", "The elements saw that.", "Your ancestors are disappointed." },
     health = { "Those mobs aren't going to zap themselves.", "The elements saw that.", "Fighting naked again?", "Your totems have filed a complaint." },
+    -- only said when the totem would have given back more than it costs, so the first one is true
+    spring = { "It would have paid for itself in that fight.", "One totem. Five minutes.", "The elements saw that.", "Your totems have filed a complaint." },
 }
 ns.jabIndex = 0
 
@@ -633,12 +827,16 @@ end
 local function Pct(p) return ("%d%%"):format(floor(p + 0.5)) end
 ns.Pct = Pct
 
--- What a fight lost, in words: "1,234 mana", "56 damage and 1,234 mana", or "nothing".
+-- What a fight lost, in words: "1,234 mana", "56 damage and 1,234 mana",
+-- "56 damage, 1,234 mana and 80 mana (no Mana Spring)", or "nothing".
 function ns.LostText(t)
     local parts = {}
     if (t.damage or 0) >= 1 then parts[#parts + 1] = ns.Commas(t.damage) .. " damage" end
     if (t.mana or 0) >= 1 then parts[#parts + 1] = ns.Commas(t.mana) .. " mana" end
-    return #parts > 0 and table.concat(parts, " and ") or "nothing"
+    if (t.spring or 0) >= 1 then parts[#parts + 1] = ns.Commas(t.spring) .. " mana (no Mana Spring)" end
+    if #parts == 0 then return "nothing" end
+    local last = table.remove(parts)
+    return #parts > 0 and (table.concat(parts, ", ") .. " and " .. last) or last
 end
 
 ----------------------------------------------------------------------
@@ -663,6 +861,7 @@ function ns.SampleLow(info)
     if mp and (not info.lowMana or mp < info.lowMana) then
         info.lowMana = mp
         info.manaLostAtLow = ns.fight and ns.fight.mana or 0
+        info.springLostAtLow = ns.fight and ns.fight.spring or 0
     end
     local hp = ns.HealthPct()
     if hp and (not info.lowHealth or hp < info.lowHealth) then info.lowHealth = hp end
@@ -673,7 +872,23 @@ end
 -- when it took your health below it. Where the game hides how low you went, a loss of a whole
 -- shield's 3 orbs, or 5% of your max mana, stands in.
 ns.FALLBACK_ORBS, ns.FALLBACK_MANA_PCT = 3, 5
+
+-- Did going without Mana Spring Totem matter in this fight? Only when the fight took your
+-- mana below the line and the totem would have given back at least what it costs to drop.
+function ns.SpringHurt(t, info)
+    if not t or not info or (t.spring or 0) < 1 then return false end
+    local e = ns.values.spring
+    if t.spring < ((e and e.cost) or 0) then return false end
+    if info.lowMana then return info.lowMana < ns.db.hurtPct end
+    return MaxMana() > 0 and t.spring >= MaxMana() * ns.FALLBACK_MANA_PCT / 100
+end
+
+-- "mana" or "health" for a missing shield as before; "spring" when only Mana Spring was missed.
 function ns.Hurt(t, info)
+    return ns.ShieldHurt(t, info) or (ns.SpringHurt(t, info) and "spring") or nil
+end
+
+function ns.ShieldHurt(t, info)
     if not t or not info then return nil end
     local line = ns.db.hurtPct
     if t.mana >= 1 then
@@ -693,10 +908,33 @@ function ns.Hurt(t, info)
     return nil
 end
 
+-- Mana Spring's part of the line: the whole sentence when it is the only thing missed
+-- (alone), else a short one after the shield's.
+function ns.SpringLine(t, info, alone)
+    local most = MaxMana()
+    local share = most > 0 and (" (%s of your bar)"):format(Pct(100 * t.spring / most)) or ""
+    if not alone then
+        return ("No Mana Spring Totem down either: another %s mana%s."):format(ns.Commas(t.spring), share)
+    end
+    if not info.lowMana then
+        return ("That fight cost you %s mana%s with no Mana Spring Totem down for %s of it."):format(
+            ns.Commas(t.spring), share, ns.Duration(t.dry))
+    end
+    local line = ("That fight took you down to %s mana with no Mana Spring Totem down: %s mana%s it would have given you."):format(
+        Pct(info.lowMana), ns.Commas(t.spring), share)
+    local before = info.springLostAtLow or 0
+    if before >= 1 and most > 0 then
+        line = line .. (" With it down you'd have bottomed out at %s."):format(Pct(min(100, info.lowMana + 100 * before / most)))
+    end
+    return line
+end
+
 -- The line for a fight that hurt.
 function ns.HurtLine(t, info, what)
     local line
-    if what == "mana" then
+    if what == "spring" then
+        line = ns.SpringLine(t, info, true)
+    elseif what == "mana" then
         local most = MaxMana()
         local share = most > 0 and (" (%s of your bar)"):format(Pct(100 * t.mana / most)) or ""
         if info.lowMana then
@@ -719,6 +957,7 @@ function ns.HurtLine(t, info, what)
                 ns.Commas(t.damage), ns.Count(t.hits, "orb"))
         end
     end
+    if what ~= "spring" and ns.SpringHurt(t, info) then line = line .. " " .. ns.SpringLine(t, info, false) end
     local jabs = ns.JABS[what]
     ns.jabIndex = ns.jabIndex % #jabs + 1
     return line .. " " .. jabs[ns.jabIndex]
@@ -734,7 +973,11 @@ function ns.Confess(t, info, what)
     if Call(IsInRaid) == true then channel = "RAID" elseif Call(IsInGroup) == true then channel = "PARTY" end
     if not channel then return false end
     local msg
-    if what == "mana" then
+    if what == "spring" then
+        local low = info and info.lowMana
+        msg = ("[Shield Shame] %sI had no Mana Spring Totem down: %s mana wasted. Point and laugh."):format(
+            low and ("That fight took me to %s mana and "):format(Pct(low)) or "", ns.Commas(t.spring))
+    elseif what == "mana" then
         local low = info and info.lowMana
         msg = ("[Shield Shame] %sI had no Water Shield up: %s mana wasted. Point and laugh."):format(
             low and ("That fight took me to %s mana and "):format(Pct(low)) or "", ns.Commas(t.mana))
@@ -758,17 +1001,49 @@ function ns.FightText(label, t, lowMana, lowHealth)
     local low = {}
     if lowMana then low[#low + 1] = Pct(lowMana) .. " mana" end
     if lowHealth then low[#low + 1] = Pct(lowHealth) .. " health" end
+    local spring = ns.SpringUptime(t)
+    if spring then text = text .. (" Mana Spring on you for %s of it."):format(Pct(spring)) end
     if #low > 0 then text = text .. " Lowest: " .. table.concat(low, ", ") .. "." end
     return text
 end
 
--- The logged fights that hurt, added up: how many, damage, mana, out of how many fights.
+-- The logged fights that hurt, added up: how many, damage, mana, out of how many fights, and
+-- the mana Mana Spring would have restored in them.
 function ns.RecentHurt()
-    local n, damage, mana = 0, 0, 0
+    local n, damage, mana, spring = 0, 0, 0, 0
     for _, e in ipairs(ns.char.log) do
-        if e.hurt then n, damage, mana = n + 1, damage + e.damage, mana + e.mana end
+        if e.hurt then n, damage, mana, spring = n + 1, damage + e.damage, mana + e.mana, spring + (e.spring or 0) end
     end
-    return n, damage, mana, #ns.char.log
+    return n, damage, mana, #ns.char.log, spring
+end
+
+-- What a fight that hurt was missing, for the lines that count them: Mana Spring is part of
+-- it once you know the totem and it is counted.
+function ns.MissingText()
+    return (ns.values.spring and ns.db.spring) and "a shield or Mana Spring missing" or "a shield missing"
+end
+
+-- Mana Spring over every logged fight it was judged in: how many fights, seconds without it,
+-- seconds judged, and the mana it would have restored.
+function ns.RecentSpring()
+    local n, dry, stime, mana = 0, 0, 0, 0
+    for _, e in ipairs(ns.char.log) do
+        if (e.stime or 0) >= 1 then n, dry, stime, mana = n + 1, dry + (e.dry or 0), stime + e.stime, mana + (e.spring or 0) end
+    end
+    return n, dry, stime, mana
+end
+
+-- "Mana Spring Totem: on you for 35% of the fighting in your last 12 fights (8m 20s). Going
+-- without left 1,840 mana in the ground; a totem costs 60."
+function ns.SpringSummary()
+    local e = ns.values.spring
+    if not e or not ns.db.spring then return nil end
+    local n, dry, stime, mana = ns.RecentSpring()
+    if n == 0 then return nil end
+    local head = ("Mana Spring Totem: on you for %s of the fighting in your last %s (%s)."):format(
+        Pct(100 * (1 - dry / stime)), ns.Count(n, "fight"), ns.Duration(stime))
+    if mana < 1 then return head .. " Nothing wasted. Suspicious, but fine." end
+    return head .. (" Going without left |cffffffff%s mana|r in the ground; a totem costs %s."):format(ns.Commas(mana), ns.Commas(e.cost))
 end
 
 function ns.Summary()
@@ -781,16 +1056,18 @@ function ns.Summary()
     else
         lines[#lines + 1] = "No fight yet since you logged in."
     end
-    local n, damage, mana, of = ns.RecentHurt()
+    local n, damage, mana, of, spring = ns.RecentHurt()
+    local missing = ns.MissingText()
     if of > 0 then
         if n == 0 then
-            lines[#lines + 1] = ("None of your last %s took you below %d%% with a shield missing. Suspicious, but fine."):format(
-                ns.Count(of, "fight"), ns.db.hurtPct)
+            lines[#lines + 1] = ("None of your last %s took you below %d%% with %s. Suspicious, but fine."):format(
+                ns.Count(of, "fight"), ns.db.hurtPct, missing)
         else
-            lines[#lines + 1] = ("%d of your last %s took you below %d%% with a shield missing. Those cost you %s."):format(
-                n, ns.Count(of, "fight"), ns.db.hurtPct, ns.LostText({ damage = damage, mana = mana }))
+            lines[#lines + 1] = ("%d of your last %s took you below %d%% with %s. Those cost you %s."):format(
+                n, ns.Count(of, "fight"), ns.db.hurtPct, missing, ns.LostText({ damage = damage, mana = mana, spring = spring }))
         end
     end
+    lines[#lines + 1] = ns.SpringSummary()
     return lines
 end
 
@@ -829,21 +1106,35 @@ function ns.LogLine(e)
     local low = {}
     if type(e.lowMana) == "number" then low[#low + 1] = Pct(e.lowMana) .. " mana" end
     if type(e.lowHealth) == "number" then low[#low + 1] = Pct(e.lowHealth) .. " health" end
+    local spring = ""
+    if (e.stime or 0) >= 1 then
+        spring = (" Mana Spring: none on you for %s of %s, %s dropped (water totem at the start: %s)."):format(
+            ns.Duration(e.dry), ns.Duration(e.stime), ns.Commas(e.drops), e.water or "?")
+    end
     return ("%s%s fight%s. Shield at the start: %s; auras %s. %s: %d shielded, %d lost, %d inside the orb cooldown. "
-        .. "%s cast. No shield for %s. Lost %s.%s"):format(
+        .. "%s cast. No shield for %s.%s Lost %s.%s"):format(
         at, ns.Duration(e.len), e.hurt and ", |cffffffffhurt|r" or "", e.start or "?", e.auras or "?", ns.Count(e.seen, "hit"),
-        e.shielded, e.lost, e.cooldown, ns.Count(e.casts, "shield"), ns.Duration(e.bare),
+        e.shielded, e.lost, e.cooldown, ns.Count(e.casts, "shield"), ns.Duration(e.bare), spring,
         ns.LostText(e), #low > 0 and (" Lowest: " .. table.concat(low, ", ") .. ".") or "")
+end
+
+local WATER_NAMES = { spring = "Mana Spring", other = "another water totem" }
+local function WaterText(kind, live)
+    return (WATER_NAMES[kind] or "none") .. (live and "" or ", by the addon's own record")
 end
 
 local function FightStart()
     ns.inCombat = true
     ns.fight = NewTally()
     ns.lastTick = Now()
-    local info = { started = ns.lastTick, liveReads = 0, hiddenReads = 0, seen = 0, shielded = 0, cooldown = 0, lost = 0, casts = 0 }
+    local info = { started = ns.lastTick, liveReads = 0, hiddenReads = 0, seen = 0, shielded = 0, cooldown = 0, lost = 0, casts = 0, drops = 0 }
     ns.fightInfo = info
     local s, live = ns.CurrentShield()
     info.start = ShieldText(s) .. (live and "" or " (auras hidden: the addon's own record)")
+    if ns.values.spring then
+        local water = ns.CurrentWater()
+        info.water = WaterText(water, ns.totemLive or ns.springAura == true)
+    end
     ns.SampleLow(info)
     if ns.UI then ns.UI.Update() end
 end
@@ -857,6 +1148,7 @@ local function LogFight(t, info, hurt)
         at = Stamp(), len = max(0, Now() - (info.started or Now())), start = info.start, auras = auras,
         seen = info.seen, shielded = info.shielded, cooldown = info.cooldown, lost = info.lost, casts = info.casts,
         damage = floor(t.damage + 0.5), mana = floor(t.mana + 0.5), bare = floor(t.bare + 0.5),
+        spring = floor(t.spring + 0.5), dry = floor(t.dry + 0.5), stime = floor(t.stime + 0.5), drops = info.drops, water = info.water,
         lowMana = info.lowMana and floor(info.lowMana + 0.5), lowHealth = info.lowHealth and floor(info.lowHealth + 0.5),
         hurt = hurt and true or nil,
     }
@@ -906,6 +1198,7 @@ local function QueueRefresh()
         if ns.disabled then return end
         if Call(InCombatLockdown) ~= true then ns.ReadValues() end
         ns.CurrentShield()
+        ns.CurrentWater()
         if ns.UI then ns.UI.Update() end
     end
     if C_Timer and C_Timer.After then C_Timer.After(0.2, Run) else Run() end
@@ -956,6 +1249,24 @@ local function Status()
     ns.Print(("orb cooldown: %s sec (%s). Hits by spells: %s. Hits not readable: %d."):format(
         tostring(ns.ICD(measured)), (measured and ns.values[measured] and ns.values[measured].icd) and "from the tooltip" or "setting, an estimate",
         ns.db.spellHits and "counted" or "ignored", ns.unreadableHits))
+    local S = ns.values.spring
+    if S then
+        local rate = S.mana / S.period
+        ns.Print(("Mana Spring Totem rank %d (%d): %s mana every %s sec for %s (%s), costs %s mana (%s): pays for itself in %s. Counted: %s."):format(
+            S.rank, S.id, tostring(S.mana), tostring(S.period), ns.Duration(S.lasts),
+            S.source == "tooltip" and "from its tooltip" or "estimated", ns.Commas(S.cost),
+            S.costSource == "game" and "from the game" or "estimated",
+            rate > 0 and ns.Duration(S.cost / rate) or "?", ns.db.spring and "yes" or "no"))
+        local water = ns.CurrentWater()
+        local t = ns.totem
+        ns.Print(("water totem: %s%s (%s). Mana Spring buff on you: %s."):format(
+            t and WATER_NAMES[t.kind] or "none", t and (t.ends or 0) > 0 and (", %s left"):format(ns.Duration(t.ends - Now())) or "",
+            ns.totemLive and "read from the game" or "the game hides the slot: from your own casts",
+            ns.springAura == nil and "not read yet" or ((ns.springAura and "yes" or "no") .. (ns.auraLive and "" or ", as of the last read"))))
+        if not water then ns.Print("no Mana Spring on you. Naturally.") end
+    else
+        ns.Print(("Mana Spring Totem: not known (comes at level %d)."):format(ns.SPRING.learnLevel))
+    end
 end
 ns.Status = Status
 
@@ -979,6 +1290,10 @@ local function Slash(msg)
     elseif msg == "lightning" or msg == "water" or msg == "auto" then
         ns.Set("measure", msg)
         ns.Print("counting losses against " .. NAMES[msg] .. ".")
+    elseif msg == "spring" or msg == "totem" or msg == "mana spring" then
+        ns.Set("spring", not ns.db.spring)
+        ns.Print(ns.db.spring and "counting fight time without Mana Spring Totem. It knows what you did."
+            or "Mana Spring Totem is no longer counted.")
     elseif msg == "reset" or msg == "reset all" or msg == "reset session" or msg == "clear" then
         ns.ClearLog()
         ns.Print("fight log cleared. The evidence is gone.")
@@ -1001,6 +1316,7 @@ local function Slash(msg)
     else
         ns.Print("|cffffffff/shame|r what you lost, |cffffffff/shame options|r, |cffffffff/shame on|r / |cffffffffoff|r, "
             .. "|cffffffff/shame lightning|r / |cffffffffwater|r / |cffffffffauto|r (what to count against), "
+            .. "|cffffffff/shame spring|r (Mana Spring Totem counted or not), "
             .. "|cffffffff/shame lock|r / |cffffffffunlock|r, |cffffffff/shame test|r, |cffffffff/shame log|r (the last fights, hit by hit), |cffffffff/shame reset|r (clears the log), |cffffffff/shame status|r.")
     end
 end
@@ -1092,8 +1408,10 @@ function handlers.PLAYER_REGEN_DISABLED() FightStart() end
 function handlers.PLAYER_REGEN_ENABLED() FightEnd() end
 function handlers.PLAYER_DEAD()
     ns.shield = nil          -- shields go when you die
+    ns.totem = nil           -- and so do your totems
     if ns.UI then ns.UI.Update() end
 end
+function handlers.PLAYER_TOTEM_UPDATE() ns.CurrentWater() end
 function handlers.PLAYER_ALIVE() QueueRefresh() end
 function handlers.PLAYER_UNGHOST() QueueRefresh() end
 function handlers.PLAYER_UPDATE_RESTING() QueueRefresh() end

@@ -2,7 +2,10 @@
 
 For shamans on WoW Forever. Counts the damage and mana you throw away by fighting without
 Lightning Shield or Water Shield up, and mocks you for it. Asked for as: "addon to shame me
-about how much damage and mana ive lost not maintaining shaman shields".
+about how much damage and mana ive lost not maintaining shaman shields". Since 1.3.0 it also
+counts the mana Mana Spring Totem would have restored in the fight time you spent without it
+("add mana spring totem to the water shield addon to check how much mana is being wasted by
+not using it").
 
 Everything is per fight.
 
@@ -15,6 +18,10 @@ Everything is per fight.
   in this fight (or the last one). Its tooltip has a jab, what that fight cost, how long your
   shield was up in it, how low it took you, and how many recent fights hurt.
 - `/shame` prints the last fight and how many of your recent fights hurt, and what those cost.
+- **Mana Spring Totem.** `/shame` also says how much of the fighting in your logged fights had
+  a Mana Spring on you, and how much mana the rest left in the ground, next to what a totem
+  costs. A fight that took your mana below the line without it gets the chat line too, once
+  the totem would have paid for itself in that fight.
 - The minimap button's tooltip shows the same.
 - "Confess to my group" (off by default): after a fight that hurt, says it in party or raid
   chat as well, at most once a minute.
@@ -25,7 +32,8 @@ The addon does nothing on other classes: no icon, no minimap button, no events.
 ## Slash command
 
 `/shame` (or `/shieldshame`): what you lost. `/shame options`, `/shame on` / `off`,
-`/shame lightning` / `water` / `auto` (what to count against), `/shame lock` / `unlock`,
+`/shame lightning` / `water` / `auto` (what to count against), `/shame spring` (Mana Spring
+Totem counted or not), `/shame lock` / `unlock`,
 `/shame test` (show the icon to place it), `/shame log` (the last fights, hit by hit),
 `/shame reset` (clears the fight log), `/shame status` (what the addon read: ranks, values,
 where each came from).
@@ -42,6 +50,23 @@ Read from talentsforever.com's export of the WoW Forever beta client (build 1.60
 | Earth Shield | Not a shaman spell on WoW Forever. If an Earth Shield you cast is ever on you, it counts as "a shield is up". |
 
 Only one of Lightning Shield and Water Shield can be up at a time.
+
+## Mana Spring Totem on this client
+
+Read from the client's own tables on wago.tools (product wowf: SpellEffect, SpellPower,
+SpellMisc, SpellDuration; 2026-11-18). Not yet checked in the live game.
+
+| Rank | Spell | Level | Mana every 2 sec | Costs | Over its 5 minutes |
+|---|---|---|---|---|---|
+| 1 | 5675 | 26 | 4 | 40 | 600 |
+| 2 | 10495 | 36 | 6 | 60 | 900 |
+| 3 | 10496 | 46 | 8 | 80 | 1,200 |
+| 4 | 10497 | 56 | 10 | 100 | 1,500 |
+
+"Summons a Mana Spring Totem with 5 health at the feet of the caster for 5 min that restores
+X mana every 2 seconds to group members within 30 yards." It stands for 5 minutes here, not
+Classic's 1, so one drop gives back 15 times what it costs and has paid for itself after 20
+seconds. Everyone in range gets the "Mana Spring" buff (5677, 10491, 10493, 10494).
 
 ## How each number is worked out
 
@@ -73,6 +98,26 @@ WoW Forever, read from the tooltip (a tooltip that gives a flat number is used a
 mana is read when it can be; in a fight where it is hidden, the last value read is used.
 If the tooltip ever names a passive regeneration ("X mana every 5 sec"), X / 5 per second
 fought without a shield is added. WoW Forever's text has none, so this part is 0 today.
+
+**Mana (Mana Spring Totem).** Counted next to the shield, not instead of it (a totem and a
+shield can both be up). For every second of a fight that counts (above) and in which no Mana
+Spring is on you, the fight gets the totem's mana per second: your best known rank's pulse
+divided by the seconds between pulses, read from the tooltip (the table above when it can't be
+read). Seconds with your mana bar full add no mana: the totem would have had nothing to give.
+If the game hides your mana in a fight, they are counted.
+
+*Is a Mana Spring on you?* Yes if the game's water totem slot (`GetTotemInfo(3)`) shows your
+Mana Spring Totem, or if a "Mana Spring" buff is on you, whoever's totem it comes from. If the
+slot shows another water totem of yours, those seconds are not judged at all: you put
+something else there on purpose. If the game hides the slot in a fight, your own casts stand
+in: a Mana Spring Totem cast counts for the totem's 5 minutes, another water totem or Totemic
+Recall replaces it, and dying removes it. If the game hides your buffs in a fight, the last
+readable answer about the buff stands.
+
+*The cost* is read from the game (`C_Spell.GetSpellPowerCost`), else the table above. It is
+not taken off the count: the count is what the totem would have restored to you. The cost
+decides when the chat line speaks (only once the fight's count is at least one totem's cost)
+and is printed next to the total so you can judge it.
 
 **Which shield a gap is counted against.** One, never both (they can't be up together).
 Default "the shield I used last": the one you last cast or had on you. Before you have
@@ -119,12 +164,24 @@ shield up.
   lost, not net of what keeping the shield up would have cost.
 - **Hidden auras.** While the game hides auras in a fight, the shield's state is the addon's
   model (above), not the game's.
+- **Mana Spring: only you.** The count is your own mana. In a group every mana user in range
+  would have got the same again; that is not added.
+- **Mana Spring: range and a dead totem.** Your own totem standing counts as "on you" even
+  when you have walked more than 30 yards away from it, so that gap is not counted. A totem
+  that was killed is noticed when the game shows the slot; with the slot hidden, the addon's
+  record keeps it for its 5 minutes.
+- **Mana Spring: pulses.** Mana is counted evenly per second, not in 2-second pulses, and a
+  bar that is a few mana short of full is counted as a whole second's worth.
+- **Mana Spring: talents.** The addon trusts the tooltip number. If a talent raises the
+  totem's mana and the tooltip leaves it out, the count is that much low.
 
 ## Not yet seen in the game
 
 Whether `UNIT_COMBAT` reaches addons for the player on this client with a readable hit type,
 whether auras on yourself are hidden in a fight, the real orb cooldown, and how the icon
-looks. `/shame status` shows what it reads.
+looks. For Mana Spring Totem: whether the water totem slot is readable in a fight, whether
+the "Mana Spring" buff shows among your buffs, and that the totem's numbers in the game match
+the client tables. `/shame status` shows what it reads.
 
 ## Files
 
