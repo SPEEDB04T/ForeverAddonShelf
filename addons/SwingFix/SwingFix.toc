@@ -1,0 +1,8 @@
+## Interface: 16001, 16002
+## Title: Swing Fix
+## Notes: Corrects the game's own swing timer bars around spell casts: the bar starts over when the cast goes off, not when it starts, so you can see when the next swing lands. /swingfix
+## Version: 1.0.0
+## SavedVariables: SwingFixDB
+## IconTexture: Interface\Icons\Ability_MeleeDamage
+
+SwingFix.lua
