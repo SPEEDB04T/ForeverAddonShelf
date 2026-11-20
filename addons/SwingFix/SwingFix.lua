@@ -37,6 +37,7 @@ local bars = {}        -- [frame] = { speed, dur, endT, prevDur, prevEndT, at, l
 local cast             -- { guid, start } while a spell with a cast time is being cast
 local applying = false -- true while this addon itself moves a bar
 local counts = { undone = 0, restarted = 0 }
+local afterCast        -- { at, speed } from a cast going off until the next main hand swing
 
 local function Plain(v)
     return not (issecretvalue and issecretvalue(v))
@@ -138,8 +139,12 @@ end
 local function CastWentOff(guid)
     if not SameCast(guid) then return end
     cast = nil
-    if not db.enabled then return end
     local now = GetTime()
+    afterCast = { at = now }
+    for _, bar in pairs(bars) do
+        if bar.speed == 1 then afterCast.speed = HandSpeed(bar) end
+    end
+    if not db.enabled then return end
     for frame, bar in pairs(bars) do
         local speed = HandSpeed(bar)
         if speed and Handles(frame) then
@@ -223,6 +228,12 @@ local CAST_EVENTS = {
 local function OnEvent(_, event, a, b, c)
     if event == "PLAYER_SWING" then
         Log("SWING", a, b)
+        -- How long after a cast the next main hand swing came, next to the weapon's swing time.
+        if afterCast and Plain(b) and b == 0 then
+            Log("AFTER_CAST", string.format("%.2f", GetTime() - afterCast.at),
+                afterCast.speed and string.format("%.2f", afterCast.speed) or nil)
+            afterCast = nil
+        end
     elseif event == "UNIT_SPELLCAST_START" then
         if a ~= "player" then return end
         Log("START", c)
@@ -237,9 +248,11 @@ local function OnEvent(_, event, a, b, c)
         if cast and SameCast(b) then Log(event:sub(16), c) end
         CastEndedEarly(b)
     elseif event == "UNIT_COMBAT" then
-        -- Hits on the target, for the log only: shows when a swing really landed.
-        if a == "target" and db.log and UnitAffectingCombat and UnitAffectingCombat("player") then
-            Log("TARGET_HIT", b, c)
+        -- For the log only: hits on the target show when a swing really landed, and what
+        -- happened to attacks on you (a parry can bring your next swing forward).
+        if db.log and UnitAffectingCombat and UnitAffectingCombat("player") then
+            if a == "target" then Log("TARGET_HIT", b, c)
+            elseif a == "player" then Log("ON_ME", b, c) end
         end
     elseif event == "PLAYER_ENTERING_WORLD" then
         cast = nil
@@ -278,7 +291,7 @@ for _, event in ipairs(CAST_EVENTS) do
         pcall(f.RegisterEvent, f, event)
     end
 end
-if not (f.RegisterUnitEvent and pcall(f.RegisterUnitEvent, f, "UNIT_COMBAT", "target")) then
+if not (f.RegisterUnitEvent and pcall(f.RegisterUnitEvent, f, "UNIT_COMBAT", "target", "player")) then
     pcall(f.RegisterEvent, f, "UNIT_COMBAT")
 end
 
