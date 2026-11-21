@@ -1,7 +1,11 @@
 -- BiS Planner: starting weights for every spec.
 --
 -- From sixtysim.com's Forever stat pages (all dated 17 November 2026, read 20 November 2026):
--- its simulator's worth of one point of each stat, one boss, one minute, on its benchmark gear.
+-- its simulator's worth of one point of each stat on its benchmark gear: one boss for one minute
+-- for damage, three minutes for healers. In one minute a healer never runs out of mana, so
+-- intellect, spirit and mana per 5 look worthless and haste (one more cast before the kill) tops
+-- the list; three minutes is the longest fight sixtysim runs, and there mana runs out first.
+-- Shamans get no mana from spirit while casting, so sixtysim gives it no row for them.
 -- Sixtysim calls them beta data until level 60 opens. The tanks' weights are estimates of ours:
 -- sixtysim weighs tanks for threat only (it gives defense and dodge less than nothing), and a tank
 -- wants to live first.
@@ -28,8 +32,8 @@ ns.SPECS = {
                 agi = 0.6, str = 0.5, ap = 0.2, hit = 0.5, expertise = 0.6, crit = 0.3, mdps = 1.5 } },
     },
     PALADIN = {
-        { name = "Holy", source = SIXTYSIM, cap = "Hit does nothing for healing.",
-          w = { heal = 1, int = 0.9, spi = 0.04, mp5 = 0.22, crit = 1.77, haste = 2 } },
+        { name = "Holy", source = SIXTYSIM, cap = "Hit does nothing for healing. Weighed for a three-minute fight, where mana runs out.",
+          w = { heal = 1, int = 1.85, spi = 0.57, mp5 = 2.4, crit = 1.73, haste = 0.67 } },
         { name = "Protection", source = OURS, cap = "Hit up to 8% (80 rating) for swings, 17% for Consecration.",
           w = { sta = 1, armor = 0.06, defense = 1.2, dodge = 1, parry = 0.9, block = 0.5, blockValue = 0.5,
                 str = 0.4, agi = 0.5, int = 0.2, hit = 0.5, expertise = 0.6, crit = 0.3, dmg = 0.6, mdps = 1 } },
@@ -55,10 +59,10 @@ ns.SPECS = {
           w = { ap = 1, str = 1.1, agi = 1.93, hit = 1.56, crit = 1.69, haste = 1.03, expertise = 2.36, mdps = 10.2, odps = 1.85 } },
     },
     PRIEST = {
-        { name = "Discipline", source = SIXTYSIM, cap = "Hit does nothing for healing.",
-          w = { heal = 1, int = 1.07, spi = 0.13, crit = 1.21, haste = 2.99, mp5 = 0.42 } },
-        { name = "Holy", source = SIXTYSIM, cap = "Hit does nothing for healing.",
-          w = { heal = 1, int = 0.47, spi = 0.28, crit = 0.9, haste = 2.91, mp5 = 0.05 } },
+        { name = "Discipline", source = SIXTYSIM, cap = "Hit does nothing for healing. Weighed for a three-minute fight, where mana runs out.",
+          w = { heal = 1, int = 1.76, spi = 0.97, crit = 1.01, haste = 0.11, mp5 = 2.5 } },
+        { name = "Holy", source = SIXTYSIM, cap = "Hit does nothing for healing. Weighed for a three-minute fight, where mana runs out.",
+          w = { heal = 1, int = 1.83, spi = 0.99, crit = 0.82, haste = 0.81, mp5 = 2.23 } },
         { name = "Shadow", source = SIXTYSIM, cap = SPELL_CAP,
           w = { dmg = 1, spShadow = 1, int = 0.27, hit = 1.34, crit = 0.93, haste = 0.34 } },
     },
@@ -68,8 +72,8 @@ ns.SPECS = {
         { name = "Enhancement", source = SIXTYSIM, cap = MELEE_CAP .. " Spells want 17%.",
           w = { ap = 1, str = 2.2, agi = 1.75, int = 1.93, hit = 2.11, crit = 2.91, haste = 3.1, expertise = 3.87,
                 mdps = 13.7, dmg = 1.48, spNature = 0.64 } },
-        { name = "Restoration", source = SIXTYSIM, cap = "Hit does nothing for healing.",
-          w = { heal = 1, int = 1.21, crit = 0.79, haste = 2.2, mp5 = 0.35 } },
+        { name = "Restoration", source = SIXTYSIM, cap = "Hit does nothing for healing. Weighed for a three-minute fight, where mana runs out.",
+          w = { heal = 1, int = 2.39, crit = 1.07, haste = 0.5, mp5 = 2.2 } },
     },
     MAGE = {
         { name = "Arcane", source = SIXTYSIM, cap = SPELL_CAP,
@@ -96,8 +100,8 @@ ns.SPECS = {
         { name = "Feral (bear)", source = OURS, cap = "Hit up to 8% (80 rating) and expertise for threat.",
           w = { sta = 1, armor = 0.12, agi = 1, defense = 1.2, dodge = 1, str = 0.4, ap = 0.2, hit = 0.5,
                 expertise = 0.6, crit = 0.3 } },
-        { name = "Restoration", source = SIXTYSIM, cap = "Hit does nothing for healing.",
-          w = { heal = 1, int = 0.16, spi = 0.35, crit = 0.8, haste = 2.28, mp5 = 0.2 } },
+        { name = "Restoration", source = SIXTYSIM, cap = "Hit does nothing for healing. Weighed for a three-minute fight, where mana runs out.",
+          w = { heal = 1, int = 1.55, spi = 1.47, crit = 0.68, haste = 0.22, mp5 = 2.43 } },
     },
 }
 

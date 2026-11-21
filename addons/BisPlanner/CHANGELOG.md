@@ -1,3 +1,6 @@
+## 1.4.1
+- Healers' spec defaults were weighed for a one-minute fight, where you never run out of mana: haste came out on top and intellect, spirit and mana per 5 near nothing. They now use sixtysim's three-minute fight, where mana runs out first: intellect and mana per 5 lead, haste is low. Restoration shamans still have no spirit weight: shamans get no mana from spirit while casting.
+
 ## 1.4.0
 - Spec defaults: starting weights for every spec of every class, 28 in all (the druid's feral cat and bear apart). Pick yours from Spec defaults on the Weights and goals tab, or type `/bisplan spec fury`. The weights go into the set in use and your goals stay; it asks before replacing weights you already have.
 - The weights are sixtysim.com's Forever simulations of 17 November 2026; the tanks' are our own, survival first. Each spec's tooltip gives its hit cap.
