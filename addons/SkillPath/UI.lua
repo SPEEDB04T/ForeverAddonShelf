@@ -114,7 +114,13 @@ function UI.SourceText(item, plan, M)
         local cheapest
         for _, u in ipairs(sup.units) do cheapest = cheapest and math.min(cheapest, u.u) or u.u end
         for _, l in ipairs(sup.lots) do cheapest = cheapest and math.min(cheapest, l.u) or l.u end
-        parts[#parts + 1] = ("auction from %s each (%d listed, %s)"):format(M(cheapest), sup.listed, ns.Age(sup.age))
+        if sup.auctionator then
+            parts[#parts + 1] = ("Auctionator's price %s each (%s)"):format(M(cheapest), ns.Age(sup.age))
+        elseif sup.summary then
+            parts[#parts + 1] = ("auction from %s each (%d listed, %s, cheapest only)"):format(M(cheapest), sup.listed, ns.Age(sup.age))
+        else
+            parts[#parts + 1] = ("auction from %s each (%d listed, %s)"):format(M(cheapest), sup.listed, ns.Age(sup.age))
+        end
     end
     if sup.vendor then
         parts[#parts + 1] = ("vendor %s each%s"):format(M(sup.vendor),
@@ -231,7 +237,8 @@ end
 function UI.PriceStatus()
     local P = ns.Prices
     if P.IsScanning() then
-        local done, total = P.Progress()
+        local done, total, phase = P.Progress()
+        if phase == "sweep" then return "Reading the auction house" end
         return ("Reading prices: %d of %d"):format(done, total)
     end
     local n, age = P.Summary()

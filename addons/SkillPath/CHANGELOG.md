@@ -1,3 +1,13 @@
+## 1.5.0
+- Much faster at the auction house. The scan used to search every reagent and every result of every recipe of your professions, one item at a time, about a second and a half each: over 1,200 searches with a few professions. Now it reads the whole auction house with one browse search (the same search the auction house's own search bar sends with nothing typed), then searches only what the path itself buys or sells, and only the items whose cheapest price or count changed since their last search. On real saved data that is 0 to 33 searches instead of 629 to 1,275.
+- An item that isn't in a whole read of the auction house counts as not listed, with no search of its own.
+- An item the path doesn't use is priced from that read: its cheapest price and how many are listed. The step says "cheapest only".
+- Before any scan, Auctionator's last price stands in for an item SkillPath has never seen, and the step says whose price it is and how old.
+- Searches you or other addons make on the Buy tab update SkillPath's prices too.
+- While a scan runs, the path is rebuilt at most every 3 seconds instead of after every price, and not at all for the scan's progress. A long path takes a good part of a second to rebuild, so the game could stutter through a whole scan.
+- Sales are also counted between two reads of the whole auction house, so a recipe's result the path doesn't use yet still learns how fast it sells.
+- Opened again within 5 minutes, the auction house isn't read again, only the path's searches run. "Scan prices" always reads it all.
+
 ## 1.4.0
 - The auction house tab now shows the whole path, step by step, like the professions tab: every step on the left, the picked step on the right. Before it showed only what to buy and what to sell. Click an item on the buy or sell step to search for it.
 - Trainer fees and skills are known from the start. The addon now carries its own table of what every profession trainer teaches on Forever, from which skill and for how much (468 recipes), so a path no longer says "fee not read" until you have stood at a trainer. A trainer's own list, once you open it, still wins over the table (a reputation discount changes the fee). `/skillpath debug` lists any row a trainer showed differently.

@@ -5,9 +5,13 @@
 --   * a vendor: the price a merchant showed you (unlimited stock only), or until you have seen
 --     one, the item's own vendor price for the trade-supply reagents Data.lua lists;
 --   * nothing: the guide says so instead of guessing.
--- The auction scan is one query at a time, only when the game's throttle says it is ready,
--- and it backs off while another addon (Slutmog Scout, Slutmog Shop) is searching.
-local _, ns = ...
+-- The auction scan starts with one sweep of the whole auction house (an empty browse search,
+-- page after page): the cheapest price and the number listed of every item, in a few queries.
+-- Then only the items the path on screen uses are searched one by one for every listing, and
+-- only when the sweep shows they changed since their last search. Each query waits for the
+-- game's throttle and backs off while another addon (Slutmog Scout, Slutmog Shop) is searching.
+-- Auctionator's last prices (when it is loaded) stand in for items this addon has never seen.
+local ADDON, ns = ...
 local P = {}
 ns.Prices = P
 
@@ -18,6 +22,14 @@ local FOREIGN_QUIET = 3      -- seconds without another addon's results before t
 local QUERY_TIMEOUT = 10
 local START_DELAY = 5        -- after the auction house opens, so its own first search and other addons' go first
 local FRESH_SKIP = 1800      -- an automatic scan skips prices younger than this
+local SWEEP_TIMEOUT = 15     -- seconds without a page of the sweep before it counts as cut short
+local SWEEP_AGAIN = 300      -- an automatic scan sweeps again only after this long
+local SUMMARY_MATCH = 900    -- a sweep this recent still says whether an item changed
+local DETAIL_ROUNDS = 3      -- search what the path uses, rebuild it, search what it uses now
+local AUCTIONATOR_QTY = 1000 -- Auctionator keeps a price, not how many are listed
+local OBS_MAX_GAP = 48 * 3600 -- sales: longer than the longest auction, everything could have run out
+local OBS_KEEP = 7 * 86400     -- sales seen are kept for a week
+local OBS_JOIN = 600           -- looks closer than this together count as one
 
 ----------------------------------------------------------------------
 -- Where prices live
@@ -85,7 +97,8 @@ end
 local cache = {}
 local bare = {}
 local resale = {}
-function P.Invalidate() cache, bare, resale = {}, {}, {} end
+local watched
+function P.Invalidate() cache, bare, resale, watched = {}, {}, {}, nil end
 
 local function Prefix(segs)
     local U, K = {}, {}
@@ -105,11 +118,28 @@ function P.Supply(item)
     local v, from, seenAt = P.Vendor(item)
     sup.vendor, sup.vendorFrom, sup.vendorAt = v, from, seenAt
     local rec = AHStore()[item]
-    if type(rec) == "table" and type(rec.l) == "table" and Num(rec.t) then
+    local now = ns.Clock()
+    local ladder = type(rec) == "table" and type(rec.l) == "table" and Num(rec.t)
+    local sum = type(rec) == "table" and type(rec.s) == "table" and Num(rec.s.t) and rec.s or nil
+    local same = ladder and sum and rec.sm == sum.p and rec.sq == sum.q
+    -- A sweep newer than the item's last search, that shows something else: it is the news. It has
+    -- only the cheapest price, so it stands in only for items that aren't sold in whole lots.
+    local news = sum and not same and (not ladder or sum.t > rec.t + 60)
+    if news and (Num(sum.q) or 0) == 0 then
+        sup.ah, sup.age = { t = sum.t, l = {} }, now - sum.t
+    elseif news and Num(sum.p) and not sum.own and not (ladder and rec.lots) then
+        sup.ah, sup.age, sup.summary = { t = sum.t, l = { { sum.p, sum.q } } }, now - sum.t, true
+    elseif ladder then
         sup.ah = rec
-        sup.age = ns.Clock() - rec.t
-        sup.stale = sup.age > (Num(ns.db.staleHours) or 3) * 3600
+        sup.age = now - (same and math.max(rec.t, sum.t) or rec.t)
+    elseif not sum then
+        local price, at = P.Auctionator(item)
+        local swept = P.SweptAt()
+        if price and not (swept and swept > at) then
+            sup.ah, sup.age, sup.auctionator = { t = at, l = { { price, AUCTIONATOR_QTY } } }, now - at, true
+        end
     end
+    if sup.ah then sup.stale = sup.age > (Num(ns.db.staleHours) or 3) * 3600 end
     sup.bound = BindType(item) == 1
     -- Listings that beat the vendor, split into per-unit commodities and whole lots.
     local units, lots = {}, {}
@@ -225,6 +255,27 @@ function P.Marginal(sup, used, k, extra)
     return b - a
 end
 
+-- Auctionator's last price for an item (per unit) and when it was seen, when that addon is loaded.
+function P.Auctionator(item)
+    local api = type(Auctionator) == "table" and type(Auctionator.API) == "table" and Auctionator.API.v1
+    if type(api) ~= "table" or type(api.GetAuctionPriceByItemID) ~= "function" then return nil end
+    local ok, price = pcall(api.GetAuctionPriceByItemID, ADDON or "SkillPath", item)
+    price = ok and Num(price) or nil
+    if not price or price <= 0 then return nil end
+    local days
+    if type(api.GetAuctionAgeByItemID) == "function" then
+        local ok2, d = pcall(api.GetAuctionAgeByItemID, ADDON or "SkillPath", item)
+        days = ok2 and Num(d) or nil
+    end
+    return price, ns.Clock() - (days or 1) * 86400
+end
+
+-- When the last whole sweep of this realm's auction house finished (nil: never).
+function P.SweptAt()
+    local t = type(ns.db.swept) == "table" and ns.db.swept[P.RealmKey()]
+    return Num(t)
+end
+
 -- Why an item has no price, in words.
 function P.Missing(sup)
     if sup.bound then return "binds when picked up" end
@@ -234,6 +285,8 @@ function P.Missing(sup)
     if sup.ah then
         return ("only %d listed at the last scan (%s)"):format(sup.listed, ns.Age(sup.age))
     end
+    local swept = P.SweptAt()
+    if swept then return ("none listed at the last scan (%s)"):format(ns.Age(ns.Clock() - swept)) end
     return "not scanned yet"
 end
 
@@ -262,8 +315,11 @@ function P.Interest(outputs)
     return set
 end
 
+local watchedSell
 local function Watched()
-    return P.Interest(ns.db.sellAH)
+    local sell = ns.db.sellAH and true or false
+    if not watched or watchedSell ~= sell then watched, watchedSell = P.Interest(sell), sell end
+    return watched
 end
 
 local function MerchantItem(i)
@@ -302,22 +358,31 @@ end
 ----------------------------------------------------------------------
 local AH = function() return C_AuctionHouse end
 local scan = { queue = {}, open = false, active = false, pending = nil, lastForeign = -100, own = {}, tries = {},
-    done = 0, total = 0, failed = 0, pumpQueued = false }
+    done = 0, total = 0, failed = 0, pumpQueued = false, phase = nil, sweep = nil, round = 0, looked = {},
+    swept = 0, same = 0, none = 0 }
 P.scanState = scan
+local Record     -- below, with the sales
 
 function P.CanScan()
     local ah = AH()
     return type(ah) == "table" and type(ah.SendSearchQuery) == "function" and type(ah.MakeItemKey) == "function"
 end
 
+-- The whole auction house in a few queries: an empty browse search, page after page.
+function P.CanSweep()
+    local ah = AH()
+    return P.CanScan() and type(ah.SendBrowseQuery) == "function" and type(ah.GetBrowseResults) == "function"
+end
+
 function P.IsOpen() return scan.open end
 function P.IsScanning() return scan.active end
-function P.Progress() return scan.done, scan.total end
+function P.Progress() return scan.done, scan.total, scan.phase end
 
 -- The items a scan asks for: reagents of the saved professions that a vendor doesn't sell and
 -- that can be bought. An automatic scan skips prices younger than half an hour.
 -- What to search for, the reagents of the path on screen first. all (a scan you asked for):
 -- prices read a moment ago and what a vendor sells too (an auction can be under the vendor).
+-- Only used where the client has no browse search to sweep with.
 function P.ScanList(all)
     local store = AHStore()
     local now = ns.Clock()
@@ -338,6 +403,66 @@ function P.ScanList(all)
     return list
 end
 
+-- What the path on screen depends on: what it buys (dearest first), what it makes, the
+-- reagents with no price that keep a maybe-cheaper recipe out, recipe items, and with auction
+-- house sales on, what it has left to sell.
+function P.PathItems(plan)
+    local list, seen = {}, {}
+    local function Add(item)
+        if item and not seen[item] then
+            seen[item] = true
+            list[#list + 1] = item
+        end
+    end
+    if not (plan and plan.ok) then return list end
+    for _, e in ipairs(plan.shopping or {}) do Add(e.item) end
+    local rest = {}
+    for item in pairs(plan.used or {}) do rest[#rest + 1] = item end
+    for item in pairs(plan.missing or {}) do rest[#rest + 1] = item end
+    for _, l in pairs(plan.learned or {}) do
+        if l.info and l.info.item then rest[#rest + 1] = l.info.item end
+    end
+    for _, o in ipairs(plan.options or {}) do
+        if o.item then rest[#rest + 1] = o.item end
+    end
+    if ns.db.sellAH then
+        for _, l in ipairs(plan.leftovers or {}) do rest[#rest + 1] = l.item end
+    end
+    table.sort(rest)
+    for _, item in ipairs(rest) do Add(item) end
+    return list
+end
+
+local function CopyList(l)
+    local out = {}
+    for i, e in ipairs(l) do out[i] = { e[1], e[2], e[3], e[4] } end
+    return out
+end
+
+-- What one item of the path needs after the sweep: "search" (every listing, one query), or
+-- settled without a query: "same" (the sweep shows what its last search showed), "none" (not
+-- listed), "skip" (bound, or a vendor sells it for less than any auction).
+local function Settle(item, manual)
+    if BindType(item) == 1 then return "skip" end
+    local now = ns.Clock()
+    local rec = AHStore()[item]
+    local sum = type(rec) == "table" and type(rec.s) == "table" and Num(rec.s.t) and now - rec.s.t <= SUMMARY_MATCH
+        and rec.s or nil
+    local swept = P.SweptAt()
+    local none = (sum and (Num(sum.q) or 0) == 0) or (not sum and swept and now - swept <= SUMMARY_MATCH)
+    local vendor = P.Vendor(item)
+    if vendor and not manual and (none or not sum or not (Num(sum.p) and sum.p < vendor)) then return "skip" end
+    if none then
+        Record(item, {}, false, false)
+        return "none"
+    end
+    if sum and type(rec.l) == "table" and Num(rec.t) and rec.sm == sum.p and rec.sq == sum.q and not rec.partial then
+        Record(item, CopyList(rec.l), false)
+        return "same"
+    end
+    return "search"
+end
+
 local function Pump()
     if scan.pumpQueued then return end
     scan.pumpQueued = true
@@ -351,11 +476,45 @@ local function Finish()
     local wasActive = scan.active
     scan.active = false
     scan.pending = nil
+    scan.phase = nil
     if wasActive then
         local failed = scan.failed > 0 and (" (%d didn't answer)"):format(scan.failed) or ""
-        ns.Print(("Read %d auction %s%s."):format(scan.done, scan.done == 1 and "price" or "prices", failed))
+        if scan.sweep then
+            local n = scan.done + scan.same + scan.none
+            ns.Print(("Read the auction house: %d %s; for the path %d (%d searched, %d unchanged, %d not listed)%s.")
+                :format(scan.swept, scan.swept == 1 and "item" or "items", n, scan.done, scan.same, scan.none, failed))
+        else
+            ns.Print(("Read %d auction %s%s."):format(scan.done, scan.done == 1 and "price" or "prices", failed))
+        end
     end
     ns.Changed()
+end
+
+-- The next set of searches: what the path uses now and wasn't looked at in this scan. The
+-- path is rebuilt between rounds, since new prices can send it to other recipes.
+local function NextRound()
+    scan.round = scan.round + 1
+    if scan.round > DETAIL_ROUNDS then return Finish() end
+    ns.Changed()
+    local queue = {}
+    for _, item in ipairs(P.PathItems(ns.Plan())) do
+        if not scan.looked[item] then
+            scan.looked[item] = true
+            local what = Settle(item, scan.manual)
+            if what == "search" then
+                queue[#queue + 1] = item
+            elseif what == "same" then
+                scan.same = scan.same + 1
+            elseif what == "none" then
+                scan.none = scan.none + 1
+            end
+        end
+    end
+    if #queue == 0 then return Finish() end
+    scan.queue = queue
+    scan.total = scan.total + #queue
+    ns.Redraw()
+    Pump()
 end
 
 function P.StartScan(manual)
@@ -371,24 +530,169 @@ function P.StartScan(manual)
         if manual then ns.Print(("Already scanning: %d of %d done."):format(scan.done, scan.total)) end
         return false
     end
+    scan.manual = manual and true or false
+    scan.done, scan.failed, scan.total, scan.tries = 0, 0, 0, {}
+    scan.round, scan.looked, scan.swept, scan.same, scan.none = 0, {}, 0, 0, 0
+    scan.sweep, scan.queue = nil, {}
+    if P.CanSweep() then
+        local swept = P.SweptAt()
+        scan.active = true
+        if manual or not swept or ns.Clock() - swept >= SWEEP_AGAIN then
+            scan.phase = "sweep"
+            if manual then ns.Print("Reading the auction house.") end
+            ns.Redraw()
+            Pump()
+        else
+            -- Swept a moment ago (the auction house opened again): only the path's searches.
+            scan.phase = "detail"
+            scan.sweep = { done = true, seen = {} }
+            NextRound()
+        end
+        return true
+    end
+    scan.phase = "detail"
     scan.queue = P.ScanList(manual)
-    scan.done, scan.failed, scan.total, scan.tries = 0, 0, #scan.queue, {}
+    scan.total = #scan.queue
     if #scan.queue == 0 then
         if manual then ns.Print("Nothing to scan: no profession read yet, or vendors sell every reagent.") end
         return false
     end
     scan.active = true
     if manual then ns.Print(("Reading %d auction %s."):format(#scan.queue, #scan.queue == 1 and "price" or "prices")) end
-    ns.Changed()
+    ns.Redraw()
     Pump()
     return true
+end
+
+-- Browse results, by item: the cheapest price, how many are listed, and whether one is yours.
+local function AddBrowse(into, results, watch)
+    for _, info in ipairs(type(results) == "table" and results or {}) do
+        local id = Num(Field(Field(info, "itemKey"), "itemID"))
+        local p, q = Num(Field(info, "minPrice")), Num(Field(info, "totalQuantity"))
+        if id and p and q and q > 0 and (not watch or watch[id]) then
+            local own = Field(info, "containsOwnerItem") == true
+            local s = into[id]
+            if s then
+                if p < s.p then s.p = p end
+                s.q = s.q + q
+                s.own = s.own or own
+            else
+                into[id] = { p = p, q = q, own = own }
+            end
+        end
+    end
+end
+
+-- Keeps the browse figures of the items SkillPath watches. Returns how many items they cover.
+-- What a sweep showed of one item: its cheapest price and how many are listed. Between two looks
+-- (sweep or search), the units no longer listed are counted as gone, as a search does, so an
+-- item the path doesn't search yet still learns how fast it sells. Not for items sold in lots
+-- (what a lot's row counts isn't known).
+local function KeepSummary(rec, p, q, own, now)
+    local prev = type(rec.s) == "table" and rec.s or nil
+    local seen = false
+    if not rec.lots and prev and Num(prev.q) and Num(prev.t) then
+        local baseQ, baseT = prev.q, prev.t
+        if Num(rec.t) and rec.t > prev.t then
+            -- Searched since the last sweep: its listings are the newer baseline.
+            baseQ, baseT = nil, rec.t
+            if type(rec.l) == "table" and not rec.partial and not rec.cut then
+                baseQ = 0
+                for _, e in ipairs(rec.l) do baseQ = baseQ + (Num(e[2]) or 0) end
+            end
+        end
+        local gap = now - baseT
+        if baseQ and gap > 0 and gap <= OBS_MAX_GAP then
+            local obs = {}
+            for _, o in ipairs(type(rec.obs) == "table" and rec.obs or {}) do
+                if Num(o.t) and now - o.t <= OBS_KEEP then obs[#obs + 1] = o end
+            end
+            local gone, last = math.max(0, baseQ - q), obs[#obs]
+            if gap < OBS_JOIN and last and last.t == baseT and Num(last.gone) and Num(last.dt) then
+                -- Looked again a moment later (the Buy tab's pages): one longer look, not many short ones.
+                last.t, last.gone, last.dt = now, last.gone + gone, last.dt + gap
+            else
+                obs[#obs + 1] = { t = now, gone = gone, dt = gap }
+            end
+            rec.obs = obs
+            seen = true
+        end
+    end
+    rec.s = { p = p, q = q, t = now, own = own or nil, o = seen or nil }
+end
+
+local function KeepBrowse(seen)
+    local watch, store, now = Watched(), AHStore(), ns.Clock()
+    local n = 0
+    for id, s in pairs(seen) do
+        n = n + 1
+        if watch[id] then
+            local rec = store[id]
+            if type(rec) ~= "table" then
+                rec = {}
+                store[id] = rec
+            end
+            KeepSummary(rec, s.p, s.q, s.own, now)
+        end
+    end
+    return n
+end
+
+local function SweepDone(complete)
+    local sweep = scan.sweep
+    if not sweep or sweep.done then return end
+    sweep.done = true
+    local now = ns.Clock()
+    scan.swept = KeepBrowse(sweep.seen)
+    if complete then
+        -- Not in a whole sweep: not listed at all.
+        for id, rec in pairs(AHStore()) do
+            if type(rec) == "table" and not sweep.seen[id] then KeepSummary(rec, nil, 0, nil, now) end
+        end
+        if type(ns.db.swept) ~= "table" then ns.db.swept = {} end
+        ns.db.swept[P.RealmKey()] = now
+    end
+    scan.phase = "detail"
+    NextRound()
+end
+
+-- A page of the sweep came in: ask for the next one, or end it there.
+local function SweepPage()
+    local sweep = scan.sweep
+    local ah = AH()
+    sweep.last = ns.Now()
+    local full = Call(ah.HasFullBrowseResults)
+    if full ~= false then return SweepDone(full == true) end
+    local got = 0
+    for _ in pairs(sweep.seen) do got = got + 1 end
+    if got <= (sweep.asked or -1) then return end      -- the same page again
+    sweep.asked = got
+    if type(ah.RequestMoreBrowseResults) ~= "function" or not pcall(ah.RequestMoreBrowseResults) then
+        SweepDone(false)
+    end
+end
+
+local function SweepWatch(sweep, wait)
+    ns.After(wait or SWEEP_TIMEOUT, function()
+        if scan.sweep ~= sweep or sweep.done or not scan.active then return end
+        local quiet = ns.Now() - (sweep.last or sweep.at)
+        if quiet >= SWEEP_TIMEOUT - 0.01 then
+            SweepDone(false)       -- cut short: what came in is kept, nothing is taken as unlisted
+        else
+            SweepWatch(sweep, SWEEP_TIMEOUT - quiet)
+        end
+    end)
 end
 
 -- Sends the next query when it is our turn.
 function P.Next()
     if not (scan.active and scan.open) or scan.pending then return end
+    if scan.phase == "sweep" and scan.sweep then return end      -- its pages come in as events
     local ah = AH()
-    if #scan.queue == 0 then return Finish() end
+    if scan.phase ~= "sweep" and #scan.queue == 0 then
+        if scan.sweep then return NextRound() end
+        return Finish()
+    end
     local now = ns.Now()
     -- Another addon's search just answered: let it finish its run first.
     if now - scan.lastForeign < FOREIGN_QUIET then
@@ -401,6 +705,17 @@ function P.Next()
             ns.After(1, Pump)     -- AUCTION_HOUSE_THROTTLED_SYSTEM_READY usually comes first
             return
         end
+    end
+    if scan.phase == "sweep" then
+        local sweep = { seen = {}, at = now }
+        scan.sweep = sweep
+        local sent = pcall(ah.SendBrowseQuery, { searchString = "", sorts = {}, filters = {}, itemClassFilters = {} })
+        if not sent then
+            SweepDone(false)
+            return
+        end
+        SweepWatch(sweep)
+        return
     end
     local item = scan.queue[1]
     -- The search needs the item's data in the client.
@@ -443,6 +758,29 @@ function P.Next()
     end)
 end
 
+-- Browse results: pages of our sweep, or a search someone else made (the player, another
+-- addon), whose figures are kept too; only a whole sweep says what isn't listed.
+function P.OnBrowse(event, added)
+    local ah = AH()
+    local sweep = scan.sweep
+    if scan.active and scan.phase == "sweep" and sweep and not sweep.done then
+        if event == "AUCTION_HOUSE_BROWSE_RESULTS_UPDATED" then
+            sweep.seen = {}      -- every result so far
+            AddBrowse(sweep.seen, Call(ah.GetBrowseResults))
+        else
+            AddBrowse(sweep.seen, added)
+        end
+        return SweepPage()
+    end
+    scan.lastForeign = ns.Now()
+    local seen = {}
+    AddBrowse(seen, event == "AUCTION_HOUSE_BROWSE_RESULTS_UPDATED" and Call(ah.GetBrowseResults) or added, Watched())
+    if next(seen) then
+        KeepBrowse(seen)
+        ns.PricesChanged()
+    end
+end
+
 -- Reads what the game holds for one item's search.
 local function ReadCommodity(item)
     local ah = AH()
@@ -482,8 +820,6 @@ end
 -- item, the units that are no longer listed were bought, or cancelled, or ran out; that count,
 -- over the hours between the scans, is the most it can have sold. Kept for a week.
 ----------------------------------------------------------------------
-local OBS_MAX_GAP = 48 * 3600        -- longer than the longest auction: everything could have run out
-local OBS_KEEP = 7 * 86400
 local DEMAND_MIN_HOURS = 4           -- less watching than this isn't enough to say how fast it sells
 local MAX_LISTINGS = 80
 
@@ -537,7 +873,8 @@ local function Gone(old, new, cutOld, cutNew)
 end
 P.Gone = Gone
 
-local function Record(item, list, partial)
+-- sum: the sweep's figures to keep with it (false: none; nil: keep the last ones).
+Record = function(item, list, partial, sum)
     table.sort(list, function(a, b) return a[1] < b[1] end)
     local cut = #list > MAX_LISTINGS
     while #list > MAX_LISTINGS do table.remove(list) end
@@ -550,11 +887,22 @@ local function Record(item, list, partial)
             if Num(o.t) and now - o.t <= OBS_KEEP then obs[#obs + 1] = o end
         end
         local gap = Num(prev.t) and now - prev.t
-        if gap and gap > 0 and gap <= OBS_MAX_GAP and not partial and not prev.partial and type(prev.l) == "table" then
+        local swept = type(prev.s) == "table" and prev.s.o and Num(prev.s.t) and prev.s.t > prev.t
+        if gap and gap > 0 and gap <= OBS_MAX_GAP and not partial and not prev.partial and type(prev.l) == "table"
+            and not swept then
             obs[#obs + 1] = { t = now, gone = Gone(prev.l, list, prev.cut, cut), dt = gap }
         end
     end
-    store[item] = { t = now, l = list, partial = partial or nil, cut = cut or nil, obs = #obs > 0 and obs or nil }
+    local s = type(prev) == "table" and type(prev.s) == "table" and prev.s or nil
+    if sum ~= nil then s = sum or nil end
+    local sm, sq
+    if s and Num(s.t) and now - s.t <= SUMMARY_MATCH then sm, sq = s.p, s.q end
+    local lots = type(prev) == "table" and prev.lots or nil
+    for _, e in ipairs(list) do
+        if e[3] then lots = true end
+    end
+    store[item] = { t = now, l = list, partial = partial or nil, cut = cut or nil, obs = #obs > 0 and obs or nil,
+        s = s, sm = sm, sq = sq, lots = lots }
 end
 P.Record = Record
 
@@ -699,6 +1047,7 @@ function P.OnEvent(event, a)
     elseif event == "AUCTION_HOUSE_CLOSED" then
         local was = scan.active
         scan.open, scan.queue, scan.pending = false, {}, nil
+        if scan.sweep and not scan.sweep.done then scan.sweep.done = true end
         if was then Finish() else ns.Changed() end
     elseif event == "AUCTION_HOUSE_THROTTLED_SYSTEM_READY" then
         if scan.active and not scan.pending then Pump() end
@@ -715,13 +1064,15 @@ function P.OnEvent(event, a)
             local list, partial
             if commodity then list, partial = ReadCommodity(item) else list, partial = ReadItems(a) end
             Record(item, list, partial)
-            ns.Changed()
+            ns.PricesChanged()
         end
         if ours then
             scan.pending = nil
             scan.done = scan.done + 1
             Pump()
         end
+    elseif event == "AUCTION_HOUSE_BROWSE_RESULTS_UPDATED" or event == "AUCTION_HOUSE_BROWSE_RESULTS_ADDED" then
+        P.OnBrowse(event, a)
     elseif event == "GET_ITEM_INFO_RECEIVED" then
         ns.ChangedSoon()
     end
@@ -730,6 +1081,7 @@ end
 function P.Forget()
     ns.db.ah[P.RealmKey()] = {}
     ns.db.vendor = {}
+    if type(ns.db.swept) == "table" then ns.db.swept[P.RealmKey()] = nil end
     ns.Changed()
     ns.Print("Forgot every auction and vendor price on this realm.")
 end
@@ -739,9 +1091,14 @@ function P.Summary()
     local store = AHStore()
     local n, newest = 0, nil
     for _, rec in pairs(store) do
-        if type(rec) == "table" and Num(rec.t) then
-            n = n + 1
-            if not newest or rec.t > newest then newest = rec.t end
+        if type(rec) == "table" then
+            local t = Num(rec.t)
+            local s = type(rec.s) == "table" and Num(rec.s.t) and (Num(rec.s.q) or 0) > 0 and rec.s.t
+            if s and (not t or s > t) then t = s end
+            if t and (Num(rec.t) or s) then
+                n = n + 1
+                if not newest or t > newest then newest = t end
+            end
         end
     end
     return n, newest and (ns.Clock() - newest) or nil
@@ -749,7 +1106,8 @@ end
 
 function P.Debug()
     local n, age = P.Summary()
-    ns.Print(("auction prices: %d items on %s, newest %s; scanning %s (%d of %d), auction house %s")
-        :format(n, P.RealmKey(), age and ns.Age(age) or "never", scan.active and "yes" or "no", scan.done, scan.total,
-            scan.open and "open" or "closed"))
+    local swept = P.SweptAt()
+    ns.Print(("auction prices: %d items on %s, newest %s; last whole sweep %s; scanning %s (%s, %d of %d), auction house %s")
+        :format(n, P.RealmKey(), age and ns.Age(age) or "never", swept and ns.Age(ns.Clock() - swept) or "never",
+            scan.active and "yes" or "no", scan.phase or "-", scan.done, scan.total, scan.open and "open" or "closed"))
 end

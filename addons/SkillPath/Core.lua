@@ -2,7 +2,7 @@
 local ADDON, ns = ...
 
 ns.ADDON = ADDON
-ns.VERSION = "1.4.0"
+ns.VERSION = "1.5.0"
 ns.NAME = "SkillPath"
 ns.ICON = "Interface\\Icons\\INV_Misc_Note_01"
 
@@ -226,6 +226,18 @@ function ns.Plan()
 end
 
 local refreshQueued = false
+-- Redraws the window with the path it has: for news that doesn't change the path (the scan's
+-- progress), so a long path isn't rebuilt for nothing.
+function ns.Redraw()
+    if refreshQueued then return end
+    refreshQueued = true
+    ns.After(0.2, function()
+        refreshQueued = false
+        if ns.UI and ns.UI.IsShown() then ns.UI.Update() end
+        if ns.Kit then ns.Kit.Sync() end
+    end)
+end
+
 function ns.Changed()
     plan = nil
     if ns.Prices then ns.Prices.Invalidate() end
@@ -235,6 +247,20 @@ function ns.Changed()
         refreshQueued = false
         if ns.UI and ns.UI.IsShown() then ns.UI.Update() end
         if ns.Kit then ns.Kit.Sync() end
+    end)
+end
+
+-- New auction prices. While a scan runs, the path is rebuilt at most every few seconds (a rebuild
+-- can take a good part of a second on a long path); the scan's end rebuilds it at once.
+local PRICE_EVERY = 3
+local priceQueued = false
+function ns.PricesChanged()
+    if not (ns.Prices and ns.Prices.IsScanning()) then return ns.Changed() end
+    if priceQueued then return end
+    priceQueued = true
+    ns.After(PRICE_EVERY, function()
+        priceQueued = false
+        ns.Changed()
     end)
 end
 
@@ -631,6 +657,7 @@ local EVENTS = { "PLAYER_LOGIN", "TRADE_SKILL_SHOW", "TRADE_SKILL_LIST_UPDATE", 
     "TRADE_SKILL_CLOSE", "SKILL_LINES_CHANGED", "CHAT_MSG_SKILL", "NEW_RECIPE_LEARNED", "BAG_UPDATE_DELAYED",
     "MERCHANT_SHOW", "TRAINER_SHOW", "TRAINER_UPDATE", "AUCTION_HOUSE_SHOW", "AUCTION_HOUSE_CLOSED", "AUCTION_HOUSE_THROTTLED_SYSTEM_READY",
     "ITEM_SEARCH_RESULTS_UPDATED", "COMMODITY_SEARCH_RESULTS_UPDATED", "GET_ITEM_INFO_RECEIVED",
+    "AUCTION_HOUSE_BROWSE_RESULTS_UPDATED", "AUCTION_HOUSE_BROWSE_RESULTS_ADDED",
     "CHAT_MSG_WHISPER_INFORM", "CHAT_MSG_PARTY", "CHAT_MSG_PARTY_LEADER", "ADDON_ACTION_BLOCKED" }
 for _, event in ipairs(EVENTS) do pcall(frame.RegisterEvent, frame, event) end
 

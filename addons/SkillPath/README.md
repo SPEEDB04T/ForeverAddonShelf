@@ -47,16 +47,23 @@ The table comes from the Forever recipe tables of the addon What's Training? by 
 
 ## At the auction house
 
-A SkillPath tab sits after the game's tabs. It shows the whole path as the professions tab does: every step on the left, the picked step on the right, the buy step first. On the buy and sell steps, click an item to search for it on the Buy tab. "Scan prices" reads every reagent's price now.
+A SkillPath tab sits after the game's tabs. It shows the whole path as the professions tab does: every step on the left, the picked step on the right, the buy step first. On the buy and sell steps, click an item to search for it on the Buy tab. "Scan prices" reads the auction house now.
 
-The addon also scans when you open the auction house: a few seconds later, one search at a time, only when the game allows the next search. When another addon (Slutmog Scout, Slutmog Shop) is searching, it waits until they have been quiet for a few seconds. Reagents a vendor sells, bound reagents and prices from the last half hour are skipped.
+The addon also scans when you open the auction house, a few seconds later:
+
+1. **One read of everything.** A browse search with nothing typed (what the auction house's own search bar sends), in pages, gives every item's cheapest price and how many are listed. An item that isn't in it isn't listed. Opened again within 5 minutes, this read is skipped.
+2. **Searches for the path only.** Then it searches what the path buys or sells, one search at a time, only when the game allows the next one, and only items whose cheapest price or count changed since their last search. The path is rebuilt with the new prices and whatever it uses now is searched too (three rounds at most). That is a handful of searches, where the old scan searched every reagent and result of every recipe.
+
+Bound reagents are skipped, and so are reagents a vendor sells unless the read shows them cheaper. When another addon (Slutmog Scout, Slutmog Shop) is searching, it waits until they have been quiet for a few seconds. Searches you or other addons make on the Buy tab are read too. While a scan runs the path is rebuilt at most every 3 seconds.
+
+On a client without the browse search, it falls back to searching every reagent one at a time, skipping prices from the last half hour.
 
 ## Where the numbers come from
 
 - **Recipes, colours and reagents** come from the game's professions window, read each time you open the profession. Nothing comes from a written guide.
 - **The yellow and grey levels** come from the client's own recipe table (`Data.lua`, built from the game files of build 1.60.1.70938). Each time you open the profession the addon checks them against the colours the game shows. A recipe that doesn't match is used only at your current skill and only while the game shows it orange, and the path says how many didn't match.
 - **The chance** a craft gives a point: orange always; yellow and green (grey level - skill) / (grey level - yellow level); grey never.
-- **Prices:** what you hold is free (bank too, unless you turn that off). Then the cheapest auction listings: per unit for reagents sold by the unit, the cheapest set of whole lots for the rest. Then the vendor price: the one you saw at a vendor, or the item's vendor price from the game's data. Your own auctions are left out. Items bound on pickup have no price: you farm or make them.
+- **Prices:** what you hold is free (bank too, unless you turn that off). Then the cheapest auction listings: per unit for reagents sold by the unit, the cheapest set of whole lots for the rest. Then the vendor price: the one you saw at a vendor, or the item's vendor price from the game's data. Your own auctions are left out. Items bound on pickup have no price: you farm or make them. An item the path doesn't search is priced from the read of the whole auction house, at its cheapest price, and the step says "cheapest only". An item SkillPath has never seen takes Auctionator's last price when Auctionator is installed, and the step says so and how old it is.
 - **Old prices:** an auction price older than 3 hours (adjustable) is still used, and the step says it is old.
 - **No price:** a reagent with no price isn't in the cost, and the path says which and why.
 - **Made reagents:** a reagent the path can craft itself is crafted when that is cheaper than buying it, and the step says "Make first".
@@ -65,7 +72,7 @@ The addon also scans when you open the auction house: a few seconds later, one s
 - **Trainer skills and fees** come from the addon's own table (see "The trainer"), then from each trainer's list once you have opened it.
 - **Recipes that come with a profession** are marked in the client's recipe table, so a plan for someone else knows what a beginner has.
 - **Selling what is left:** leftovers count at their vendor sell price, so the path can pick a recipe whose result sells back for more.
-- **Auction house resale (on unless you turn it off):** leftovers can count at the cheapest auction price after the 5% cut, but only as many as were seen to sell. The auction house shows listings, never sales, so the addon compares scans of the item: units listed at one scan and gone at the next were bought, cancelled or ran out, which is the most that can have sold. That rate per day, times "Days of sales to count" (3), is how many count at the auction price; the rest count at the vendor price. Until an item has 4 hours of scans behind it (kept for a week), it counts at the vendor price. With the option on, the scan also reads what your recipes make.
+- **Auction house resale (on unless you turn it off):** leftovers can count at the cheapest auction price after the 5% cut, but only as many as were seen to sell. The auction house shows listings, never sales, so the addon compares scans of the item: units listed at one scan and gone at the next were bought, cancelled or ran out, which is the most that can have sold. Between two reads of the whole auction house, the drop in how many are listed counts the same way, so results the path doesn't search still learn how fast they sell (not for items sold in lots). That rate per day, times "Days of sales to count" (3), is how many count at the auction price; the rest count at the vendor price. Until an item has 4 hours of scans behind it (kept for a week), it counts at the vendor price. With the option on, the scan also reads what your recipes make.
 
 ## Commands
 
@@ -73,7 +80,7 @@ The addon also scans when you open the auction house: a few seconds later, one s
 |---|---|
 | `/skillpath` or `/spath` | Open the SkillPath tab in whichever of the two windows is open. With neither open, the path in chat. |
 | `/skillpath print` | The path in chat. |
-| `/skillpath scan` | Scan every reagent's price (at the auction house). |
+| `/skillpath scan` | Read the whole auction house, then search what the path uses (at the auction house). |
 | `/skillpath target <skill>` | Where the open profession's path stops, up to 300; 0 is your rank's cap, or the next rank's once you are at it. |
 | `/skillpath for <profession> <from> <to>` | A plan for someone else, like `/skillpath for engineering 75 225`. `/skillpath for me` goes back. |
 | `/skillpath guide` | The written plan in a window, to copy. |
@@ -87,7 +94,7 @@ The addon also scans when you open the auction house: a few seconds later, one s
 ## Works with
 
 - **ForeverCore:** the tab joins its column of profession tabs. Without it, SkillPath adds its own tab under the game's.
-- **Auctionator** (or any addon that carries LibAHTab): the auction house tab lines up with theirs. Without it, SkillPath adds its own tab after the game's.
+- **Auctionator** (or any addon that carries LibAHTab): the auction house tab lines up with theirs. Without it, SkillPath adds its own tab after the game's. Auctionator's last prices also stand in for items SkillPath hasn't seen yet.
 
 ## Tests
 
