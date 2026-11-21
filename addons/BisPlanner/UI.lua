@@ -21,6 +21,7 @@ local ROW_H = 41
 local STAT_H = 24
 local ROW_HIGHLIGHT = "Interface\\QuestFrame\\UI-QuestTitleHighlight"
 local NEW_POPUP, DELETE_POPUP = "BISPLANNER_NEW_PROFILE", "BISPLANNER_DELETE_PROFILE"
+local SPEC_POPUP = "BISPLANNER_SPEC_WEIGHTS"
 
 local frame
 local planRows, statBoxes = {}, {}
@@ -164,6 +165,15 @@ local function EnsurePopups()
         button1 = YES or "Yes",
         button2 = NO or "No",
         OnAccept = function(_, name) ns.DeleteProfile(name) end,
+        timeout = 0,
+        whileDead = true,
+        hideOnEscape = true,
+    }
+    StaticPopupDialogs[SPEC_POPUP] = {
+        text = "Replace the weights in \"%s\" with the %s defaults? Your goals stay.",
+        button1 = YES or "Yes",
+        button2 = NO or "No",
+        OnAccept = function(_, spec) ns.ApplySpec(spec) end,
         timeout = 0,
         whileDead = true,
         hideOnEscape = true,
@@ -395,6 +405,54 @@ local function StatBox(row, kind, key, x)
     return box
 end
 
+-- The spec defaults menu: your class's specs; one fills the set in use with its weights.
+function UI.PickSpec(spec)
+    local profile = ns.Profile()
+    if not next(profile.weights) then
+        ns.ApplySpec(spec)
+        return
+    end
+    EnsurePopups()
+    if type(StaticPopup_Show) == "function" and type(StaticPopupDialogs) == "table" and StaticPopupDialogs[SPEC_POPUP] then
+        StaticPopup_Show(SPEC_POPUP, ns.char.profile, spec.name, spec)
+    else
+        ns.ApplySpec(spec)
+    end
+end
+
+local function SpecTip(tooltip, spec)
+    if type(tooltip) ~= "table" or type(tooltip.SetText) ~= "function" then return end
+    tooltip:SetText(spec.name, Color(HIGHLIGHT_FONT_COLOR, 1, 1, 1))
+    tooltip:AddLine(spec.cap, 1, 0.82, 0, true)
+    tooltip:AddLine("Weights from " .. spec.source .. ".", Color(GRAY_FONT_COLOR, 0.5, 0.5, 0.5))
+end
+
+local function BuildSpecs(page)
+    local dd = FromTemplate("DropdownButton", page, "WowStyle1DropdownTemplate")
+    if dd and type(dd.SetupMenu) == "function" then
+        dd:SetWidth(150)
+        dd:SetPoint("TOPLEFT", page, "TOPLEFT", 10, -4)
+        if type(dd.SetDefaultText) == "function" then dd:SetDefaultText("Spec defaults") end
+        dd:SetupMenu(function(_, root)
+            if type(root.CreateTitle) == "function" then root:CreateTitle("Fill the weights for") end
+            for _, spec in ipairs(ns.Specs()) do
+                local button = root:CreateButton(spec.name, function() UI.PickSpec(spec) end)
+                if type(button) == "table" and type(button.SetTooltip) == "function" then
+                    button:SetTooltip(function(tooltip) SpecTip(tooltip, spec) end)
+                end
+            end
+        end)
+    else
+        if dd then dd:Hide() end
+        dd = Button(page, "Spec defaults", 110)
+        dd:SetPoint("TOPLEFT", page, "TOPLEFT", 10, -4)
+        dd:SetScript("OnClick", function() ns.ListSpecs() end)
+    end
+    OnHover(dd, "Spec defaults", "Fills the weights of the set in use with your spec's. Its goals stay.",
+        "From sixtysim.com's Forever simulations (17 November 2026); the tanks' are estimates.")
+    frame.specs = dd
+end
+
 local function BuildWeights(page)
     local weightCap = Text(page, "GameFontNormalSmall")
     weightCap:SetPoint("TOPRIGHT", page, "TOPRIGHT", -102, -8)
@@ -406,15 +464,16 @@ local function BuildWeights(page)
     goalCap:SetWidth(60)
     goalCap:SetJustifyH("CENTER")
     goalCap:SetText("At least")
-    local hint = Text(page, "GameFontDisableSmall")
-    hint:SetPoint("TOPLEFT", page, "TOPLEFT", 12, -8)
-    hint:SetPoint("RIGHT", weightCap, "LEFT", -6, 0)
-    hint:SetJustifyH("LEFT")
-    hint:SetText("Points per stat point, and the least you want from gear")
+    BuildSpecs(page)
 
-    local list, content = Scroll(page, 24)
+    local list, content = Scroll(page, 30)
     frame.statList, frame.statContent = list, content
-    local y = 0
+    local hint = Text(content, "GameFontDisableSmall")
+    hint:SetPoint("TOPLEFT", content, "TOPLEFT", 6, -4)
+    hint:SetPoint("TOPRIGHT", content, "TOPRIGHT", -6, -4)
+    hint:SetJustifyH("LEFT")
+    hint:SetText("Weight: points per stat point. At least: the least you want from gear.")
+    local y = 12
     for _, group in ipairs(ns.STAT_GROUPS) do
         local head = Text(content, "GameFontNormal")
         head:SetPoint("TOPLEFT", content, "TOPLEFT", 6, -y - 8)

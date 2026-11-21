@@ -1,3 +1,7 @@
+## 1.4.0
+- Spec defaults: starting weights for every spec of every class, 28 in all (the druid's feral cat and bear apart). Pick yours from Spec defaults on the Weights and goals tab, or type `/bisplan spec fury`. The weights go into the set in use and your goals stay; it asks before replacing weights you already have.
+- The weights are sixtysim.com's Forever simulations of 17 November 2026; the tanks' are our own, survival first. Each spec's tooltip gives its hit cap.
+
 ## 1.3.0
 - No more Ahn'Qiraj, Naxxramas, Molten Core, Blackwing Lair or Zul'Gurub gear: Forever has none of Classic's raids. Their boss loot, tier sets, token rewards, raid faction rewards (Zandalar Tribe, Brood of Nozdormu, Hydraxian Waterlords, the Cenarion Circle's Ahn'Qiraj rewards), Thunderfury, Atiesh, and crafts that need their materials (Core Leather, Fiery Core) are gone from the list: 1,108 items.
 - Forever's own raids (Barrow Deeps, Hyjal Summit, Onyxia's Lair) open on 9 December 2026. Their loot isn't known yet; it joins when the list is rebuilt.

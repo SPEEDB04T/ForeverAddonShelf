@@ -6,7 +6,7 @@
 -- again until a weight, a goal, a filter or your level changes.
 local ADDON, ns = ...
 ns.NAME = "BiS Planner"
-ns.VERSION = "1.3.0"
+ns.VERSION = "1.4.0"
 ns.ICON = "Interface\\Icons\\INV_Chest_Plate04"
 
 local Solver = ns.Solver
@@ -591,7 +591,7 @@ function ns.MakePlan()
     local char = ns.char
     if not (HasAny(weights) or HasAny(goals)) then
         char.plan = nil
-        return nil, "Give at least one stat a weight or a goal first."
+        return nil, "Pick your spec under Spec defaults on the Weights and goals tab, or give a stat a weight or a goal."
     end
     local ctx = Context()
     local pools = Pools(ctx)
@@ -967,7 +967,14 @@ end
 
 local function Help()
     ns.Print("Commands: /bisplan (the window), /bisplan print, /bisplan level <number> (or: /bisplan level auto), "
+        .. "/bisplan spec <name> (your spec's weights), "
         .. "/bisplan unhide (items you left out come back), /bisplan options, /bisplan fetch")
+end
+
+function ns.ListSpecs()
+    local names = {}
+    for _, spec in ipairs(ns.Specs and ns.Specs() or {}) do names[#names + 1] = spec.name end
+    ns.Print("Your specs: " .. table.concat(names, ", ") .. ". /bisplan spec <name> puts its weights in the set in use.")
 end
 
 local function Slash(msg)
@@ -987,6 +994,14 @@ local function Slash(msg)
             ns.Print("Planning for your own level.")
         else
             Help()
+        end
+    elseif cmd == "spec" then
+        local spec = ns.FindSpec(rest)
+        if spec then
+            ns.ApplySpec(spec)
+            ns.Print(("The weights in \"%s\" are now %s's. %s"):format(ns.char.profile, spec.name, spec.cap))
+        else
+            ns.ListSpecs()
         end
     elseif cmd == "unhide" then
         local n = ns.BringBack()

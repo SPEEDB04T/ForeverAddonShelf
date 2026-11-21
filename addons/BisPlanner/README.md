@@ -13,6 +13,14 @@ On the **Weights and goals** tab every stat has two boxes:
 
 Goals count what the gear gives, not your own base stats or talents.
 
+### Spec defaults
+
+Don't know what a stat is worth? **Spec defaults**, at the top of the tab, lists your class's specs; pick one and its weights go into the set in use (your goals stay). If the set has weights already, it asks first. `/bisplan spec fury` does the same.
+
+The weights come from [sixtysim.com](https://sixtysim.com)'s Forever simulations (17 November 2026: one boss for one minute, on its own gear). Sixtysim calls them beta numbers until people reach 60, so expect them to move. The tanks' weights (Protection warrior and paladin, the bear) are ours: sixtysim weighs tanks for damage and threat only and gives defense and dodge less than nothing, and a tank wants to stay alive first. Stamina is their unit; defense, dodge and parry come next.
+
+Hit is worth its weight only up to its cap: 8% (80 hit) for weapons, 17% (170 hit) for spells, less what your talents give. The planner doesn't know caps, so set **Hit, at least** to what you still need when your gear can reach it, and lower the hit weight once you're there. Hover a spec in the menu for its cap.
+
 Hit, critical strike and haste are in the points the items carry (at level 60, 10 hit or 14 critical strike is 1%). Weapon damage has three stats of its own: main hand, off hand and ranged damage per second.
 
 Keep more than one set of weights: **New** copies the one in use under a name you give it. Sets are shared by all your characters; which one is in use is per character.
@@ -50,6 +58,7 @@ Item tooltips get a line: "In your plan: Head", or how the item scores against t
 - `/bisplan`: the window
 - `/bisplan print`: the plan in your chat window
 - `/bisplan level 40`, `/bisplan level auto`
+- `/bisplan spec <name>`: your spec's weights (`/bisplan spec` lists them)
 - `/bisplan unhide`: items you left out may be used again
 - `/bisplan options`
 - `/bisplan fetch`: see below
