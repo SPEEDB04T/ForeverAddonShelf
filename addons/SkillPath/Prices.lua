@@ -888,7 +888,8 @@ Record = function(item, list, partial, sum)
             if Num(o.t) and now - o.t <= OBS_KEEP then obs[#obs + 1] = o end
         end
         local gap = Num(prev.t) and now - prev.t
-        local swept = type(prev.s) == "table" and prev.s.o and Num(prev.s.t) and prev.s.t > prev.t
+        -- A record the sweep made has no search of its own yet (no t, no l).
+        local swept = type(prev.s) == "table" and prev.s.o and Num(prev.s.t) and gap and prev.s.t > prev.t
         if gap and gap > 0 and gap <= OBS_MAX_GAP and not partial and not prev.partial and type(prev.l) == "table"
             and not swept then
             obs[#obs + 1] = { t = now, gone = Gone(prev.l, list, prev.cut, cut), dt = gap }
@@ -1062,10 +1063,15 @@ function P.OnEvent(event, a)
         if not (ours or recent) then scan.lastForeign = now end
         -- Results are facts whoever asked: keep them for reagents the guide uses.
         if ours or recent or Watched()[item] then
-            local list, partial
-            if commodity then list, partial = ReadCommodity(item) else list, partial = ReadItems(a) end
-            Record(item, list, partial)
-            ns.PricesChanged()
+            local function Keep()
+                local list, partial
+                if commodity then list, partial = ReadCommodity(item) else list, partial = ReadItems(a) end
+                Record(item, list, partial)
+                ns.PricesChanged()
+            end
+            -- A fault in one item's results is reported, and the scan goes on to the next.
+            local report = ours and geterrorhandler and geterrorhandler()
+            if report then xpcall(Keep, report) else Keep() end
         end
         if ours then
             scan.pending = nil

@@ -1,3 +1,7 @@
+## 1.6.1
+- Fixed the scan stopping partway. Once an item had been seen in two reads of the whole auction house without a search of its own, a search for it raised an error (`Prices.lua:890: attempt to compare nil with number`), and each such item stalled the scan until its search timed out.
+- If one item's results ever fail to be kept again, the error is still reported and the scan goes on to the next item.
+
 ## 1.6.0
 - The path goes all the way to 300 unless you set a target of your own. Before, it stopped at your rank's cap (225 in Expert), so nothing after the next trainer visit showed until you got there. Now the rank is a trainer step where the cap is in the way ("Trainer at skill 225: train Artisan (cap 300, 5g)"), and the steps after it say what the next rank needs and what it costs. `/skillpath target 225` (or the Target skill slider) still stops it at the cap.
 - Long paths build faster: 1.3 s down to 0.7 s for a whole path from skill 20, about a third less for the rest, with the same steps. The checks for whether a learned recipe pays now keep the path as it is up to that recipe's first use instead of building it all again.
