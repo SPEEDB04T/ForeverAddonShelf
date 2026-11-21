@@ -213,6 +213,13 @@ local function RowEnter(self)
     end
     local item = ns.Item(data.id)
     if not shown and item then GameTooltip:SetText(item.name, QualityColor(item.quality)) end
+    local source = item and ns.SourceText(item)
+    if source then
+        local gr, gg, gb = Color(NORMAL_FONT_COLOR, 1, 0.82, 0)
+        local wr, wg, wb = Color(HIGHLIGHT_FONT_COLOR, 1, 1, 1)
+        GameTooltip:AddLine(" ")
+        GameTooltip:AddDoubleLine("Source", source, gr, gg, gb, wr, wg, wb)
+    end
     if item and item.special then
         GameTooltip:AddLine("Its special effect is not counted.", Color(GRAY_FONT_COLOR, 0.5, 0.5, 0.5))
     end
@@ -225,6 +232,8 @@ local function RowEnter(self)
                 local r, g, b = QualityColor(other.quality)
                 local wr, wg, wb = Color(HIGHLIGHT_FONT_COLOR, 1, 1, 1)
                 GameTooltip:AddDoubleLine(other.name, ns.Number(math.floor(alt.diff * 10 + 0.5) / 10), r, g, b, wr, wg, wb)
+                local from = ns.SourceText(other)
+                if from then GameTooltip:AddLine("    " .. from, Color(GRAY_FONT_COLOR, 0.5, 0.5, 0.5)) end
             end
         end
     end

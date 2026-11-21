@@ -38,7 +38,7 @@ local function Rows()
           tip = "Gear that needs a PvP rank, and Forever's \"Premier\" PvP sets. The plan row names the rank.",
           get = Filter("pvp"), set = SetFilter("pvp") },
         { kind = "check", label = "Raid gear",
-          tip = "Gear from raid bosses, and gear bought with raid tokens. The plan row names the raid and the boss.",
+          tip = "Gear from Forever's raids (Barrow Deeps, Hyjal Summit, Onyxia's Lair; they open on 9 December 2026) and what their tokens buy. Their loot is not known yet, so there is none in the list until it is rebuilt. Classic's raids are not in Forever: their gear is never planned.",
           get = Filter("raid"), set = SetFilter("raid") },
         { kind = "check", label = "Dungeon gear",
           tip = "Gear from the bosses of 5-player dungeons. The plan row names the dungeon and the boss.",

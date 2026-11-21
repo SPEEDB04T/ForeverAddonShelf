@@ -6,7 +6,7 @@
 -- again until a weight, a goal, a filter or your level changes.
 local ADDON, ns = ...
 ns.NAME = "BiS Planner"
-ns.VERSION = "1.2.0"
+ns.VERSION = "1.3.0"
 ns.ICON = "Interface\\Icons\\INV_Chest_Plate04"
 
 local Solver = ns.Solver
@@ -578,7 +578,8 @@ local function Alternatives(list, statKey, weights, lambda, taken, pickedValue)
     end)
     local out = {}
     for i = 1, min(3, #ranked) do
-        out[i] = { id = ranked[i].id, diff = ranked[i].value - pickedValue }
+        -- goals are priced, not exact: one that looks better here would miss a goal in the whole set
+        out[i] = { id = ranked[i].id, diff = min(0, ranked[i].value - pickedValue) }
     end
     return out
 end
@@ -845,10 +846,13 @@ end
 
 local function TooltipLine(tooltip, id)
     if not (ns.db and ns.db.tooltip) or type(id) ~= "number" then return end
-    local verdict = ns.Judge(id)
-    if not verdict then return end
     local gold, white = NORMAL_FONT_COLOR or { r = 1, g = 0.82, b = 0 }, HIGHLIGHT_FONT_COLOR or { r = 1, g = 1, b = 1 }
-    if verdict.inPlan then
+    local item = ns.Item(id)
+    if not item then return end
+    local verdict = ns.Judge(id)
+    if not verdict then
+        -- no plan yet
+    elseif verdict.inPlan then
         tooltip:AddDoubleLine("BiS Planner", "In your plan: " .. verdict.inPlan, gold.r, gold.g, gold.b, white.r, white.g, white.b)
     elseif verdict.other then
         local other = ns.Item(verdict.other.id)
@@ -856,6 +860,10 @@ local function TooltipLine(tooltip, id)
         tooltip:AddDoubleLine("BiS Planner",
             ("%s%s against %s"):format(verdict.diff > 0 and "+" or "", ns.Number(verdict.diff), other and other.name or "your plan"),
             gold.r, gold.g, gold.b, c.r, c.g, c.b)
+    end
+    local source = ns.SourceText(item)
+    if source then
+        tooltip:AddDoubleLine("Source", source, gold.r, gold.g, gold.b, white.r, white.g, white.b)
     end
 end
 ns.TooltipLine = TooltipLine

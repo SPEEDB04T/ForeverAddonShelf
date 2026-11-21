@@ -1,3 +1,9 @@
+## 1.3.0
+- No more Ahn'Qiraj, Naxxramas, Molten Core, Blackwing Lair or Zul'Gurub gear: Forever has none of Classic's raids. Their boss loot, tier sets, token rewards, raid faction rewards (Zandalar Tribe, Brood of Nozdormu, Hydraxian Waterlords, the Cenarion Circle's Ahn'Qiraj rewards), Thunderfury, Atiesh, and crafts that need their materials (Core Leather, Fiery Core) are gone from the list: 1,108 items.
+- Forever's own raids (Barrow Deeps, Hyjal Summit, Onyxia's Lair) open on 9 December 2026. Their loot isn't known yet; it joins when the list is rebuilt.
+- Every item tooltip now has a "Source" line: in the planner, under each next best item, and on items anywhere in the game.
+- Some crafted items said "Crafted: Cooking" or "Crafted: Tailoring" when they weren't crafted at all.
+
 ## 1.2.0
 - Every item now says where it comes from: the raid or dungeon and the boss, the token that buys it, the quest, the vendor, the profession, the faction or the PvP rank. 10,021 of the 10,982 items have one, read from the loot tables of AtlasLoot Classic (Forever edition, with Forever's own dungeons and raids), Forever Dungeon Journal, GearQuest Forever and Questie.
 - Items that bind when picked up and that nothing names a way to get (432) are left out of plans: most of them are not in the game, such as the class bracers cut from Ahn'Qiraj. Options: "Items with no known source" brings them back. Bind-on-equip items with no source may be world drops and stay.
