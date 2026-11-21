@@ -6,7 +6,7 @@
 -- again until a weight, a goal, a filter or your level changes.
 local ADDON, ns = ...
 ns.NAME = "BiS Planner"
-ns.VERSION = "1.0.0"
+ns.VERSION = "1.1.0"
 ns.ICON = "Interface\\Icons\\INV_Chest_Plate04"
 
 local Solver = ns.Solver
@@ -207,7 +207,7 @@ function ns.Player()
     }
 end
 
-local FILTER_DEFAULTS = { maxQuality = 5, crafted = true, pvp = false, rep = true, weapons = "any" }
+local FILTER_DEFAULTS = { maxQuality = 5, crafted = true, pvp = false, rep = true, weapons = "any", armor = "own" }
 
 local function InitDB()
     if type(BisPlannerDB) ~= "table" then BisPlannerDB = {} end
@@ -218,6 +218,15 @@ local function InitDB()
     if type(db.profiles) ~= "table" then db.profiles = {} end
     if type(db.chars) ~= "table" then db.chars = {} end
     local key = CharKey()
+    -- the realm name can be empty before login (1.0.0 saved such a twin): keep the real one
+    if not key:match(" %- $") then
+        for other, value in pairs(db.chars) do
+            if type(value) == "table" and other:match("^(.-) %- $") == key:match("^(.-) %- ") then
+                if type(db.chars[key]) ~= "table" then db.chars[key] = value end
+                db.chars[other] = nil
+            end
+        end
+    end
     if type(db.chars[key]) ~= "table" then db.chars[key] = {} end
     local char = db.chars[key]
     if type(char.excluded) ~= "table" then char.excluded = {} end
@@ -354,9 +363,21 @@ function ns.Usable(item, ctx)
     end
     if item.class == 4 and item.sub >= 1 and item.inv ~= 16 then    -- every class wears cloaks
         local at = ARMOR[ctx.class][item.sub]
-        return at ~= nil and ctx.level >= at
+        if at == nil or ctx.level < at then return false end
+        -- "own": only the heaviest cloth/leather/mail/plate the class wears at that level
+        if item.sub <= 4 and ctx.filters.armor ~= "any" then return item.sub == ns.OwnArmor(ctx.class, ctx.level) end
     end
     return true
+end
+
+-- The heaviest of cloth (1), leather (2), mail (3) and plate (4) a class wears at a level.
+function ns.OwnArmor(class, level)
+    local best = 1
+    for sub = 1, 4 do
+        local at = ARMOR[class][sub]
+        if at and level >= at then best = sub end
+    end
+    return best
 end
 
 ----------------------------------------------------------------------
@@ -754,7 +775,7 @@ function ns.SourceText(item)
             local name = ns.Professions and ns.Professions[tonumber(rest)]
             return name and ("Crafted: " .. name) or "Crafted"
         elseif kind == "p" then
-            return "PvP rank " .. rest
+            return rest == "0" and "PvP gear" or ("PvP rank " .. rest)
         elseif kind == "r" then
             local faction, standing = rest:match("^(%d+)%.(%d+)$")
             local name = ns.Factions and ns.Factions[tonumber(faction)]
@@ -976,7 +997,7 @@ frame:SetScript("OnEvent", function(_, event, a, b)
         InitDB()
         if ns.Options then ns.Options.Init() end
     elseif event == "PLAYER_LOGIN" then
-        if not ns.db then InitDB() end
+        InitDB()        -- again: the realm name is known now
         HookTooltips()
         -- the name and class are known now: bring the saved plan up to date
         After(2, function()

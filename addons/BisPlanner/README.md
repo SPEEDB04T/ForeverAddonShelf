@@ -37,8 +37,9 @@ Item tooltips get a line: "In your plan: Head", or how the item scores against t
 
 `/bisplan options`, or right-click the minimap button.
 
+- **Armor**: "Your class's own" (to begin with) uses only the heaviest armor your class wears at the plan's level: plate for warriors and paladins from 40, mail for hunters and shamans from 40, leather for rogues and druids, cloth for the rest. "Any you can wear" adds the lighter kinds, such as leather on a warrior.
 - **Best quality**: leave out epics, or everything above uncommon.
-- **Crafted gear**, **Reputation gear**, **PvP rank gear** (off to begin with).
+- **Crafted gear**, **Reputation gear**, **PvP gear** (off to begin with: gear that needs a PvP rank, and Forever's "Premier" PvP sets).
 - **Hands**: any, two-handed only, or one-handed only. **Weapons in the off hand** for classes that dual wield.
 - The tooltip line and the minimap button.
 
@@ -53,11 +54,14 @@ Item tooltips get a line: "In your plan: Head", or how the item scores against t
 
 ## What it knows and what it doesn't
 
-The item list (11,350 items) is built from the game's own tables for Forever 1.60.1, and checked against GearQuest's stats: 98.5% of the items both know agree on every stat.
+The item list (10,982 items) is built from the game's own tables for Forever 1.60.1, and checked against GearQuest's stats: 98% of the items both know agree on every stat.
+
+- **Left out as not in Forever**: Season of Discovery items (Forever's tables carry some of them, the game doesn't), Forever's level-30 copies of raid items, and developer items.
+- **Class sets**: tier 3 and dungeon sets 1 and 2 have no class limit in the tables; the planner gives each set to its own class. (The game lets other classes wear dungeon set 1.)
 
 - **Not counted**: set bonuses, "chance on hit" and "use" effects (the tooltip in the planner says so for such an item), random-suffix items ("of the Bear"), enchants.
 - **Where items come from**: the game's tables name professions, factions and PvP ranks. They do not say which boss, dungeon or raid drops an item, so the planner can't leave out raid gear by itself: right-click what you won't get, or lower the best quality.
 - **Items without a level**: many quest rewards need no level to wear. The planner counts them from about the level their quest comes up ("Around level 33").
 - **Weapon damage** is within about 1.5% of the tooltip's.
-- **Unseen items**: about 5,900 item numbers in the game's tables have never been sent to the computer the list was built on, so they are not in the list. `/bisplan fetch` asks the game for them (a few minutes). They join the list when it is next rebuilt, which happens outside the game (`tools/BisPlanner/build_db.py` in the addon's source).
+- **Unseen items**: about 1,700 item numbers in the game's tables have never been sent to the computer the list was built on, so they are not in the list. `/bisplan fetch` asks the game for them (a few minutes). They join the list when it is next rebuilt, which happens outside the game (`tools/BisPlanner/build_db.py` in the addon's source).
 - The class rules (who wears plate, who uses which weapons) are Classic's.
