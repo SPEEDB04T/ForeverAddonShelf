@@ -5,7 +5,10 @@
 -- for damage, three minutes for healers. In one minute a healer never runs out of mana, so
 -- intellect, spirit and mana per 5 look worthless and haste (one more cast before the kill) tops
 -- the list; three minutes is the longest fight sixtysim runs, and there mana runs out first.
--- Shamans get no mana from spirit while casting, so sixtysim gives it no row for them.
+-- Sixtysim's Restoration shaman page has no spirit at all: it leaves out Mindfulness (half your
+-- spirit's mana goes on while you cast; Mobalytics, Conquest Capped, EZG). Its spirit weight is
+-- ours: a point of spirit gives 0.125 mana a second (sixtysim's priest page), 0.625 mana per 5,
+-- half of it while casting and all of it between casts; about a third of a point of mana per 5.
 -- Sixtysim calls them beta data until level 60 opens. The tanks' weights are estimates of ours:
 -- sixtysim weighs tanks for threat only (it gives defense and dodge less than nothing), and a tank
 -- wants to live first.
@@ -73,7 +76,7 @@ ns.SPECS = {
           w = { ap = 1, str = 2.2, agi = 1.75, int = 1.93, hit = 2.11, crit = 2.91, haste = 3.1, expertise = 3.87,
                 mdps = 13.7, dmg = 1.48, spNature = 0.64 } },
         { name = "Restoration", source = SIXTYSIM, cap = "Hit does nothing for healing. Weighed for a three-minute fight, where mana runs out.",
-          w = { heal = 1, int = 2.39, crit = 1.07, haste = 0.5, mp5 = 2.2 } },
+          w = { heal = 1, int = 2.39, spi = 0.75, crit = 1.07, haste = 0.5, mp5 = 2.2 } },
     },
     MAGE = {
         { name = "Arcane", source = SIXTYSIM, cap = SPELL_CAP,

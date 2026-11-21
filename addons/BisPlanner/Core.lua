@@ -6,7 +6,7 @@
 -- again until a weight, a goal, a filter or your level changes.
 local ADDON, ns = ...
 ns.NAME = "BiS Planner"
-ns.VERSION = "1.4.1"
+ns.VERSION = "1.4.2"
 ns.ICON = "Interface\\Icons\\INV_Chest_Plate04"
 
 local Solver = ns.Solver
