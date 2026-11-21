@@ -2,7 +2,7 @@
 local ADDON, ns = ...
 
 ns.ADDON = ADDON
-ns.VERSION = "1.5.0"
+ns.VERSION = "1.6.0"
 ns.NAME = "SkillPath"
 ns.ICON = "Interface\\Icons\\INV_Misc_Note_01"
 
@@ -596,14 +596,14 @@ local function Slash(msg)
         if ns.Order() then
             ns.Print("The plan for someone else has its own range: /skillpath for <profession> <from> <to>.")
         elseif not (n and n >= 0 and n <= math.max(ns.Planner.TOP, prof and prof.max or 0)) then
-            ns.Print(("Usage: /skillpath target <skill>, up to %d (0: your rank's cap)"):format(ns.Planner.TOP))
+            ns.Print(("Usage: /skillpath target <skill>, up to %d (0: as far as it goes)"):format(ns.Planner.TOP))
         elseif not (prof and line) then
             ns.Print("Open a profession first: each has its own target.")
         else
             n = math.floor(n)
             ns.db.targets[line] = n > 0 and n or nil
             ns.Changed()
-            ns.Print(n == 0 and ("%s target: your rank's cap."):format(prof.name)
+            ns.Print(n == 0 and ("%s target: as far as it goes."):format(prof.name)
                 or ("%s target: skill %d."):format(prof.name, n))
         end
     elseif cmd == "for" then

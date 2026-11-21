@@ -14,8 +14,10 @@ local _, ns = ...
 local Pl = {}
 ns.Planner = Pl
 
+local Mmax, Mmin, Mabs = math.max, math.min, math.abs     -- hot: called millions of times
 local EPS = 1e-9
 local MAX_DEPTH = 3       -- a reagent made from a reagent made from a reagent
+local NONE = {}
 local MAX_TESTS = 24      -- learned recipes tried without, to see whether learning them pays
 local RANK_STEP = 75      -- each trainer rank raises the cap by this much
 local TOP_RANK = 300      -- the last rank's cap: no trainer raises it further
@@ -46,13 +48,13 @@ end
 -- hold (H left), what earlier steps made and nothing used yet (M left), and the market.
 -- Returns the units from each, and the units this craft already had to buy.
 local function Split(ctx, sup, item, a, k)
-    local H = math.max(0, sup.have - (ctx.haveUsed[item] or 0))
-    local M = math.max(0, (ctx.made[item] or 0) - (ctx.madeUsed[item] or 0))
+    local H = Mmax(0, sup.have - (ctx.haveUsed[item] or 0))
+    local M = Mmax(0, (ctx.made[item] or 0) - (ctx.madeUsed[item] or 0))
     local b = a + k
-    local fromH = math.max(0, math.min(b, H) - math.min(a, H))
-    local fromM = math.max(0, math.min(b, H + M) - math.max(a, H))
-    local buy = math.max(0, b - math.max(a, H + M))
-    local before = math.max(0, a - (H + M))
+    local fromH = Mmax(0, Mmin(b, H) - Mmin(a, H))
+    local fromM = Mmax(0, Mmin(b, H + M) - Mmax(a, H))
+    local buy = Mmax(0, b - Mmax(a, H + M))
+    local before = Mmax(0, a - (H + M))
     return fromH, fromM, buy, before, H, M
 end
 
@@ -92,8 +94,8 @@ local function Stock(ctx, pend, item, n)
     end
     local given = 0
     if fromM > EPS then
-        local left = M - math.max(0, math.min(a - H, M))
-        given = Value(ctx, item, left) - Value(ctx, item, math.max(0, left - fromM))
+        local left = M - Mmax(0, Mmin(a - H, M))
+        given = Value(ctx, item, left) - Value(ctx, item, Mmax(0, left - fromM))
     end
     return c, given, sup, buy
 end
@@ -277,7 +279,7 @@ function Pl.Spare(var, k3, k4, tail)
     local sd = math.sqrt(var)
     local g1, g2 = (k3 or 0) / (sd * var), (k4 or 0) / (var * var)
     local w = z + (z * z - 1) * g1 / 6 + (z ^ 3 - 3 * z) * g2 / 24 - (2 * z ^ 3 - 5 * z) * g1 * g1 / 36
-    return sd * math.max(w, z)
+    return sd * Mmax(w, z)
 end
 
 -- Takes a chosen source out of the supply; `subs` collects the recipes crafted for their output.
@@ -318,7 +320,7 @@ local function Leftovers(ctx)
     for item, made in pairs(ctx.made) do
         -- Whole units, counted the way the steps count them (an expected 34.9 is 35 made).
         local used = ctx.madeUsed[item] or 0
-        local left = math.max(0, math.ceil(made - 0.05) - math.max(0, math.ceil(used - 0.05)))
+        local left = Mmax(0, math.ceil(made - 0.05) - Mmax(0, math.ceil(used - 0.05)))
         if left >= 1 then
             local value = Value(ctx, item, left)
             back = back + value
@@ -326,7 +328,7 @@ local function Leftovers(ctx)
         end
     end
     table.sort(list, function(a, b)
-        if math.abs(a.value - b.value) > EPS then return a.value > b.value end
+        if Mabs(a.value - b.value) > EPS then return a.value > b.value end
         return a.item < b.item
     end)
     return list, back
@@ -346,7 +348,7 @@ local function AtSkill(ctx, r, s, limit)
     if chance <= 0 then return nil end
     local orange = chance >= 1 and (not r.trust or s + ctx.offset < r.y)
     if orange then
-        return 1, math.max(1, math.min(r.ups or 1, limit - s)), 1, true
+        return 1, Mmax(1, Mmin(r.ups or 1, limit - s)), 1, true
     end
     return chance, 1, 1 / chance, false
 end
@@ -383,11 +385,11 @@ local function Ready(ctx, r) return (r.known or ctx.learned[r.id]) and 0 or 1 en
 -- On a tie the recipe of the point before wins (one step instead of two), then one already known.
 local function Better(ctx, a, b)
     if not b then return true end
-    if math.abs(a.perPoint - b.perPoint) > 0.5 then return a.perPoint < b.perPoint end
+    if Mabs(a.perPoint - b.perPoint) > 0.5 then return a.perPoint < b.perPoint end
     if (a.r == ctx.prev) ~= (b.r == ctx.prev) then return a.r == ctx.prev end
     local ra, rb = Ready(ctx, a.r), Ready(ctx, b.r)
     if ra ~= rb then return ra < rb end
-    if math.abs(a.craftsPerPoint - b.craftsPerPoint) > EPS then return a.craftsPerPoint < b.craftsPerPoint end
+    if Mabs(a.craftsPerPoint - b.craftsPerPoint) > EPS then return a.craftsPerPoint < b.craftsPerPoint end
     return a.r.id < b.r.id
 end
 
@@ -396,8 +398,8 @@ local function BetterUnpriced(ctx, a, b)
     if (a.r == ctx.prev) ~= (b.r == ctx.prev) then return a.r == ctx.prev end
     local ra, rb = Ready(ctx, a.r), Ready(ctx, b.r)
     if ra ~= rb then return ra < rb end
-    if math.abs(a.craftsPerPoint - b.craftsPerPoint) > EPS then return a.craftsPerPoint < b.craftsPerPoint end
-    if math.abs(a.perPoint - b.perPoint) > 0.5 then return a.perPoint < b.perPoint end
+    if Mabs(a.craftsPerPoint - b.craftsPerPoint) > EPS then return a.craftsPerPoint < b.craftsPerPoint end
+    if Mabs(a.perPoint - b.perPoint) > 0.5 then return a.perPoint < b.perPoint end
     return a.r.id < b.r.id
 end
 
@@ -442,7 +444,9 @@ local function Unread(ctx, candidates, s, limit)
     if pick then return { r = pick, at = ctx.learn[pick.id].at } end
 end
 
-local function Build(args, banned)
+-- replay, upto: the points of a path built with the same recipes except one first used at skill
+-- `upto`; until there they are taken as they are instead of weighing every recipe again.
+local function Build(args, banned, replay, upto)
     local ctx = {
         offset = args.offset or 0, seenSkill = args.seenSkill or args.skill,
         supply = args.supply, marginal = args.marginal, value = args.value,
@@ -508,10 +512,16 @@ local function Build(args, banned)
             step.rank = cap
             plan.steps[#plan.steps + 1] = step
         end
-        local limit = math.min(cap, args.target)
+        local limit = Mmin(cap, args.target)
         local best, bestUnpriced
         local unpriced = {}
-        for _, r in ipairs(candidates) do
+        local skip = false
+        local again = replay and s < upto and replay[#plan.points + 1]
+        if again and again.s == s and again.pick then
+            best, unpriced = again.pick, {}
+            skip = true
+        end
+        for _, r in ipairs(skip and NONE or candidates) do
             if Usable(ctx, r, s) then
                 local chance, gain, crafts, orange = AtSkill(ctx, r, s, limit)
                 if chance then
@@ -539,8 +549,8 @@ local function Build(args, banned)
             break
         end
         -- Recipes that might be cheaper but have a reagent with no price.
-        local alts
-        if best then
+        local alts = skip and again.alts or nil
+        if best and not skip then
             for _, c in ipairs(unpriced) do
                 if c.perPoint < best.perPoint - 0.5 then
                     alts = alts or {}
@@ -557,7 +567,7 @@ local function Build(args, banned)
         local point = { s = s, to = s + pick.gain, r = pick.r, chance = pick.chance, gain = pick.gain,
             crafts = pick.crafts, orange = pick.orange, cost = pick.priced and pick.cost or nil, known = pick.cost,
             priced = pick.priced, missing = pick.missing, stale = pick.stale, alts = alts, subs = subs, per = per,
-            credit = pick.extra.credit, given = pick.extra.given, net = pick.priced and pick.net or nil }
+            credit = pick.extra.credit, given = pick.extra.given, net = pick.priced and pick.net or nil, pick = pick }
         plan.points[#plan.points + 1] = point
         plan.total = plan.total + pick.cost
         if not pick.priced then
@@ -728,7 +738,8 @@ function Pl.Build(args)
             tested[id] = true
             tests = tests + 1
             banned[id] = true
-            local other = Build(args, banned)
+            -- Before its first use the path doesn't change: only what comes after is built again.
+            local other = Build(args, banned, plan.points, l.at)
             if NotWorse(other, plan) then
                 plan = other
                 again = true
@@ -760,25 +771,25 @@ function Pl.Shopping(plan)
     for item, need in pairs(plan.used) do
         if need > EPS and (ctx.var[item] or 0) > EPS then risky = risky + 1 end
     end
-    local tail = SPARE_SHORT / math.max(1, risky)
+    local tail = SPARE_SHORT / Mmax(1, risky)
     for item, need in pairs(plan.used) do
         if need > EPS then
             local sup = ctx.supply(item)
             local bought = ctx.bought[item] or 0
-            local buy = math.max(0, math.ceil(bought - 1e-6))
+            local buy = Mmax(0, math.ceil(bought - 1e-6))
             local cost = Prices.Cost(sup, buy)
             local e = { item = item, need = need, have = sup.have, made = plan.made[item] or 0, buy = buy, cost = cost,
                 stale = sup.stale and sup.listed > 0 and buy > 0 }
             -- What you have past the average need, and the rounding up to whole units, are spare already.
             local over = Pl.Spare(ctx.var[item], k3[item], k4[item], tail)
-            local slack = math.max(0, (sup.have or 0) - (ctx.haveUsed[item] or 0)) + (buy - bought)
-            local spare = math.max(0, math.ceil(over - slack - 1e-6))
+            local slack = Mmax(0, (sup.have or 0) - (ctx.haveUsed[item] or 0)) + (buy - bought)
+            local spare = Mmax(0, math.ceil(over - slack - 1e-6))
             local n = buy > 0 and buy or spare
             if n > 0 then
                 local fromAH = sup.listed > 0
                 if fromAH and sup.vendor then
                     -- A vendor's price is the ceiling: listings above it were left out.
-                    local ah = math.min(n, sup.listed)
+                    local ah = Mmin(n, sup.listed)
                     e.from = ah >= n and "auction house" or "auction house and vendor"
                 elseif fromAH then
                     e.from = "auction house"
@@ -857,8 +868,8 @@ function Pl.Options(plan, prof, limit)
                 for s = plan.gapAt, plan.to - 1 do
                     if Try(s, plan.to) then
                         o.covers = o.covers + 1
-                        o.from = o.from and math.min(o.from, s) or s
-                        o.to = math.max(o.to or 0, s + 1)
+                        o.from = o.from and Mmin(o.from, s) or s
+                        o.to = Mmax(o.to or 0, s + 1)
                     end
                 end
             end
@@ -867,7 +878,7 @@ function Pl.Options(plan, prof, limit)
     end
     table.sort(out, function(a, b)
         if a.covers ~= b.covers then return a.covers > b.covers end
-        if math.abs(a.saving - b.saving) >= 1 then return a.saving > b.saving end
+        if Mabs(a.saving - b.saving) >= 1 then return a.saving > b.saving end
         return a.r.id < b.r.id
     end)
     while #out > (limit or 5) do table.remove(out) end
@@ -877,7 +888,7 @@ end
 ----------------------------------------------------------------------
 -- The path for a saved profession or for someone else, with its notes
 ----------------------------------------------------------------------
--- The target of a profession: its own (/skillpath target), else the rank's cap.
+-- The target of a profession: its own (/skillpath target); 0 is as far as it goes.
 function Pl.Target(line)
     local targets = ns.db and ns.db.targets
     return type(targets) == "table" and ns.Num(targets[line]) or 0
@@ -941,12 +952,11 @@ function Pl.ForProfession(prof)
     local ceiling = R.Ceiling(prof.line)
     local skill, max = prof.skill or 0, prof.max or prof.skill or 0
     -- As far as the profession goes: the last rank's cap, or the highest grey of its recipes.
-    local top = math.max(max, TOP_RANK)
+    local top = Mmax(max, TOP_RANK)
     if ceiling > 0 and ceiling < top then top = ceiling end
     local own = Pl.Target(prof.line)
-    local target = own > 0 and own or max
-    -- At the rank's cap with no target of your own: on through the next rank, the trainer first.
-    if own == 0 and skill >= max then target = max + RANK_STEP end
+    -- No target of your own: as far as the profession goes, through every rank still to train.
+    local target = own > 0 and own or top
     local capped = false
     if target > top then target, capped = top, true end
     local base = { ok = false, name = prof.name, from = skill, to = target, max = max, prof = prof, line = prof.line }
@@ -1000,7 +1010,7 @@ end
 
 -- The rank cap someone at this skill has at least: 75, 150, 225...
 function Pl.CapAt(skill)
-    return math.max(1, math.ceil(math.max(skill, 1) / RANK_STEP)) * RANK_STEP
+    return Mmax(1, math.ceil(Mmax(skill, 1) / RANK_STEP)) * RANK_STEP
 end
 
 -- A path for someone else: order = { line, from, to }. No recipe is known, nothing is in the

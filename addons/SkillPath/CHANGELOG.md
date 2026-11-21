@@ -1,3 +1,7 @@
+## 1.6.0
+- The path goes all the way to 300 unless you set a target of your own. Before, it stopped at your rank's cap (225 in Expert), so nothing after the next trainer visit showed until you got there. Now the rank is a trainer step where the cap is in the way ("Trainer at skill 225: train Artisan (cap 300, 5g)"), and the steps after it say what the next rank needs and what it costs. `/skillpath target 225` (or the Target skill slider) still stops it at the cap.
+- Long paths build faster: 1.3 s down to 0.7 s for a whole path from skill 20, about a third less for the rest, with the same steps. The checks for whether a learned recipe pays now keep the path as it is up to that recipe's first use instead of building it all again.
+
 ## 1.5.0
 - Much faster at the auction house. The scan used to search every reagent and every result of every recipe of your professions, one item at a time, about a second and a half each: over 1,200 searches with a few professions. Now it reads the whole auction house with one browse search (the same search the auction house's own search bar sends with nothing typed), then searches only what the path itself buys or sells, and only the items whose cheapest price or count changed since their last search. On real saved data that is 0 to 33 searches instead of 629 to 1,275.
 - An item that isn't in a whole read of the auction house counts as not listed, with no search of its own.

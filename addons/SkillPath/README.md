@@ -11,7 +11,7 @@ The path is one numbered list, the same on both tabs and in chat:
 3. **Trainer** steps, where the path needs them: "Trainer at skill 97: learn Copper Modulator", with the fee, and "train Journeyman (cap 150, 5s)" where your rank's cap is in the way. A recipe taught by a recipe item is a "buy and learn" step.
 4. **Sell what's left.** What the path makes and no later step uses, where each goes (auction house, vendor, or no sale and why) and what it brings.
 
-Every step shows what it costs.
+Every step shows what it costs. Unless you set a target of your own (`/skillpath target`), the path goes as far as the profession goes, 300: at each rank's cap a trainer step says where to train the next rank and what it costs, and the steps after it show what that rank needs.
 
 ## In the professions window
 
@@ -81,7 +81,7 @@ On a client without the browse search, it falls back to searching every reagent 
 | `/skillpath` or `/spath` | Open the SkillPath tab in whichever of the two windows is open. With neither open, the path in chat. |
 | `/skillpath print` | The path in chat. |
 | `/skillpath scan` | Read the whole auction house, then search what the path uses (at the auction house). |
-| `/skillpath target <skill>` | Where the open profession's path stops, up to 300; 0 is your rank's cap, or the next rank's once you are at it. |
+| `/skillpath target <skill>` | Where the open profession's path stops, up to 300; 0 (the default) is as far as it goes, through every rank still to train. |
 | `/skillpath for <profession> <from> <to>` | A plan for someone else, like `/skillpath for engineering 75 225`. `/skillpath for me` goes back. |
 | `/skillpath guide` | The written plan in a window, to copy. |
 | `/skillpath send <player>` | Whisper the plan. `send party` posts it to your party, `send next` sends the next lines where the game wants a click, `send stop` ends it. |

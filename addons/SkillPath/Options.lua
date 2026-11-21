@@ -19,10 +19,10 @@ local function Rows()
     return {
         { kind = "header", text = "Path" },
         { kind = "slider", label = "Target skill", min = 0, max = 300, step = 5,
-          format = function(value) return value == 0 and "your rank's cap" or tostring(value) end,
-          tip = "Where the path of the profession you opened last stops; each profession has its own. 0: your "
-              .. "rank's cap, or the next rank's once you are at it. Past the cap, the path says where to train "
-              .. "the next rank. Same as /skillpath target <skill>.",
+          format = function(value) return value == 0 and "as far as it goes" or tostring(value) end,
+          tip = "Where the path of the profession you opened last stops; each profession has its own. 0: as far "
+              .. "as the profession goes (300), through every rank still to train: at each rank's cap the path says "
+              .. "where to train the next rank. Same as /skillpath target <skill>.",
           get = function()
               local _, line = ns.Profession()
               return line and ns.Planner.Target(line) or 0

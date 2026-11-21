@@ -12,6 +12,7 @@
 -- game's throttle and backs off while another addon (Slutmog Scout, Slutmog Shop) is searching.
 -- Auctionator's last prices (when it is loaded) stand in for items this addon has never seen.
 local ADDON, ns = ...
+local Mmax, Mmin, Mfloor = math.max, math.min, math.floor   -- hot in the planner
 local P = {}
 ns.Prices = P
 
@@ -131,7 +132,7 @@ function P.Supply(item)
         sup.ah, sup.age, sup.summary = { t = sum.t, l = { { sum.p, sum.q } } }, now - sum.t, true
     elseif ladder then
         sup.ah = rec
-        sup.age = now - (same and math.max(rec.t, sum.t) or rec.t)
+        sup.age = now - (same and Mmax(rec.t, sum.t) or rec.t)
     elseif not sum then
         local price, at = P.Auctionator(item)
         local swept = P.SweptAt()
@@ -164,7 +165,7 @@ function P.Supply(item)
         -- The cheapest way to get at least x units out of whole lots alone (0/1 cover).
         local cap = 0
         for _, lot in ipairs(lots) do cap = cap + lot.q end
-        cap = math.min(cap, LOT_CAP)
+        cap = Mmin(cap, LOT_CAP)
         local best = { [0] = 0 }
         for x = 1, cap do best[x] = math.huge end
         for _, lot in ipairs(lots) do
@@ -203,7 +204,7 @@ local function Divisible(sup, k)
     end
     local lo, hi = 1, n
     while lo < hi do
-        local mid = math.floor((lo + hi) / 2)
+        local mid = Mfloor((lo + hi) / 2)
         if U[mid] >= k then hi = mid else lo = mid + 1 end
     end
     return (K[lo - 1] or 0) + segs[lo].u * (k - (U[lo - 1] or 0))
@@ -216,7 +217,7 @@ local function Whole(sup, x)
     if memo ~= nil then return memo or nil end
     local best
     if sup.lotBest then
-        for j = 0, math.min(x, sup.lotCap) do
+        for j = 0, Mmin(x, sup.lotCap) do
             local fromLots = sup.lotBest[j]
             if fromLots < math.huge then
                 local rest = Divisible(sup, x - j)
@@ -233,7 +234,7 @@ end
 -- Cost of x units bought, x may be fractional (an expected count): between the whole numbers.
 function P.Cost(sup, x)
     if x <= 1e-9 then return 0 end
-    local low = math.floor(x)
+    local low = Mfloor(x)
     local frac = x - low
     local a = Whole(sup, low)
     if frac < 1e-9 then return a end
@@ -249,7 +250,7 @@ function P.Marginal(sup, used, k, extra)
     local before = used - free
     local after = used + k - free
     if after <= 1e-9 then return 0 end
-    local a = P.Cost(sup, math.max(0, before))
+    local a = P.Cost(sup, Mmax(0, before))
     local b = P.Cost(sup, after)
     if not (a and b) then return nil end
     return b - a
@@ -607,7 +608,7 @@ local function KeepSummary(rec, p, q, own, now)
             for _, o in ipairs(type(rec.obs) == "table" and rec.obs or {}) do
                 if Num(o.t) and now - o.t <= OBS_KEEP then obs[#obs + 1] = o end
             end
-            local gone, last = math.max(0, baseQ - q), obs[#obs]
+            local gone, last = Mmax(0, baseQ - q), obs[#obs]
             if gap < OBS_JOIN and last and last.t == baseT and Num(last.gone) and Num(last.dt) then
                 -- Looked again a moment later (the Buy tab's pages): one longer look, not many short ones.
                 last.t, last.gone, last.dt = now, last.gone + gone, last.dt + gap
@@ -832,8 +833,8 @@ local MAX_LISTINGS = 80
 --     again lower.
 local function Gone(old, new, cutOld, cutNew)
     local top = math.huge
-    if cutOld and old[#old] then top = math.min(top, old[#old][1]) end
-    if cutNew and new[#new] then top = math.min(top, new[#new][1]) end
+    if cutOld and old[#old] then top = Mmin(top, old[#old][1]) end
+    if cutNew and new[#new] then top = Mmin(top, new[#new][1]) end
     local function Key(e) return e[3] and (e[1] .. ":" .. e[2] .. ":" .. tostring(e[4])) or tostring(e[1]) end
     local now, lowest = {}, math.huge
     for _, e in ipairs(old) do
@@ -865,11 +866,11 @@ local function Gone(old, new, cutOld, cutNew)
     local gone = 0
     for _, k in ipairs(levels) do
         local b = before[k]
-        local stay = math.min(b.n, now[k] or 0)
+        local stay = Mmin(b.n, now[k] or 0)
         gone = gone + (b.n - stay) * b.per
         if stay > 0 then break end
     end
-    return math.max(0, gone - relisted)
+    return Mmax(0, gone - relisted)
 end
 P.Gone = Gone
 
@@ -984,7 +985,7 @@ function P.Resale(item)
                     res.why = ("none sold in %.0f h of scans"):format(hours)
                 else
                     res.ah = net
-                    res.cap = math.floor(perDay * (Num(ns.db.sellDays) or 3))
+                    res.cap = Mfloor(perDay * (Num(ns.db.sellDays) or 3))
                     if res.cap <= 0 then
                         res.ah = nil
                         res.why = ("about %.1f a day sell, less than one in %d days"):format(perDay, ns.db.sellDays or 3)
@@ -1003,7 +1004,7 @@ function P.ValueOf(item, n)
     local res = P.Resale(item)
     local vendor = res.vendor or 0
     if res.ah then
-        local atAH = math.min(n, res.cap)
+        local atAH = Mmin(n, res.cap)
         return atAH * res.ah + (n - atAH) * vendor
     end
     return n * vendor
@@ -1016,7 +1017,7 @@ function P.SellPlan(item, n)
     local plan = { item = item, n = n, none = 0, value = 0, res = res, why = res.why }
     local rest = n
     if res.ah and res.cap > 0 then
-        local atAH = math.min(rest, res.cap)
+        local atAH = Mmin(rest, res.cap)
         plan.ah = { n = atAH, each = res.ah }
         plan.value = plan.value + atAH * res.ah
         rest = rest - atAH
