@@ -6,7 +6,7 @@
 -- again until a weight, a goal, a filter or your level changes.
 local ADDON, ns = ...
 ns.NAME = "BiS Planner"
-ns.VERSION = "1.1.0"
+ns.VERSION = "1.2.0"
 ns.ICON = "Interface\\Icons\\INV_Chest_Plate04"
 
 local Solver = ns.Solver
@@ -126,14 +126,20 @@ local RANGED_SLOT = { [15] = true, [25] = true, [26] = true, [28] = true }
 local items = {}
 
 local function ParseItem(id, line)
-    local name, inv, class, sub, level, ilvl, quality, flags, mask, stats, source =
-        line:match("^(.-)|(%d+)|(%d+)|(%d+)|(%d+)|(%d+)|(%d+)|(%a*)|(%d*)|([^|]*)|([^|]*)$")
+    local name, inv, class, sub, level, ilvl, quality, flags, mask, stats, source, where =
+        line:match("^(.-)|(%d+)|(%d+)|(%d+)|(%d+)|(%d+)|(%d+)|(%a*)|(%d*)|([^|]*)|([^|]*)|([^|]*)$")
     if not name then return false end
     local item = {
         id = id, name = name, inv = tonumber(inv), class = tonumber(class), sub = tonumber(sub),
         level = tonumber(level), ilvl = tonumber(ilvl), quality = tonumber(quality),
         mask = tonumber(mask), source = source ~= "" and source or nil, stats = {},
     }
+    -- where it drops or who gives it, as AtlasLoot, DungeonJournal or GearQuest name it
+    local place = ns.Places and ns.Places[tonumber(where) or 0]
+    if place then
+        item.placeKind, item.place = place:match("^(%a)|(.*)$")
+    end
+    item.questie = where == "q"
     -- Quest rewards often need no level to wear: plan them for about when their quest comes up.
     if item.level <= 1 and item.ilvl > 10 then
         item.level = item.ilvl - 8
@@ -207,7 +213,8 @@ function ns.Player()
     }
 end
 
-local FILTER_DEFAULTS = { maxQuality = 5, crafted = true, pvp = false, rep = true, weapons = "any", armor = "own" }
+local FILTER_DEFAULTS = { maxQuality = 5, crafted = true, pvp = false, rep = true, weapons = "any", armor = "own",
+    raid = true, dungeon = true, unsourced = false }
 
 local function InitDB()
     if type(BisPlannerDB) ~= "table" then BisPlannerDB = {} end
@@ -357,6 +364,13 @@ function ns.Usable(item, ctx)
         if kind == "c" and not ctx.filters.crafted then return false end
         if kind == "p" and not ctx.filters.pvp then return false end
         if kind == "r" and not ctx.filters.rep then return false end
+    end
+    if item.placeKind == "R" and ctx.filters.raid == false then return false end
+    if item.placeKind == "D" and ctx.filters.dungeon == false then return false end
+    -- bound when picked up, and nothing installed when the list was built names a way to get it:
+    -- most likely not in the game. (Bind-on-equip ones may be world drops: they stay.)
+    if ns.HasSources() and not ctx.filters.unsourced and not item.boe and not source and not item.place and not item.questie then
+        return false
     end
     if item.class == 2 then
         return WEAPONS[ctx.class][item.sub] == true
@@ -767,6 +781,11 @@ local function QuestieSource(id)
     end
 end
 
+-- false when the item list was built without any source data (then nothing is left out for it)
+function ns.HasSources()
+    return ns.Places ~= nil and ns.Places[1] ~= nil
+end
+
 function ns.SourceText(item)
     local source = item.source
     if source then
@@ -784,6 +803,7 @@ function ns.SourceText(item)
             return name and ("Reputation: " .. name) or "Reputation reward"
         end
     end
+    if item.place then return item.place end
     local found = QuestieSource(item.id)
     if found then return found end
     if item.boe then return "Binds when equipped" end

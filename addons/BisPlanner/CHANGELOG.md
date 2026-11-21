@@ -1,3 +1,8 @@
+## 1.2.0
+- Every item now says where it comes from: the raid or dungeon and the boss, the token that buys it, the quest, the vendor, the profession, the faction or the PvP rank. 10,021 of the 10,982 items have one, read from the loot tables of AtlasLoot Classic (Forever edition, with Forever's own dungeons and raids), Forever Dungeon Journal, GearQuest Forever and Questie.
+- Items that bind when picked up and that nothing names a way to get (432) are left out of plans: most of them are not in the game, such as the class bracers cut from Ahn'Qiraj. Options: "Items with no known source" brings them back. Bind-on-equip items with no source may be world drops and stay.
+- New options: Raid gear and Dungeon gear, both on to begin with. Turn raid gear off to plan with what you can get outside raids; it includes what raid tokens buy.
+
 ## 1.1.0
 - Plans no longer pick gear that isn't in Forever: Season of Discovery items (the Five Thunders, Feralheart and other tier 0.5 epics), level-30 copies of raid items such as Thunderfury and Sulfuras, and developer items ([TMP], OLD, Hidden, Template) are gone from the list.
 - Plans no longer pick another class's set: every tier 3 piece is its own class's (a shaman got Cryptstalker, a mage Plagueheart), and so are dungeon sets 1 and 2. Each Atiesh is for its own class.

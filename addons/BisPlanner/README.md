@@ -19,7 +19,7 @@ Keep more than one set of weights: **New** copies the one in use under a name yo
 
 ## The plan
 
-The **Plan** tab lists one item per slot, with the level it needs and where it comes from when that is known: the profession that makes it, the faction and standing, the PvP rank, or "Binds when equipped". With Questie installed, quest rewards, drops and vendors are named too.
+The **Plan** tab lists one item per slot, with the level it needs and where it comes from: the raid or dungeon and the boss ("Molten Core: Magmadar"), the token it is bought with ("From Desecrated Robe"), the quest, the vendor, the profession that makes it, the faction and standing, or the PvP rank.
 
 - Hover a row for the item's tooltip and the **next best** items for that slot, with how much they lose.
 - **Right-click** a row to leave that item out (you'll never get it, or don't want it). The plan fills the slot again. `/bisplan unhide` brings every left-out item back.
@@ -40,6 +40,8 @@ Item tooltips get a line: "In your plan: Head", or how the item scores against t
 - **Armor**: "Your class's own" (to begin with) uses only the heaviest armor your class wears at the plan's level: plate for warriors and paladins from 40, mail for hunters and shamans from 40, leather for rogues and druids, cloth for the rest. "Any you can wear" adds the lighter kinds, such as leather on a warrior.
 - **Best quality**: leave out epics, or everything above uncommon.
 - **Crafted gear**, **Reputation gear**, **PvP gear** (off to begin with: gear that needs a PvP rank, and Forever's "Premier" PvP sets).
+- **Raid gear** and **Dungeon gear**: turn raid gear off to plan with what you can get outside raids. Raid gear includes what raid tokens buy.
+- **Items with no known source** (off to begin with): items that bind when picked up and that no loot table names a way to get. Most of them are not in the game (cut items such as the class bracers from Ahn'Qiraj). Bind-on-equip items with no source may be world drops, so they stay either way and their row says "Binds when equipped".
 - **Hands**: any, two-handed only, or one-handed only. **Weapons in the off hand** for classes that dual wield.
 - The tooltip line and the minimap button.
 
@@ -60,7 +62,7 @@ The item list (10,982 items) is built from the game's own tables for Forever 1.6
 - **Class sets**: tier 3 and dungeon sets 1 and 2 have no class limit in the tables; the planner gives each set to its own class. (The game lets other classes wear dungeon set 1.)
 
 - **Not counted**: set bonuses, "chance on hit" and "use" effects (the tooltip in the planner says so for such an item), random-suffix items ("of the Bear"), enchants.
-- **Where items come from**: the game's tables name professions, factions and PvP ranks. They do not say which boss, dungeon or raid drops an item, so the planner can't leave out raid gear by itself: right-click what you won't get, or lower the best quality.
+- **Where items come from**: the game's tables name professions, factions and PvP ranks. Bosses, dungeons, raids, quests, vendors and tokens come from the loot tables of AtlasLoot Classic (its Forever edition, with Forever's own dungeons and raids), Forever Dungeon Journal, GearQuest Forever and Questie, read when the list is built. 10,021 of the 10,982 items have one. Of the rest, 432 bind when picked up and are left out; 529 bind when equipped and stay as possible world drops. The planner does not need those addons in the game.
 - **Items without a level**: many quest rewards need no level to wear. The planner counts them from about the level their quest comes up ("Around level 33").
 - **Weapon damage** is within about 1.5% of the tooltip's.
 - **Unseen items**: about 1,700 item numbers in the game's tables have never been sent to the computer the list was built on, so they are not in the list. `/bisplan fetch` asks the game for them (a few minutes). They join the list when it is next rebuilt, which happens outside the game (`tools/BisPlanner/build_db.py` in the addon's source).
