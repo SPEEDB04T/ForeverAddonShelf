@@ -1,3 +1,9 @@
+## 1.7.0
+- Tools: a recipe that needs something in your bags (a runed rod for enchanting, the Blacksmith Hammer, the Arclight Spanner, the Gyromatic Micro-Adjustor, the Philosopher's Stone, a Mining Pick, Flint and Tinder) now gets it on the path before its first craft: bought, or made where making it is cheaper or the path makes it anyway. It is kept for the steps after, never counted as a leftover to sell, and a tool already in your bags costs nothing. A "Tool:" step says what it is and which recipe needs it; the craft step lists it under "Tools (not used up)". A tool with no price yet is still on the list, marked "no price".
+- The plan no longer changes after you buy what it listed. What you hold used to count as free, so once the list was in your bags the path could spend those reagents on a different, worse recipe and list new things to buy. What you hold still costs no gold, but is now weighed at what buying it again would cost, so the path with the list bought is the path you bought it for.
+- The game currently gives no realm name. Prices were kept under a blank realm, so the ones scanned before went unused. SkillPath now knows the realm by its number (from the first load with a name, or the only realm you have prices for) and merges what was kept meanwhile back into it.
+- Your plan will shift once after this update (tools on the path, and the older prices back), then stay put.
+
 ## 1.6.1
 - Fixed the scan stopping partway. Once an item had been seen in two reads of the whole auction house without a search of its own, a search for it raised an error (`Prices.lua:890: attempt to compare nil with number`), and each such item stalled the scan until its search timed out.
 - If one item's results ever fail to be kept again, the error is still reported and the scan goes on to the next item.

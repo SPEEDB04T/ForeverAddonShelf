@@ -9,9 +9,10 @@ The path is one numbered list, the same on both tabs and in chat:
 1. **Buy reagents.** What to buy and how many, after what you already hold.
 2. **Craft.** "35 x Bolt of Linen Cloth, skill 1 to 34", one step per recipe. "About" means some crafts may not give a point, so the count is the expected one.
 3. **Trainer** steps, where the path needs them: "Trainer at skill 97: learn Copper Modulator", with the fee, and "train Journeyman (cap 150, 5s)" where your rank's cap is in the way. A recipe taught by a recipe item is a "buy and learn" step.
-4. **Sell what's left.** What the path makes and no later step uses, where each goes (auction house, vendor, or no sale and why) and what it brings.
+4. **Tools.** "Tool: Runed Copper Rod, at skill 1", where a recipe needs something in your bags that crafting doesn't use up (a rod, a hammer, a spanner). Bought or made right before its first craft, kept after.
+5. **Sell what's left.** What the path makes and no later step uses, where each goes (auction house, vendor, or no sale and why) and what it brings.
 
-Every step shows what it costs. Unless you set a target of your own (`/skillpath target`), the path goes as far as the profession goes, 300: at each rank's cap a trainer step says where to train the next rank and what it costs, and the steps after it show what that rank needs.
+Every step shows what it costs. What you already hold costs no gold, but the path counts it at what buying it again would cost, so buying the list doesn't change the path. Unless you set a target of your own (`/skillpath target`), the path goes as far as the profession goes, 300: at each rank's cap a trainer step says where to train the next rank and what it costs, and the steps after it show what that rank needs.
 
 ## In the professions window
 

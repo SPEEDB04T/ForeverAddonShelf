@@ -23,6 +23,19 @@ end
 ----------------------------------------------------------------------
 local parsed = {}
 
+-- A tool a recipe needs in the bags and doesn't use up: { key, items = every item that serves,
+-- the plainest first }. One table per tool, shared by every recipe that needs it.
+local needs = {}
+local function Need(key)
+    local need = needs[key]
+    if need then return need end
+    local id = tonumber(key:sub(2))
+    local items = key:sub(1, 1) == "k" and ns.Data and ns.Data.TOOLS and ns.Data.TOOLS[id] or { id }
+    need = { key = key, items = items }
+    needs[key] = need
+    return need
+end
+
 -- The skill line a profession ID belongs to (a profession tier maps to its line).
 function R.Line(id)
     id = Num(id)
@@ -49,6 +62,10 @@ function R.Rows(line)
                 if out then row.out, row.outQty = tonumber(out), tonumber(qty) end
                 local ability = rest:match("!(%d+)")
                 if ability then row.ability = tonumber(ability) end
+                for one, id in rest:gmatch("%^(#?)(%d+)") do
+                    row.tools = row.tools or {}
+                    row.tools[#row.tools + 1] = Need((one == "#" and "i" or "k") .. id)
+                end
                 local reagents = rest:match("=([%d%*,]+)")
                 if reagents then
                     row.slots = {}
@@ -62,6 +79,12 @@ function R.Rows(line)
     end
     parsed[line] = rows
     return rows
+end
+
+-- The tools a recipe needs in the bags (nil: none, or a recipe Data.lua doesn't have).
+function R.Tools(line, id)
+    local row = R.Rows(line)[id]
+    return row and row.tools
 end
 
 -- Data.lua's trainer table for a line: [recipe] = { at = skill, fee = copper (nil: not known) }.

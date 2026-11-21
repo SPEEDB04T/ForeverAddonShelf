@@ -4,11 +4,15 @@
 --     from the recipe's yellow and grey levels: (grey - skill) / (grey - yellow));
 --   * what its reagents cost at that point of the path: what you hold first, then what earlier
 --     steps made, then auction listings cheapest first, a vendor when that is cheaper, or
---     crafting the reagent with another recipe when that beats buying it;
+--     crafting the reagent with another recipe when that beats buying it. What you hold costs no
+--     gold, but it is weighed at what buying it again would cost: spent on one step, a later step
+--     has to buy it. So the path you shopped for stays the path once the reagents are in your bags;
 --   * what its result gives back: used by a later step, or sold.
 -- Recipes that aren't known are used from the skill they can be learned at (the trainer's list
 -- once it was read, a recipe item with a price), and the path says when to learn them.
 -- A recipe whose levels the game didn't confirm is only used where the game itself shows it orange.
+-- A recipe that needs a tool in the bags (a Runed Copper Rod, a Blacksmith Hammer) gets it first:
+-- bought, or made, and kept for the steps after.
 -- A path for someone else starts with no recipe known and nothing in the bags.
 local _, ns = ...
 local Pl = {}
@@ -79,6 +83,15 @@ local function Undo(pend, log, mark)
     end
 end
 
+-- What k of your own units are worth to the path, `start` of them used already: what buying them
+-- again would cost (the listings they stand for, cheapest first), or what they would sell for
+-- when they can't be bought. `left`: your units not used yet.
+local function Held(ctx, sup, item, start, k, left)
+    local c = ctx.marginal(sup, start, k, -sup.have)
+    if c then return c end
+    return Value(ctx, item, left) - Value(ctx, item, Mmax(0, left - k))
+end
+
 -- n units of an item from what is held, what earlier steps made, and what can be bought.
 -- Returns the cost (nil: they can't be had), what the made units used would have sold for, the
 -- supply, and how many are bought. Units bought earlier in the path stay bought: the next ones
@@ -86,13 +99,17 @@ end
 local function Stock(ctx, pend, item, n)
     local sup = ctx.supply(item)
     local a = pend[item] or 0
-    local _, fromM, buy, before, H, M = Split(ctx, sup, item, a, n)
+    local fromH, fromM, buy, before, H, M = Split(ctx, sup, item, a, n)
     local c = 0
     if buy > EPS then
         c = ctx.marginal(sup, (ctx.bought[item] or 0) + before + sup.have, buy, 0)
         if not c then return nil, 0, sup, buy end
     end
     local given = 0
+    if fromH > EPS then
+        local mine = Mmin(a, H)
+        given = Held(ctx, sup, item, (ctx.haveUsed[item] or 0) + mine, fromH, H - mine)
+    end
     if fromM > EPS then
         local left = M - Mmax(0, Mmin(a - H, M))
         given = Value(ctx, item, left) - Value(ctx, item, Mmax(0, left - fromM))
@@ -196,7 +213,8 @@ end
 -- Returns cost (gold for the priced reagents), whether every reagent is priced, the item chosen
 -- for each slot, the missing items (with the reason), the items priced from an old scan, and
 -- `extra`: credit (what selling this craft's output would give back), given (what made items it
--- uses would have sold for) and parts[slot] (how each reagent is had).
+-- uses would have sold for, and what your own units it uses are worth) and parts[slot] (how each
+-- reagent is had).
 local function CraftCost(ctx, r, crafts, s)
     local cost, priced = 0, true
     local choice, missing, stale = {}, nil, nil
@@ -239,8 +257,12 @@ Pl.CraftCost = CraftCost
 
 -- Takes n units of an item out of the supply: your own first, then what the path made, then bought.
 local function Use(ctx, item, n)
-    local fromH, fromM, buy = Split(ctx, ctx.supply(item), item, 0, n)
-    if fromH > 0 then ctx.haveUsed[item] = (ctx.haveUsed[item] or 0) + fromH end
+    local sup = ctx.supply(item)
+    local fromH, fromM, buy, _, H = Split(ctx, sup, item, 0, n)
+    if fromH > 0 then
+        ctx.held = ctx.held + Held(ctx, sup, item, ctx.haveUsed[item] or 0, fromH, H)
+        ctx.haveUsed[item] = (ctx.haveUsed[item] or 0) + fromH
+    end
     if fromM > 0 then ctx.madeUsed[item] = (ctx.madeUsed[item] or 0) + fromM end
     if buy > 0 then ctx.bought[item] = (ctx.bought[item] or 0) + buy end
     ctx.used[item] = (ctx.used[item] or 0) + n
@@ -427,6 +449,154 @@ local function Learn(ctx, plan, r, s)
     return true
 end
 
+-- What a step takes: per reagent the units, and how many of them are bought or made first.
+local function AddUses(step, r, crafts, choice, parts)
+    for i, slot in ipairs(r.slots or {}) do
+        local part = parts[i]
+        local item = choice[i]
+        if item then
+            local u = step.uses[item]
+            if not u then
+                u = { item = item, n = 0, buy = 0, made = 0 }
+                step.uses[item] = u
+            end
+            u.n = u.n + slot.qty * crafts
+            if part then
+                u.buy = u.buy + (part.buy or 0)
+                u.made = u.made + (part.n - part.stock)
+            else
+                u.noPrice = true
+            end
+        end
+    end
+end
+
+local function AddSubs(step, subs)
+    for _, sub in ipairs(subs) do
+        local e = step.subs[sub.r.id]
+        if not e then
+            e = { r = sub.r, crafts = 0, item = sub.item, n = 0 }
+            step.subs[sub.r.id] = e
+        end
+        e.crafts, e.n = e.crafts + sub.crafts, e.n + sub.n
+    end
+end
+
+----------------------------------------------------------------------
+-- Tools: what a recipe needs in the bags and doesn't use up
+----------------------------------------------------------------------
+-- need = { key, items } (every item that serves, the plainest first). The item the path has for
+-- it and how: kept (got for an earlier step), held (in your bags) or made (an earlier step made
+-- one and nothing used it). nil when it has none.
+local function HasTool(ctx, need)
+    for _, item in ipairs(need.items) do
+        if (ctx.kept[item] or 0) > 0 then return item, "kept" end
+    end
+    for _, item in ipairs(need.items) do
+        if ctx.supply(item).have - (ctx.haveUsed[item] or 0) >= 1 - EPS then return item, "held" end
+        if (ctx.made[item] or 0) - (ctx.madeUsed[item] or 0) >= 1 - EPS then return item, "made" end
+    end
+end
+
+-- The cheapest way to one that serves at skill s: bought, or made with a recipe the path can use
+-- then (and what that recipe needs in turn, a level or two down). When none has a price: nil, and
+-- the way the guide names instead (the first recipe that makes one, else the plainest to buy),
+-- with unpriced = true and what has no price.
+-- { need, item, how = "buy" or "make", cost (with what it needs), own (this item alone), gold
+-- (what this item alone spends, without what your own reagents are worth), and for make: r,
+-- crafts, choice, extra, stale, tools (what it needs first) }
+local GetTool
+GetTool = function(ctx, need, s, depth)
+    local best, fallback
+    for _, item in ipairs(need.items) do
+        local c = Stock(ctx, {}, item, 1)
+        if c and (not best or c < best.cost - 0.5) then
+            best = { need = need, item = item, how = "buy", cost = c, own = c, gold = c }
+        end
+        for _, q in ipairs(ctx.makers[item] or NONE) do
+            if Usable(ctx, q, s) and not q.currency then
+                local crafts = 1 / q.outQty
+                local cost, priced, choice, missing, stale, extra = CraftCost(ctx, q, crafts, s)
+                local total = priced and cost + extra.given or nil
+                local first
+                for _, more in ipairs(total and ctx.needs[q.id] or NONE) do
+                    if not HasTool(ctx, more) then
+                        local g = depth < 2 and not ctx.banned[more.key] and GetTool(ctx, more, s, depth + 1)
+                        if not g then
+                            total = nil
+                            break
+                        end
+                        first = first or {}
+                        first[#first + 1] = g
+                        total = total + g.cost
+                    end
+                end
+                if total and (not best or total < best.cost - 0.5) then
+                    best = { need = need, item = item, how = "make", r = q, crafts = crafts, cost = total,
+                        own = cost + extra.given, gold = cost, choice = choice, extra = extra, stale = stale,
+                        tools = first }
+                elseif not total and not fallback then
+                    fallback = { need = need, item = item, how = "make", r = q, crafts = crafts, cost = cost,
+                        own = cost + extra.given, gold = cost, choice = choice, extra = extra, stale = stale,
+                        unpriced = true, missing = missing }
+                end
+            end
+        end
+    end
+    if best then return best end
+    local item = need.items[1]
+    return nil, fallback or { need = need, item = item, how = "buy", cost = 0, own = 0, gold = 0, unpriced = true,
+        missing = { { item = item, why = "it is needed in the bags as a tool, " .. ns.Prices.Missing(ctx.supply(item)) } } }
+end
+
+-- Keeps one for the steps that need it: one the path made isn't sold, one you hold is set aside.
+local function Keep(ctx, item, how)
+    if how == "made" then ctx.madeUsed[item] = (ctx.madeUsed[item] or 0) + 1 end
+    if how ~= "kept" then ctx.kept[item] = (ctx.kept[item] or 0) + 1 end
+end
+
+-- Gets a tool on the way: a step of its own, right before the step that needs it.
+local function CommitTool(ctx, plan, got, s, forR)
+    for _, more in ipairs(got.tools or NONE) do CommitTool(ctx, plan, more, s, got.r) end
+    local step = { kind = "tool", at = s, item = got.item, how = got.how, need = got.need, cost = got.gold,
+        priced = not got.unpriced, uses = {}, subs = {}, forR = forR }
+    if got.unpriced then
+        plan.totalComplete = false
+        plan.unpriced = plan.unpriced + 1
+        for _, m in ipairs(got.missing or NONE) do
+            if m.item then plan.missing[m.item] = m.why end
+        end
+    end
+    if got.how == "buy" then
+        Use(ctx, got.item, 1)
+        local sup = ctx.supply(got.item)
+        if sup.stale and sup.listed > 0 then
+            plan.stale[got.item] = true
+            step.stale = true
+        end
+        ctx.kept[got.item] = (ctx.kept[got.item] or 0) + 1
+    else
+        local q = got.r
+        step.r, step.name, step.crafts = q, q.name, got.crafts
+        local subs = Commit(ctx, q, got.crafts, got.choice, got.extra, 1)
+        if Learn(ctx, plan, q, s) then ctx.learned[q.id].step = step end
+        for _, sub in ipairs(subs) do
+            if Learn(ctx, plan, sub.r, s) then ctx.learned[sub.r.id].step = step end
+        end
+        AddUses(step, q, got.crafts, got.choice, got.extra.parts)
+        AddSubs(step, subs)
+        for _, item in ipairs(got.stale or NONE) do plan.stale[item] = true end
+        if got.stale then step.stale = true end
+        Keep(ctx, got.item, "made")
+    end
+    plan.total = plan.total + got.gold
+    if not plan.tools[got.need.key] then
+        plan.tools[got.need.key] = { need = got.need, cost = got.cost, at = s, item = got.item }
+    end
+    plan.steps[#plan.steps + 1] = step
+    return step
+end
+
 -- A profession with no trainer table and no trainer's list read: a trainer recipe is taken to be
 -- learnable at its yellow skill. Where nothing gives skill, the one that turns yellow soonest may
 -- be taught already, but that is not known: the path stops there and names it, with its skill.
@@ -451,13 +621,15 @@ local function Build(args, banned, replay, upto)
         offset = args.offset or 0, seenSkill = args.seenSkill or args.skill,
         supply = args.supply, marginal = args.marginal, value = args.value,
         used = {}, made = {}, madeUsed = {}, haveUsed = {}, bought = {}, var = {},
-        learn = {}, learned = {}, makers = {},
+        learn = {}, learned = {}, makers = {}, needs = {}, kept = {}, banned = banned, held = 0,
     }
     local plan = { ok = true, from = args.skill, to = args.target, max = args.max, points = {}, steps = {},
         total = 0, totalComplete = true, missing = {}, stale = {}, notes = {}, untrusted = 0,
-        fees = 0, feesUnknown = 0, assumed = 0, nLearned = 0, unpriced = 0, unreadable = 0, left = {} }
+        fees = 0, feesUnknown = 0, assumed = 0, nLearned = 0, unpriced = 0, unreadable = 0, left = {}, tools = {} }
     local candidates = {}
     for _, r in ipairs(args.recipes) do
+        local needs = args.tools and args.tools(r)
+        if needs and #needs > 0 then ctx.needs[r.id] = needs end
         local can = false
         -- No reagents read is not "no reagents": such a recipe would be a free craft.
         local readable = not r.unreadable and r.slots and #r.slots > 0
@@ -521,15 +693,50 @@ local function Build(args, banned, replay, upto)
             best, unpriced = again.pick, {}
             skip = true
         end
+        -- Tools at this point: whether the path has each, and how it would get it.
+        local has, gets, seen = {}, {}, {}
         for _, r in ipairs(skip and NONE or candidates) do
             if Usable(ctx, r, s) then
                 local chance, gain, crafts, orange = AtSkill(ctx, r, s, limit)
+                local short
+                for _, need in ipairs(chance and ctx.needs[r.id] or NONE) do
+                    local h = has[need.key]
+                    if h == nil then
+                        h = HasTool(ctx, need) and true or false
+                        has[need.key] = h
+                    end
+                    if not h then
+                        -- A tool the path is tried without: only recipes that don't need it.
+                        if banned[need.key] then
+                            chance = nil
+                            break
+                        end
+                        local g = gets[need.key]
+                        if g == nil then
+                            g = GetTool(ctx, need, s, 0) or false
+                            gets[need.key] = g
+                        end
+                        short = short or {}
+                        short[#short + 1] = { need = need, get = g }
+                    end
+                end
                 if chance then
                     local cost, priced, choice, missing, stale, extra = CraftCost(ctx, r, crafts, s)
+                    -- A tool there's no way to get counts as a reagent with no price.
+                    for _, t in ipairs(short or NONE) do
+                        if not t.get then
+                            priced = false
+                            local item = t.need.items[1]
+                            missing = missing or {}
+                            missing[#missing + 1] = { item = item, tool = true,
+                                why = "it is needed in the bags as a tool, " .. ns.Prices.Missing(ctx.supply(item)) }
+                        end
+                    end
                     local net = cost + extra.given - extra.credit
                     local c = { r = r, chance = chance, gain = gain, crafts = crafts, orange = orange, cost = cost,
                         priced = priced, choice = choice, missing = missing, stale = stale, extra = extra, net = net,
-                        perPoint = net / gain, craftsPerPoint = crafts / gain }
+                        perPoint = net / gain, craftsPerPoint = crafts / gain, short = short }
+                    seen[r.id] = c
                     if priced then
                         Ahead(ctx, c, s, limit)
                         if Better(ctx, c, best) then best = c end
@@ -541,6 +748,16 @@ local function Build(args, banned, replay, upto)
             end
         end
         local pick = best or bestUnpriced
+        -- The one tool it lacks is made by a recipe that gives skill now: making it is the point,
+        -- unless that costs more than the tool and the point together.
+        if pick and not skip and pick.short and #pick.short == 1 then
+            local g = pick.short[1].get
+            local alt = g and g.how == "make" and not g.tools and seen[g.r.id]
+            if alt and alt.priced and not alt.short
+                and (alt.cost + alt.extra.given) / alt.gain <= (pick.net + g.cost) / pick.gain + 0.5 then
+                pick = alt
+            end
+        end
         if not pick then
             plan.steps[#plan.steps + 1] = { kind = "gap", from = s, to = args.target,
                 why = ("No recipe gives skill at %d."):format(s), wait = Unread(ctx, candidates, s, limit) }
@@ -556,6 +773,27 @@ local function Build(args, banned, replay, upto)
                     alts = alts or {}
                     alts[#alts + 1] = c
                 end
+            end
+        end
+        -- The tools it needs: kept from what the path has, or got right before it.
+        local tools
+        for _, need in ipairs(ctx.needs[pick.r.id] or NONE) do
+            local item, how = HasTool(ctx, need)
+            if how then
+                Keep(ctx, item, how)
+            else
+                -- One with no price is still got (the guide names it, with no price).
+                local g, none
+                if not banned[need.key] then g, none = GetTool(ctx, need, s, 0) end
+                g = g or none
+                if g then
+                    CommitTool(ctx, plan, g, s, pick.r)
+                    item, how = g.item, g.how == "buy" and "bought" or "made"
+                end
+            end
+            if item then
+                tools = tools or {}
+                tools[#tools + 1] = { item = item, how = how }
             end
         end
         local subs, per = Commit(ctx, pick.r, pick.crafts, pick.choice, pick.extra, pick.chance)
@@ -602,37 +840,13 @@ local function Build(args, banned, replay, upto)
             step = { kind = "craft", r = pick.r, name = pick.r.name, from = s, to = point.to,
                 crafts = pick.crafts, cost = pick.cost, priced = pick.priced, points = { point },
                 credit = pick.extra.credit, given = pick.extra.given,
-                stale = pick.stale and true or false, alts = {}, subs = {}, uses = {} }
+                stale = pick.stale and true or false, alts = {}, subs = {}, uses = {}, tools = tools }
             plan.steps[#plan.steps + 1] = step
         end
         -- What the step takes: per reagent the units, and how many of them are bought.
-        for i, slot in ipairs(pick.r.slots or {}) do
-            local part = pick.extra.parts[i]
-            local item = pick.choice[i]
-            if item then
-                local u = step.uses[item]
-                if not u then
-                    u = { item = item, n = 0, buy = 0, made = 0 }
-                    step.uses[item] = u
-                end
-                u.n = u.n + slot.qty * pick.crafts
-                if part then
-                    u.buy = u.buy + (part.buy or 0)
-                    u.made = u.made + (part.n - part.stock)
-                else
-                    u.noPrice = true
-                end
-            end
-        end
+        AddUses(step, pick.r, pick.crafts, pick.choice, pick.extra.parts)
         for _, c in ipairs(alts or {}) do step.alts[c.r.id] = c end
-        for _, sub in ipairs(subs) do
-            local e = step.subs[sub.r.id]
-            if not e then
-                e = { r = sub.r, crafts = 0, item = sub.item, n = 0 }
-                step.subs[sub.r.id] = e
-            end
-            e.crafts, e.n = e.crafts + sub.crafts, e.n + sub.n
-        end
+        AddSubs(step, subs)
         for _, l in pairs(ctx.learned) do
             if l.at == s and not l.step then l.step = step end
         end
@@ -642,6 +856,7 @@ local function Build(args, banned, replay, upto)
     plan.used, plan.made, plan.madeUsed, plan.learned = ctx.used, ctx.made, ctx.madeUsed, ctx.learned
     plan.leftovers, plan.back = Leftovers(ctx)
     plan.net = plan.total - plan.back
+    plan.held = ctx.held
     plan.ctx = ctx
     return plan
 end
@@ -664,8 +879,49 @@ local function Schedule(plan)
             end
         end
     end
+    -- A craft and the tools got right before it, as one group: a trainer visit either needs goes
+    -- before all of them, a recipe item right before the step it is for.
+    local held = {}
+    local function Place()
+        if #held == 0 then return end
+        local at = held[#held].from or held[#held].at
+        local visit, items = false, {}
+        for i, step in ipairs(held) do
+            items[i] = {}
+            for _, l in ipairs(list) do
+                if l.step == step and not done[l] then
+                    if l.info.how == "item" then
+                        done[l] = true
+                        items[i][#items[i] + 1] = { kind = "learn", r = l.r, item = l.info.item, cost = l.fee,
+                            at = step.from or step.at }
+                    else
+                        visit = true
+                    end
+                end
+            end
+        end
+        if visit then
+            local train = steps[#steps]
+            if not (train and train.kind == "train" and train.at == at) then
+                train = { kind = "train", at = at, learn = {}, fee = 0, unknown = 0 }
+                steps[#steps + 1] = train
+            end
+            Teach(train)
+        end
+        for i, step in ipairs(held) do
+            for _, learn in ipairs(items[i]) do steps[#steps + 1] = learn end
+            steps[#steps + 1] = step
+        end
+        held = {}
+    end
     for _, step in ipairs(plan.steps) do
-        if step.kind == "train" then
+        if step.kind == "tool" then
+            held[#held + 1] = step
+        elseif step.kind == "craft" then
+            held[#held + 1] = step
+            Place()
+        elseif step.kind == "train" then
+            Place()
             local prev = steps[#steps]
             if prev and prev.kind == "train" and prev.at == step.at then
                 prev.rank, prev.ranks = step.rank, step.ranks
@@ -675,41 +931,21 @@ local function Schedule(plan)
                 prev = step
             end
             Teach(prev)
-        elseif step.kind == "craft" then
-            local visit
-            local items = {}
-            for _, l in ipairs(list) do
-                if l.step == step and not done[l] then
-                    if l.info.how == "item" then
-                        done[l] = true
-                        items[#items + 1] = { kind = "learn", r = l.r, item = l.info.item, cost = l.fee, at = step.from }
-                    else
-                        visit = true
-                    end
-                end
-            end
-            if visit then
-                local train = steps[#steps]
-                if not (train and train.kind == "train" and train.at == step.from) then
-                    train = { kind = "train", at = step.from, learn = {}, fee = 0, unknown = 0 }
-                    steps[#steps + 1] = train
-                end
-                Teach(train)
-            end
-            for _, learn in ipairs(items) do steps[#steps + 1] = learn end
-            steps[#steps + 1] = step
         else
+            Place()
             steps[#steps + 1] = step
         end
     end
+    Place()
     plan.steps = steps
 end
 
--- Whether path a is at least as good as path b: further, then fewer points with no price, then cheaper.
+-- Whether path a is at least as good as path b: further, then fewer points with no price, then
+-- cheaper (with what it takes of your own counted at what buying it again costs).
 local function NotWorse(a, b)
     if a.reached ~= b.reached then return a.reached > b.reached end
     if a.unpriced ~= b.unpriced then return a.unpriced < b.unpriced end
-    return a.net <= b.net + 0.5
+    return a.net + a.held <= b.net + b.held + 0.5
 end
 
 -- args: skill, max, target, offset, seenSkill, recipes, supply(item), marginal(sup, used, k, extra),
@@ -719,22 +955,28 @@ end
 function Pl.Build(args)
     local banned = {}
     local plan = Build(args, banned)
-    -- Each point took the cheapest recipe without what learning it costs. Now drop every recipe
-    -- with a fee or a recipe item that the path is no worse without, dearest first.
+    -- Each point took the cheapest recipe without what learning it, or getting the tool it needs,
+    -- costs. Now drop every recipe with a fee or a recipe item, and every tool the path gets, that
+    -- the path is no worse without, dearest first.
     local tested, tests = {}, 0
-    local again = args.learn ~= nil
+    local again = args.learn ~= nil or args.tools ~= nil
     while again and tests < MAX_TESTS do
         again = false
         local list = {}
         for id, l in pairs(plan.learned) do
-            if not tested[id] and l.fee > 0.5 then list[#list + 1] = l end
+            if not tested[id] and l.fee > 0.5 then list[#list + 1] = { fee = l.fee, at = l.at, id = id } end
+        end
+        for key, t in pairs(plan.tools) do
+            if not tested[key] and t.cost > 0.5 then list[#list + 1] = { fee = t.cost, at = t.at, id = key } end
         end
         table.sort(list, function(a, b)
             if a.fee ~= b.fee then return a.fee > b.fee end
-            return a.r.id < b.r.id
+            local na, nb = type(a.id) == "number", type(b.id) == "number"
+            if na ~= nb then return na end
+            return a.id < b.id
         end)
         for _, l in ipairs(list) do
-            local id = l.r.id
+            local id = l.id
             tested[id] = true
             tests = tests + 1
             banned[id] = true
@@ -973,6 +1215,7 @@ function Pl.ForProfession(prof)
         recipes = prof.recipes or {}, supply = ns.Prices.Supply, marginal = ns.Prices.Marginal,
         value = ns.Prices.ValueOf, learn = function(r) return R.Learn(prof.line, r) end,
         rank = function(cap) return R.Rank(prof.line, cap) end,
+        tools = function(r) return R.Tools(prof.line, r.id) end,
     })
     plan.name, plan.prof, plan.line = prof.name, prof, prof.line
     plan.shopping = Pl.Shopping(plan)
@@ -1037,6 +1280,7 @@ function Pl.ForCustomer(order)
         recipes = recipes, supply = ns.Prices.Bare, marginal = ns.Prices.Marginal,
         value = ns.Prices.ValueOf, learn = function(r) return R.Learn(line, r, true) end,
         rank = function(cap) return R.Rank(line, cap) end,
+        tools = function(r) return R.Tools(line, r.id) end,
     })
     plan.name, plan.line, plan.forOther, plan.order = name, line, true, order
     plan.prof = { line = line, name = name, recipes = recipes, offset = 0, seenSkill = from, skill = from }

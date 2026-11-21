@@ -301,6 +301,8 @@ function UI.Steps(plan)
             steps[#steps + 1] = { kind = "train", key = "train:" .. tostring(s.rank or s.at), train = s, at = s.at }
         elseif s.kind == "learn" then
             steps[#steps + 1] = { kind = "learn", key = "learn:" .. tostring(s.r.id), learn = s }
+        elseif s.kind == "tool" then
+            steps[#steps + 1] = { kind = "tool", key = "tool:" .. tostring(s.item), tool = s }
         elseif s.kind == "gap" then
             steps[#steps + 1] = { kind = "gap", key = "gap", step = s }
         end
@@ -333,6 +335,20 @@ end
 local SPARE_NOTE = "The amounts are averages: a craft that isn't orange can give no point, so a run often needs more "
     .. ("of something. With the spare bought as well, %s need nothing more."):format(ns.Planner.SPARE_ODDS)
 UI.SPARE_NOTE = SPARE_NOTE
+
+-- The recipe a tool is got for ("the next step" when the path doesn't say).
+local function ToolFor(t)
+    return t.forR and t.forR.name or "the next step"
+end
+
+-- Where a craft step's tool comes from.
+local TOOL_HOW = {
+    held = "Yours: keep it in your bags",
+    kept = "Got earlier on the path: keep it in your bags",
+    made = "Made right before: keep it in your bags",
+    bought = "Bought (on the shopping list): keep it in your bags",
+}
+UI.TOOL_HOW = TOOL_HOW
 
 local function FeeText(train, M)
     M = M or ns.Money
@@ -430,6 +446,23 @@ function UI.StepText(s, plan, M)
         local l = s.learn
         return "Learn " .. l.r.name, ("At skill %d, from %s"):format(l.at, ns.Prices.ItemName(l.item)), l.r.icon,
             r, g, b, false, CostText(l.cost, true, M)
+    elseif s.kind == "tool" then
+        local t = s.tool
+        local name = ns.Prices.ItemName(t.item)
+        local sub
+        if t.how == "make" then
+            r, g, b = UI.DifficultyColor(t.r, t.at, plan and plan.ctx and plan.ctx.offset or 0)
+            sub = ("At skill %d. Make 1, keep it in your bags: %s needs it"):format(t.at, ToolFor(t))
+        else
+            sub = ("At skill %d. On the shopping list; keep it in your bags: %s needs it"):format(t.at, ToolFor(t))
+        end
+        if t.stale then sub = sub .. ". Old price" end
+        if t.priced == false then
+            local money = t.cost >= 0.5 and ("uses " .. M(t.cost) .. " + no price") or "no price"
+            return "Tool: " .. name, sub, ns.Prices.ItemIcon(t.item), r, g, b, false, money, "red"
+        end
+        local money = t.cost < 0.5 and "uses your own" or ((t.how == "make" and "uses " or "") .. M(t.cost))
+        return "Tool: " .. name, sub, ns.Prices.ItemIcon(t.item), r, g, b, false, money, "grey"
     elseif s.kind == "gap" then
         return "Learn a recipe", ("No recipe here gives skill past %d"):format(s.step.from), ICON_GAP, r, g, b, true
     end
@@ -547,6 +580,22 @@ function UI.Guide(plan, brief)
         elseif s.kind == "learn" then
             local l = s.learn
             text = ("At skill %d: learn %s from %s (%s)."):format(l.at, l.r.name, Name(l.item), CostText(l.cost, true, M))
+        elseif s.kind == "tool" then
+            local t = s.tool
+            if t.how == "make" then
+                local uses = {}
+                for _, slot in ipairs(t.r.slots or {}) do
+                    for _, item in ipairs(slot.items) do
+                        local u = t.uses[item]
+                        if u then uses[#uses + 1] = ("%d %s"):format(Units(u.n), Name(item)) end
+                    end
+                end
+                text = ("At skill %d: make 1 %s (uses %s). Keep it in your bags: %s needs it, and crafting doesn't "
+                    .. "use it up."):format(t.at, Name(t.item), table.concat(uses, ", "), ToolFor(t))
+            else
+                text = ("At skill %d: have the %s from the list above in your bags. %s needs it, and crafting doesn't "
+                    .. "use it up."):format(t.at, Name(t.item), ToolFor(t))
+            end
         elseif s.kind == "gap" then
             text = ("Stops at %d: no recipe here gives skill past it."):format(s.step.from) .. UI.GapWait(s.step, " ")
         else
@@ -698,6 +747,9 @@ function UI.StepTip(tip, s, plan)
         for _, l in ipairs(s.train.learn) do
             tip:AddDoubleLine(l.r.name, l.unknown and "fee not read" or CostText(l.fee, true), wr, wg, wb, wr, wg, wb)
         end
+    elseif s.kind == "tool" then
+        tip:AddLine("A tool stays in your bags while you craft: crafting doesn't use it up. Its cost is on the "
+            .. "shopping list already.", gr, gg, gb, true)
     elseif s.kind == "sell" then
         tip:AddLine("What the path made and didn't use, and where each piece sells.", gr, gg, gb, true)
     end
@@ -1548,14 +1600,8 @@ local function UseText(u)
     return table.concat(parts, ", "), u.noPrice
 end
 
--- The rows under a craft step's header.
-local function CraftDetail(s, plan)
-    local step = s.step
-    local els = {}
-    local count = UI.CraftCount(step)
-    local _, _, _, _, _, _, _, money, color = UI.StepText(s, plan)
-    els[#els + 1] = { kind = "line", left = "Reagents (on the shopping list already)", right = money,
-        rightColor = color }
+-- A step's reagents (step: r, uses), and what it makes first.
+local function ReagentRows(els, step, count, plan)
     els[#els + 1] = { kind = "head", text = ("Reagents for %d %s"):format(count, Plural(count, "craft", "crafts")) }
     for _, slot in ipairs(step.r.slots or {}) do
         local any = false
@@ -1586,6 +1632,25 @@ local function CraftDetail(s, plan)
             els[#els + 1] = { kind = "card", icon = sub.r.icon, title = ("%d x %s"):format(UI.Units(sub.crafts), sub.r.name),
                 sub = ("Makes %d %s: cheaper than buying them"):format(UI.Units(sub.n), ns.Prices.ItemName(sub.item)),
                 link = RecipeLink(sub.r.id), what = "sub" }
+        end
+    end
+end
+
+-- The rows under a craft step's header.
+local function CraftDetail(s, plan)
+    local step = s.step
+    local els = {}
+    local count = UI.CraftCount(step)
+    local _, _, _, _, _, _, _, money, color = UI.StepText(s, plan)
+    els[#els + 1] = { kind = "line", left = "Reagents (on the shopping list already)", right = money,
+        rightColor = color }
+    ReagentRows(els, step, count, plan)
+    if step.tools then
+        els[#els + 1] = { kind = "head", text = "Tools (not used up)" }
+        for _, t in ipairs(step.tools) do
+            els[#els + 1] = { kind = "card", icon = ns.Prices.ItemIcon(t.item), title = ns.Prices.ItemName(t.item),
+                sub = TOOL_HOW[t.how] or TOOL_HOW.held, link = ItemLink(t.item),
+                tip = function(tip) ReagentTip(tip, t.item, plan) end, what = "tool" }
         end
     end
     els[#els + 1] = { kind = "head", text = "What it makes" }
@@ -1684,6 +1749,29 @@ local function LearnDetail(s, plan)
     }
 end
 
+-- The rows under a tool step's header: why, and how it is got.
+local function ToolDetail(s, plan, search, hint)
+    local t = s.tool
+    local els = {}
+    local _, _, _, _, _, _, _, money, color = UI.StepText(s, plan)
+    els[#els + 1] = { kind = "text", text = ("%s needs %s in your bags. Crafting doesn't use it up: keep it for "
+        .. "the steps after too."):format(ToolFor(t), ns.Prices.ItemName(t.item)) }
+    if t.how == "make" then
+        els[#els + 1] = { kind = "line", left = "Reagents (on the shopping list already)", right = money,
+            rightColor = color }
+        ReagentRows(els, t, 1, plan)
+    else
+        els[#els + 1] = { kind = "line", left = "On the shopping list already", right = money, rightColor = color }
+        for _, e in ipairs(plan.shopping or {}) do
+            if e.item == t.item then
+                els[#els + 1] = UI.ShopCard(e, search and function() search(e) end, hint, plan)
+                break
+            end
+        end
+    end
+    return els
+end
+
 local SEARCH_HINT = "Click to search for it."
 
 -- The picked step of a page (view: the professions window's or the auction house's, where a
@@ -1737,6 +1825,12 @@ local function Detail(view, s, plan, top)
         els = TrainDetail(s, plan)
     elseif s.kind == "learn" then
         els = LearnDetail(s, plan)
+    elseif s.kind == "tool" then
+        if d.Button and not plan.forOther and s.tool.r and s.tool.r.known then
+            d.Button.step = s.tool
+            d.Button:Show()
+        end
+        els = ToolDetail(s, plan, search, hint)
     elseif s.kind == "gap" then
         local further = {}
         for _, o in ipairs(plan.options or {}) do

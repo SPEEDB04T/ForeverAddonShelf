@@ -35,11 +35,77 @@ local OBS_JOIN = 600           -- looks closer than this together count as one
 ----------------------------------------------------------------------
 -- Where prices live
 ----------------------------------------------------------------------
-function P.RealmKey()
-    local realm = Str(Call(GetRealmName)) or "realm"
-    local faction = Str(Call(UnitFactionGroup, "player")) or "all"
-    return realm .. "-" .. faction
+-- One item's record from two stores: the newer search, the newer sweep, the sales seen in both.
+local function MergeRecord(a, b)
+    local search = (Num(b.t) or 0) >= (Num(a.t) or 0) and b or a
+    local as = type(a.s) == "table" and Num(a.s.t) and a.s or nil
+    local bs = type(b.s) == "table" and Num(b.s.t) and b.s or nil
+    local obs = {}
+    for _, rec in ipairs({ a, b }) do
+        for _, o in ipairs(type(rec.obs) == "table" and rec.obs or {}) do
+            if type(o) == "table" and Num(o.t) then obs[#obs + 1] = o end
+        end
+    end
+    table.sort(obs, function(x, y) return x.t < y.t end)
+    return { t = search.t, l = search.l, partial = search.partial, cut = search.cut, sm = search.sm, sq = search.sq,
+        s = (as and bs) and (bs.t >= as.t and bs or as) or as or bs, lots = a.lots or b.lots,
+        obs = #obs > 0 and obs or nil }
 end
+
+-- The prices kept while the realm had no name go to the realm's own store.
+local function Adopt(from, to)
+    local ah = ns.db.ah
+    if from == to or type(ah[from]) ~= "table" then return end
+    local into = type(ah[to]) == "table" and ah[to] or {}
+    for item, rec in pairs(ah[from]) do
+        if type(rec) == "table" then
+            into[item] = type(into[item]) == "table" and MergeRecord(into[item], rec) or rec
+        end
+    end
+    ah[to], ah[from] = into, nil
+    local swept = type(ns.db.swept) == "table" and ns.db.swept
+    if swept and Num(swept[from]) then
+        swept[to] = Mmax(Num(swept[to]) or 0, swept[from])
+        swept[from] = nil
+    end
+end
+
+-- The realm's name. Some days the game gives an empty one (Forever, 2026-11-20): then the name it
+-- had before, kept by the realm's number in your character's GUID, or else the one realm this
+-- account has prices for. nil when none of that tells.
+local realmName
+local function RealmName(faction)
+    if realmName then return realmName end
+    local db = ns.db
+    db.realms = type(db.realms) == "table" and db.realms or {}
+    local guid = Str(Call(UnitGUID, "player"))
+    local id = guid and guid:match("^Player%-(%d+)%-")
+    local name = Str(Call(GetRealmName))
+    if not name and id then name = Str(db.realms[id]) end
+    if not name then
+        local tail = "-" .. faction
+        for key in pairs(type(db.ah) == "table" and db.ah or {}) do
+            if type(key) == "string" and key:sub(-#tail) == tail and key ~= "realm" .. tail then
+                local realm = key:sub(1, -#tail - 1)
+                if name and name ~= realm then return nil end
+                name = realm
+            end
+        end
+    end
+    if not name then return nil end
+    if id then db.realms[id] = name end
+    Adopt("realm-" .. faction, name .. "-" .. faction)
+    realmName = name
+    return name
+end
+
+function P.RealmKey()
+    local faction = Str(Call(UnitFactionGroup, "player")) or "all"
+    return (RealmName(faction) or "realm") .. "-" .. faction
+end
+
+-- For tests: the realm is looked up again.
+function P.ForgetRealm() realmName = nil end
 
 local function AHStore()
     local key = P.RealmKey()
@@ -302,17 +368,21 @@ function P.Interest(outputs)
     local set = {}
     local char = ns.Char()
     local order = ns.Order and ns.Order()
-    local function Add(recipes, from)
+    local function Add(recipes, from, line)
         for _, r in ipairs(recipes or {}) do
             for _, slot in ipairs(r.slots or {}) do
                 for _, item in ipairs(slot.items) do set[item] = true end
+            end
+            -- The tools it needs: some can be bought (an Arclight Spanner), a scan prices them.
+            for _, need in ipairs(line and ns.Recipes.Tools(line, r.id) or {}) do
+                for _, item in ipairs(need.items) do set[item] = true end
             end
             if r.item then set[r.item] = true end
             if outputs and r.out and (r.known or (r.g and r.g > from)) then set[r.out] = true end
         end
     end
-    for _, prof in pairs(char and char.profs or {}) do Add(prof.recipes, prof.skill or 0) end
-    if order then Add(ns.Recipes.ForOrder(order.line), order.from) end
+    for line, prof in pairs(char and char.profs or {}) do Add(prof.recipes, prof.skill or 0, prof.line or line) end
+    if order then Add(ns.Recipes.ForOrder(order.line), order.from, order.line) end
     return set
 end
 
