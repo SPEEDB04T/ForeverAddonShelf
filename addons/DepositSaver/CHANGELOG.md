@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.1.4 (2026-11-20)
+
+- A buyback is only advised when it saves at least 1g. Before, the minimum was 0, so it
+  warned about buybacks that saved 75c. A minimum you had under 1g is raised to 1g; the
+  option goes from 1g to 10g. Smaller savings still show in the list as "saves only".
+
 ## 1.1.3 (2026-11-16)
 
 - Fix: WoW Forever lists auctions for 2, 8 or 24 hours, not 12, 24 or 48. Listing times now

@@ -179,6 +179,10 @@ local function Verdict(rec)
         return Color(GREEN_FONT_COLOR, ("Buy back: saves %s"):format(ns.Money(saving))) .. "  "
             .. Color(GRAY_FONT_COLOR, ("deposit %s, cut %s"):format(d, ns.Money(cut)))
     end
+    if saving and saving > 0 then
+        return Color(GRAY_FONT_COLOR, ("Let it expire: saves only %s"):format(ns.Money(saving))) .. "  "
+            .. Color(GRAY_FONT_COLOR, ("deposit %s, cut %s"):format(d, ns.Money(cut)))
+    end
     return Color(GRAY_FONT_COLOR, ("Let it expire: cut %s, deposit %s"):format(ns.Money(cut), d))
 end
 

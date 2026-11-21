@@ -12,7 +12,7 @@
 -- posted without this addon get an estimate from the vendor price.
 local ADDON, ns = ...
 
-ns.VERSION = "1.1.3"
+ns.VERSION = "1.1.4"
 ns.TITLE = "Deposit Saver"
 ns.ICON = "Interface\\Icons\\INV_Misc_Coin_02"
 
@@ -26,12 +26,14 @@ local DEFAULTS = {
     warnMinutes = 15,     -- warn in the last N minutes
     repeatMinutes = 5,    -- and again every N minutes
     cutPct = 5,           -- the auction house cut
-    minSaving = 0,        -- copper: smaller savings are not worth a warning
+    minSaving = 10000,    -- copper: smaller savings are not worth a buyback (never under MIN_SAVING)
     shareGuild = true,
     shareGroup = true,
     panel = true,         -- the list next to the auction house
 }
 ns.DEFAULTS = DEFAULTS
+-- No buyback is advised for less than 1g saved (SuccuDev, 2026-11-20: 75c is absurd).
+ns.MIN_SAVING = 10000
 
 -- Deposit as a share of the vendor price, per duration (1, 2, 3 = the sell frame's three
 -- durations). Only used for auctions posted without this addon; every post the addon sees
@@ -154,6 +156,11 @@ function ns.InitDB()
         end
         db.depositFix = 1
     end
+    -- 1.1.4: the old default was 0, so a saved 0 (or anything under 1g) becomes 1g.
+    if (tonumber(db.minSavingFix) or 0) < 1 then
+        if (tonumber(db.minSaving) or 0) < ns.MIN_SAVING then db.minSaving = ns.MIN_SAVING end
+        db.minSavingFix = 1
+    end
     for d, r in pairs(db.rates) do
         if type(r) ~= "number" or r <= 0 or r > 5 then db.rates[d] = nil end
     end
@@ -208,7 +215,7 @@ function ns.Worth(rec)
     local pct = Num(ns.db and ns.db.cutPct) or 5
     local cut = math.floor(price * pct / 100 + 0.5)
     local saving = deposit - cut
-    local floor = Num(ns.db and ns.db.minSaving) or 0
+    local floor = math.max(Num(ns.db and ns.db.minSaving) or 0, ns.MIN_SAVING)
     return deposit, cut, saving, saving > 0 and saving >= floor
 end
 
@@ -839,6 +846,8 @@ local function Line(rec, now)
         verdict = "no price known"
     elseif worth then
         verdict = "|cff20ff20buy back, saves " .. ns.Money(saving) .. "|r"
+    elseif saving and saving > 0 then
+        verdict = "|cff808080let it expire: saves only " .. ns.Money(saving) .. ", under your minimum|r"
     else
         verdict = "|cff808080let it expire: the cut " .. ns.Money(cut) .. " is more than the deposit " .. ns.Money(deposit or 0) .. "|r"
     end

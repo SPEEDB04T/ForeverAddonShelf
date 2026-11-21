@@ -36,8 +36,8 @@ local function Rows()
           tip = "What the auction house keeps from a sale. 5% at the faction auction houses; the neutral ones take more.",
           format = function(v) return ("%d%%"):format(v) end,
           get = Get("cutPct"), set = Set("cutPct") },
-        { kind = "slider", label = "Only if it saves at least", min = 0, max = 50000, step = 500,
-          tip = "Smaller savings are shown in the list but don't warn.",
+        { kind = "slider", label = "Only if it saves at least", min = 10000, max = 100000, step = 5000,
+          tip = "Smaller savings are shown in the list but never advised. 1g is the least.",
           format = function(v) return ns.Money(v) end,
           get = Get("minSaving"), set = Set("minSaving") },
 
