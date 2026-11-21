@@ -18,7 +18,7 @@ Every step shows what it costs. What you already hold costs no gold, but the pat
 
 A SkillPath tab sits with the profession tabs on the right edge. Open it for the steps on the left and the picked step on the right.
 
-- **A craft step** shows its reagents, how many you hold, and (if you leave it on) each skill point's chance and cost. "Show recipe" opens the recipe on the game's page with the number of crafts filled in.
+- **A craft step** shows its reagents, how many you hold, and (if you leave it on) each skill point's chance and cost. "Show recipe" opens the recipe on the game's page with the number of crafts filled in; "Create 35" crafts them right there, as many as your bags have reagents for (not for enchants, which go on an item you pick).
 - **Buy** and **Sell** list every item with its price and where the price comes from. Shift-click an item to link it.
 - **A trainer step** lists what to learn, from which skill and for how much, and the rank to train with its fee and the level it asks for.
 - **Recipes worth learning** are recipes the path couldn't use (a recipe item with no price, something the trainer won't teach you yet) that would take it further or make it cheaper.
@@ -48,7 +48,7 @@ The table comes from the Forever recipe tables of the addon What's Training? by 
 
 ## At the auction house
 
-A SkillPath tab sits after the game's tabs. It shows the whole path as the professions tab does: every step on the left, the picked step on the right, the buy step first. On the buy and sell steps, click an item to search for it on the Buy tab. "Scan prices" reads the auction house now.
+A SkillPath tab sits after the game's tabs. It shows the whole path as the professions tab does: every step on the left, the picked step on the right, the buy step first. On the buy and sell steps, click an item to search for it on the Buy tab. "Buy all" on the buy step buys the list one item at a time: the auction house quotes the price for that many, and nothing is bought until you click Buy on it (Skip and Cancel too). Vendor items are left for the vendor, and items sold in whole lots for the Buy tab. "Scan prices" reads the auction house now.
 
 The addon also scans when you open the auction house, a few seconds later:
 

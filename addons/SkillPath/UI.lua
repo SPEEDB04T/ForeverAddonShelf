@@ -1513,20 +1513,48 @@ local function CoverRankBar(book, page)
     trade.rankCover = cover
 end
 
--- The picked step's box on a page: icon, two lines, the rows under them, and in the professions
--- window the button that opens a craft step's recipe.
+local function DetailButton(right, width, click)
+    local b = CreateFrame("Button", nil, right, "UIPanelButtonTemplate")
+    b:SetSize(width, 22)
+    b:SetScript("OnClick", click)
+    b:SetScript("OnEnter", function(self)
+        if not (GameTooltip and self.tip) then return end
+        GameTooltip:SetOwner(self, "ANCHOR_BOTTOMRIGHT")
+        GameTooltip:SetText(self:GetText() or "", Gold())
+        GameTooltip:AddLine(self.tip, 1, 1, 1, true)
+        GameTooltip:Show()
+    end)
+    b:SetScript("OnLeave", function(self)
+        if OwnsTooltip(self) then GameTooltip:Hide() end
+    end)
+    return b
+end
+
+-- The picked step's box on a page: icon, two lines, the rows under them, and the buttons: in the
+-- professions window Show recipe and Create, at the auction house Buy.
 local function BuildDetail(right, scroll, button)
-    local d = {}
+    local d = { right = right }
     d.Icon = NewItemButton(right)
     d.Icon:SetPoint("TOPLEFT", right, "TOPLEFT", 12, -12)
-    if button then
-        d.Button = CreateFrame("Button", nil, right, "UIPanelButtonTemplate")
-        d.Button:SetSize(110, 22)
+    if button == "buy" then
+        d.Button = DetailButton(right, 110, function(self)
+            if self.entries then UI.BuyList(self.entries) end
+        end)
         d.Button:SetPoint("TOPRIGHT", right, "TOPRIGHT", -12, -12)
-        d.Button:SetText("Show recipe")
-        d.Button:SetScript("OnClick", function(self)
+        d.Button:SetText("Buy all")
+        d.Button.tip = "One item at a time: the auction house says what that many cost now, and nothing is bought "
+            .. "until you click Buy for that price. What a vendor sells is left for the vendor."
+    elseif button then
+        d.Button = DetailButton(right, 110, function(self)
             if self.step then UI.ShowRecipe(self.step) end
         end)
+        d.Button:SetPoint("TOPRIGHT", right, "TOPRIGHT", -12, -12)
+        d.Button:SetText("Show recipe")
+        d.Make = DetailButton(right, 100, function(self)
+            if self.step then UI.MakeStep(self.step, self.count) end
+        end)
+        d.Make:SetPoint("RIGHT", d.Button, "LEFT", -4, 0)
+        d.Make:Hide()
     end
     d.Title = right:CreateFontString(nil, "ARTWORK", "GameFontNormalLarge")
     d.Title:SetPoint("TOPLEFT", d.Icon, "TOPRIGHT", 10, -1)
@@ -1776,16 +1804,71 @@ local SEARCH_HINT = "Click to search for it."
 
 -- The picked step of a page (view: the professions window's or the auction house's, where a
 -- click on an item searches for it).
+-- Create N: the step's crafts, as many as your bags have reagents for. Not for a recipe that
+-- makes no item (an enchant goes on an item you pick: Show recipe opens the game's page for it).
+local function MakeButton(d, step, want)
+    local mk = d.Make
+    local T = C_TradeSkillUI
+    if not (mk and T and T.CraftRecipe and step.r and step.r.out) then return end
+    local info = ns.Call(T.GetRecipeInfo, step.r.id)
+    local have = Num(ns.Field(info, "numAvailable"))
+    local n = have and math.min(want, math.floor(have)) or want
+    mk.step = step
+    if n >= 1 then
+        mk.count = n
+        mk:SetText(("Create %d"):format(n))
+        mk:SetEnabled(true)
+        mk.tip = n < want and ("Your bags have the reagents for %d of the step's %d crafts."):format(n, want)
+            or "Crafts them all, one after another, as the game's Create All does."
+    else
+        mk.count = 0
+        mk:SetText("Create")
+        mk:SetEnabled(false)
+        mk.tip = "Not enough reagents in your bags yet: get what the shopping list says first."
+    end
+    mk:Show()
+end
+
+local buying
+
+-- Only what the auction house sells: an all-vendor list has no Buy button.
+local function BuyButton(d, entries)
+    local here = false
+    for _, e in ipairs(entries) do
+        if UI.AuctionCount(e) > 0 then here = true end
+    end
+    if not here then return end
+    local b = d.Button
+    b.entries = entries
+    b:SetText(buying and "Buying..." or (#entries == 1 and "Buy" or "Buy all"))
+    b:SetEnabled(not buying and #entries > 0)
+    b:Show()
+end
+
+local function AnchorTitle(d)
+    local to = (d.Make and d.Make:IsShown() and d.Make) or (d.Button and d.Button:IsShown() and d.Button)
+    if to then
+        d.Title:SetPoint("RIGHT", to, "LEFT", -8, 0)
+    else
+        d.Title:SetPoint("RIGHT", d.right, "RIGHT", -12, 0)
+    end
+end
+
 local function Detail(view, s, plan, top)
     local d = view.detail
     if d.Button then
         d.Button:Hide()
-        d.Button.step = nil
+        d.Button.step, d.Button.entries = nil, nil
+    end
+    if d.Make then
+        d.Make:Hide()
+        d.Make.step = nil
     end
     if not s then
         d.Icon:Hide()
         d.Title:SetText("")
         d.Sub:SetText("")
+        AnchorTitle(d)
         view.detailList:Set({}, top)
         return
     end
@@ -1815,10 +1898,17 @@ local function Detail(view, s, plan, top)
         for _, e in ipairs(s.spares) do
             els[#els + 1] = UI.ShopCard(e, search and function() search(e) end, hint, plan)
         end
+        if d.Button and search then
+            local all = {}
+            for _, e in ipairs(s.entries) do all[#all + 1] = e end
+            for _, e in ipairs(s.spares) do all[#all + 1] = e end
+            BuyButton(d, all)
+        end
     elseif s.kind == "craft" then
         if d.Button and not plan.forOther and s.step.r.known then
             d.Button.step = s.step
             d.Button:Show()
+            MakeButton(d, s.step, UI.CraftCount(s.step))
         end
         els = CraftDetail(s, plan)
     elseif s.kind == "train" then
@@ -1826,9 +1916,14 @@ local function Detail(view, s, plan, top)
     elseif s.kind == "learn" then
         els = LearnDetail(s, plan)
     elseif s.kind == "tool" then
-        if d.Button and not plan.forOther and s.tool.r and s.tool.r.known then
+        if d.Button and not search and not plan.forOther and s.tool.r and s.tool.r.known then
             d.Button.step = s.tool
             d.Button:Show()
+            MakeButton(d, s.tool, 1)
+        elseif d.Button and search and s.tool.how == "buy" then
+            for _, e in ipairs(plan.shopping or {}) do
+                if e.item == s.tool.item then BuyButton(d, { e }) end
+            end
         end
         els = ToolDetail(s, plan, search, hint)
     elseif s.kind == "gap" then
@@ -1843,6 +1938,7 @@ local function Detail(view, s, plan, top)
         els[#els + 1] = { kind = "line", left = "What selling the rest gives", right = money, rightColor = color }
         for _, e in ipairs(UI.SellRows(s, search, hint)) do els[#els + 1] = e end
     end
+    AnchorTitle(d)
     view.detailList:Set(els, top)
 end
 
@@ -2046,6 +2142,205 @@ function UI.SearchAuction(item)
     end))
 end
 
+-- Create N on a craft step: the game crafts them one after another. If the game won't, its page
+-- for the recipe opens instead.
+function UI.MakeStep(step, n)
+    local T = C_TradeSkillUI
+    if not (T and T.CraftRecipe and step and step.r and Num(n) and n >= 1) then return end
+    if not pcall(T.CraftRecipe, step.r.id, n) then UI.ShowRecipe(step) end
+end
+
+-- Buying the list from the SkillPath tab, one item at a time: the auction house quotes what that
+-- many cost now, and the purchase goes through only when you click Buy on that price. What a
+-- vendor sells is left for the vendor; what is sold in whole lots (not per unit) is left for the
+-- game's Buy tab, which is searched for it at the end.
+local BUY_POPUP = "SKILLPATH_BUY"
+local QUOTE_WAIT = 10
+
+local function Name(item) return ns.Prices.ItemName(item) or ("item " .. tostring(item)) end
+
+local function Names(items)
+    local out = {}
+    for i, item in ipairs(items) do out[i] = Name(item) end
+    return table.concat(out, ", ")
+end
+
+local function SoldInLots(item)
+    local ah = C_AuctionHouse
+    local status = ah and ah.GetItemCommodityStatus and Num(ns.Call(ah.GetItemCommodityStatus, item))
+    local E = type(Enum) == "table" and type(Enum.ItemCommodityStatus) == "table" and Enum.ItemCommodityStatus or {}
+    if status and status == (E.Item or 1) then return true end
+    if status and status == (E.Commodity or 2) then return false end
+    local rec = ns.Prices.AHStore()[item]
+    return type(rec) == "table" and rec.lots and true or false
+end
+
+-- How many of an entry to buy here: the path's and the spare, less what a vendor sells cheaper.
+function UI.AuctionCount(e)
+    local n = (e.buy or 0) + (e.spare or 0)
+    local from = e.from or ""
+    if from:find("^vendor") then return 0 end
+    if from == "auction house and vendor" then
+        local sup = ns.Prices.Supply(e.item)
+        n = math.min(n, math.floor(Num(sup and sup.listed) or n))
+    end
+    return n
+end
+
+local function BuyDone(note, search)
+    local b = buying
+    buying = nil
+    if StaticPopup_Hide then StaticPopup_Hide(BUY_POPUP) end
+    if not b then return end
+    local parts = {}
+    if b.bought > 0 then
+        parts[#parts + 1] = ("Bought %s for %s."):format(Names(b.got), ns.Money(b.spent))
+    end
+    if note then parts[#parts + 1] = note end
+    if #b.vendor > 0 then parts[#parts + 1] = ("From a vendor: %s."):format(Names(b.vendor)) end
+    if #b.byHand > 0 then
+        parts[#parts + 1] = ("Buy on the Buy tab: %s."):format(Names(b.byHand))
+        if search then UI.SearchAuction(b.byHand[1]) end
+    end
+    if #parts > 0 then ns.Print(table.concat(parts, " ")) end
+    UI.Update()
+end
+
+local function ShowQuote(b)
+    local e, n, total = b.entry, b.n, b.quote
+    local lines = { ("Buy %d %s for %s?"):format(n, Name(e.item), ns.Money(total)) }
+    local spare = n - (e.buy or 0)
+    if spare > 0 and (e.buy or 0) > 0 then
+        lines[#lines + 1] = ("%d for the path and %d spare."):format(e.buy, spare)
+    elseif spare > 0 then
+        lines[#lines + 1] = "All of it spare: the average run has enough."
+    end
+    local planned = e.cost and (e.cost + (e.spareCost or 0)) or nil
+    if planned and total > planned * 1.2 + 100 then
+        lines[#lines + 1] = ("|cffff2020The path counted %s: the price went up since the scan.|r"):format(ns.Money(planned))
+    end
+    local money = Num(ns.Call(GetMoney))
+    if money and total > money then
+        lines[#lines + 1] = ("|cffff2020You have %s.|r"):format(ns.Money(money))
+    end
+    if #b.queue > 1 then lines[#lines + 1] = ("Item %d of %d."):format(b.i, #b.queue) end
+    if StaticPopup_Show then StaticPopup_Show(BUY_POPUP, table.concat(lines, "\n")) end
+end
+
+local function BuyNext()
+    local b = buying
+    if not b then return end
+    local ah = C_AuctionHouse
+    b.entry, b.quote, b.confirmed = nil, nil, false
+    while true do
+        b.i = b.i + 1
+        local e = b.queue[b.i]
+        if not e then return BuyDone(nil, true) end
+        local n = UI.AuctionCount(e)
+        if n <= 0 then
+            b.vendor[#b.vendor + 1] = e.item
+        elseif SoldInLots(e.item) or not (ah and ah.StartCommoditiesPurchase) then
+            b.byHand[#b.byHand + 1] = e.item
+        else
+            b.entry, b.n = e, n
+            local token = {}
+            b.token = token
+            if pcall(ah.StartCommoditiesPurchase, e.item, n) then
+                ns.After(QUOTE_WAIT, function()
+                    if buying == b and b.token == token and not b.quote then
+                        pcall(ah.CancelCommoditiesPurchase)
+                        b.byHand[#b.byHand + 1] = e.item
+                        BuyNext()
+                    end
+                end)
+                return
+            end
+            b.byHand[#b.byHand + 1] = e.item
+            b.entry = nil
+        end
+    end
+end
+
+function UI.BuyList(entries)
+    if buying or not UI.AuctionShown() then return end
+    local queue = {}
+    for _, e in ipairs(entries or {}) do
+        if (e.buy or 0) + (e.spare or 0) > 0 then queue[#queue + 1] = e end
+    end
+    if #queue == 0 then return end
+    buying = { queue = queue, i = 0, bought = 0, spent = 0, got = {}, vendor = {}, byHand = {} }
+    UI.Update()
+    BuyNext()
+end
+
+function UI.Buying() return buying end
+
+function UI.ConfirmBuy()
+    local b = buying
+    if not (b and b.entry and b.quote) or b.confirmed then return end
+    b.confirmed = true
+    if not pcall(C_AuctionHouse.ConfirmCommoditiesPurchase, b.entry.item, b.n) then
+        BuyDone(("The auction house didn't take the purchase of %s."):format(Name(b.entry.item)))
+    end
+end
+
+function UI.SkipBuy()
+    local b = buying
+    if not b then return end
+    if b.entry then pcall(C_AuctionHouse.CancelCommoditiesPurchase) end
+    BuyNext()
+end
+
+function UI.StopBuying()
+    local b = buying
+    if not b then return end
+    if b.entry and not b.confirmed then pcall(C_AuctionHouse.CancelCommoditiesPurchase) end
+    BuyDone()
+end
+
+function UI.BuyEvent(event, a, b2)
+    local b = buying
+    if not b then return end
+    if event == "AUCTION_HOUSE_CLOSED" then
+        BuyDone("Stopped: the auction house closed.")
+    elseif not b.entry then
+        return
+    elseif event == "COMMODITY_PRICE_UPDATED" then
+        local total = Num(b2)
+        if b.confirmed or not total then return end
+        b.quote = total
+        ShowQuote(b)
+    elseif event == "COMMODITY_PRICE_UNAVAILABLE" then
+        if b.confirmed then return end
+        if StaticPopup_Hide then StaticPopup_Hide(BUY_POPUP) end
+        b.byHand[#b.byHand + 1] = b.entry.item
+        BuyNext()
+    elseif event == "COMMODITY_PURCHASE_SUCCEEDED" and b.confirmed then
+        b.bought = b.bought + 1
+        b.spent = b.spent + b.quote
+        b.got[#b.got + 1] = b.entry.item
+        BuyNext()
+    elseif event == "COMMODITY_PURCHASE_FAILED" and b.confirmed then
+        BuyDone(("Buying %s failed (the price may have changed): click Buy all again."):format(Name(b.entry.item)))
+    end
+end
+
+if type(StaticPopupDialogs) == "table" then
+    StaticPopupDialogs[BUY_POPUP] = {
+        text = "%s",
+        button1 = "Buy",
+        button2 = CANCEL or "Cancel",
+        button3 = "Skip",
+        OnAccept = function() UI.ConfirmBuy() end,
+        OnCancel = function() UI.StopBuying() end,
+        OnAlt = function() UI.SkipBuy() end,
+        noCancelOnReuse = true,
+        timeout = 0,
+        whileDead = true,
+        hideOnEscape = true,
+    }
+end
+
 local function BuildAuctionPage(ah)
     local page = CreateFrame("Frame", "SkillPathAuctionPage", ah)
     -- Under the title bar, above the money bar: the box the game's Auctions page takes.
@@ -2066,7 +2361,7 @@ local function BuildAuctionPage(ah)
 
     auction.page = page
     auction.list = UI.NewList(left, "SkillPathAuctionStepScroll")
-    auction.detail, auction.detailList = BuildDetail(right, "SkillPathAuctionDetailScroll", false)
+    auction.detail, auction.detailList = BuildDetail(right, "SkillPathAuctionDetailScroll", "buy")
     page:SetScript("OnShow", function() UI.Update() end)
     page:SetScript("OnHide", function()
         if UI.tooltipRow and OwnsTooltip(UI.tooltipRow) then GameTooltip:Hide() end

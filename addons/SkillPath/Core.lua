@@ -2,7 +2,7 @@
 local ADDON, ns = ...
 
 ns.ADDON = ADDON
-ns.VERSION = "1.7.0"
+ns.VERSION = "1.8.0"
 ns.NAME = "SkillPath"
 ns.ICON = "Interface\\Icons\\INV_Misc_Note_01"
 
@@ -658,7 +658,8 @@ local EVENTS = { "PLAYER_LOGIN", "TRADE_SKILL_SHOW", "TRADE_SKILL_LIST_UPDATE", 
     "MERCHANT_SHOW", "TRAINER_SHOW", "TRAINER_UPDATE", "AUCTION_HOUSE_SHOW", "AUCTION_HOUSE_CLOSED", "AUCTION_HOUSE_THROTTLED_SYSTEM_READY",
     "ITEM_SEARCH_RESULTS_UPDATED", "COMMODITY_SEARCH_RESULTS_UPDATED", "GET_ITEM_INFO_RECEIVED",
     "AUCTION_HOUSE_BROWSE_RESULTS_UPDATED", "AUCTION_HOUSE_BROWSE_RESULTS_ADDED",
-    "CHAT_MSG_WHISPER_INFORM", "CHAT_MSG_PARTY", "CHAT_MSG_PARTY_LEADER", "ADDON_ACTION_BLOCKED" }
+    "CHAT_MSG_WHISPER_INFORM", "CHAT_MSG_PARTY", "CHAT_MSG_PARTY_LEADER", "ADDON_ACTION_BLOCKED",
+    "COMMODITY_PRICE_UPDATED", "COMMODITY_PRICE_UNAVAILABLE", "COMMODITY_PURCHASE_SUCCEEDED", "COMMODITY_PURCHASE_FAILED" }
 for _, event in ipairs(EVENTS) do pcall(frame.RegisterEvent, frame, event) end
 
 local snapshotQueued = false
@@ -762,5 +763,6 @@ frame:SetScript("OnEvent", function(_, event, a, b)
     else
         ns.Prices.OnEvent(event, a, b)
         if event == "AUCTION_HOUSE_SHOW" and ns.UI then ns.UI.AuctionOpened() end
+        if ns.UI and ns.UI.BuyEvent then ns.UI.BuyEvent(event, a, b) end
     end
 end)
