@@ -1,0 +1,13 @@
+## Interface: 16001, 16002
+## Title: Runback
+## Notes: The nearest graveyard and how long the run back from it takes, for you and for enemy players. Counts down when a player you killed, a group member or you can be back at the body. /runback for options.
+## Version: 1.0.0
+## SavedVariables: RunbackDB
+## IconTexture: Interface\Icons\Spell_Holy_Resurrection
+## AddonCompartmentFunc: Runback_OnAddonCompartmentClick
+
+Data.lua
+Core.lua
+UI.lua
+Kit.lua
+Options.lua
