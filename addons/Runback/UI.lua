@@ -8,6 +8,12 @@
 --     template itself is not inherited: its scripts belong to the game's three timers.
 -- Both hang off one invisible anchor, top centre under the game's own timer bars. Drag
 -- either to move both.
+--   * Minimize: a 16 x 16 button at the right of the stack, the game's own tracker header
+--     button (ObjectiveTrackerModuleMinimizeButtonTemplate in Blizzard_ObjectiveTracker/
+--     Blizzard_ObjectiveTrackerModule.xml, branch forever): atlases
+--     ui-questtrackerbutton-secondary-collapse / -expand (and -pressed), highlight
+--     ui-questtrackerbutton-yellow-highlight (ADD). Minimized, the bars are hidden and the
+--     readout shrinks to one tooltip line: "Runback" and the soonest countdown.
 local ADDON_NAME, ns = ...
 local UI = {}
 ns.UI = UI
@@ -17,10 +23,11 @@ local BAR_W, BAR_H = 206, 32
 local FILL_W, FILL_H = 195, 13
 local DEFAULT_Y = -200          -- the game's own bars start at -100 and are 32 each
 
-local anchor, tip, mover
+local anchor, tip, mover, toggle
 local bars = {}
 local shownTip = false
 local lastReadout = -10
+local barsWanted = 0      -- timers that have a bar (shown, or hidden while minimized)
 
 local function Color(c, r, g, b)
     if type(c) == "table" and type(c.r) == "number" then return c.r, c.g, c.b end
@@ -80,9 +87,60 @@ local function WantReadout()
     return (ok2 and not (issecretvalue and issecretvalue(pvp)) and pvp) and true or false
 end
 
+local function Eligible(t)
+    return t.kind ~= "self" or ns.db.own
+end
+
+local function EligibleCount()
+    local n = 0
+    for _, t in ipairs(ns.timers) do
+        if n >= MAX_BARS then break end
+        if Eligible(t) then n = n + 1 end
+    end
+    return n
+end
+
+-- The minimized readout: one tooltip line, the name and the soonest countdown.
+local function Summary(s, now)
+    local best
+    for _, t in ipairs(ns.timers) do
+        if Eligible(t) and t.backAt and not t.doneAt then
+            local left = math.max(0, t.backAt - now)
+            if not best or left < best then best = left end
+        end
+    end
+    local right = ""
+    if best then
+        right = ns.Clock(best)
+    elseif s and s.mine then
+        right = ns.Clock(s.mine.secs)
+    elseif barsWanted > 0 then
+        right = barsWanted .. (barsWanted == 1 and " timer" or " timers")
+    end
+    local gr, gg, gb = Color(NORMAL_FONT_COLOR, 1, 0.82, 0)
+    local wr, wg, wb = Color(HIGHLIGHT_FONT_COLOR, 1, 1, 1)
+    if tip:GetOwner() ~= anchor then tip:SetOwner(anchor, "ANCHOR_NONE") end
+    tip:ClearLines()
+    tip:AddDoubleLine("Runback", right, gr, gg, gb, wr, wg, wb)
+    tip:ClearAllPoints()
+    tip:SetPoint("TOP", anchor, "TOP", 0, 0)
+    tip:Show()
+    shownTip = true
+end
+
 local function Readout()
     if not tip then return end
     local s = WantReadout() and ns.Survey()
+    barsWanted = EligibleCount()
+    if ns.db.minimized then
+        if (s and s.place) or barsWanted > 0 then
+            Summary(s, GetTime())
+        else
+            if shownTip then tip:Hide() end
+            shownTip = false
+        end
+        return
+    end
     if not (s and s.place) then
         if shownTip then tip:Hide() end
         shownTip = false
@@ -211,33 +269,77 @@ local function Paint(now)
     end
 end
 
+---------------------------------------------------------------------------
+-- The minimize button
+---------------------------------------------------------------------------
+local function ToggleLook()
+    local what = ns.db.minimized and "expand" or "collapse"
+    pcall(toggle.SetNormalAtlas, toggle, "ui-questtrackerbutton-secondary-" .. what)
+    pcall(toggle.SetPushedAtlas, toggle, "ui-questtrackerbutton-secondary-" .. what .. "-pressed")
+end
+
+-- At the right of whatever is on top: the readout, or the first bar. Not there when there
+-- is nothing to minimize or to bring back.
+function UI.PlaceToggle()
+    if not toggle then return end
+    local target
+    if shownTip then
+        target = tip
+    elseif not ns.db.minimized and bars[1] and bars[1]:IsShown() then
+        target = bars[1]
+    end
+    if not target then
+        toggle:Hide()
+        return
+    end
+    ToggleLook()
+    toggle:ClearAllPoints()
+    toggle:SetPoint("TOPLEFT", target, "TOPRIGHT", 2, target == tip and -2 or 0)
+    toggle:Show()
+end
+
+function UI.SetMinimized(value)
+    if not ns.db then return end
+    ns.Set("minimized", value and true or false)
+end
+
 -- Which timer sits in which bar, and where the first bar hangs.
 function UI.Refresh()
     if not anchor then return end
+    local minimized = ns.db.minimized
     local n = 0
     for _, t in ipairs(ns.timers) do
         if n >= MAX_BARS then break end
-        if t.kind ~= "self" or ns.db.own then
+        if Eligible(t) then
             n = n + 1
-            local bar = bars[n] or NewBar(n)
-            bar.timer = t
-            bar:ClearAllPoints()
-            if n == 1 then
-                if shownTip then
-                    bar:SetPoint("TOP", tip, "BOTTOM", 0, -4)
+            if not minimized then
+                local bar = bars[n] or NewBar(n)
+                bar.timer = t
+                bar:ClearAllPoints()
+                if n == 1 then
+                    if shownTip then
+                        bar:SetPoint("TOP", tip, "BOTTOM", 0, -4)
+                    else
+                        bar:SetPoint("TOP", anchor, "TOP", 0, 0)
+                    end
                 else
-                    bar:SetPoint("TOP", anchor, "TOP", 0, 0)
+                    bar:SetPoint("TOP", bars[n - 1], "BOTTOM", 0, 0)
                 end
-            else
-                bar:SetPoint("TOP", bars[n - 1], "BOTTOM", 0, 0)
+                bar:Show()
             end
-            bar:Show()
         end
     end
-    for i = n + 1, #bars do
+    for i = minimized and 1 or n + 1, #bars do
         bars[i].timer = nil
         bars[i]:Hide()
     end
+    barsWanted = n
+    if minimized and tip then
+        -- the readout is the one line: it comes and goes with the timers
+        local ok, err = pcall(Readout)
+        if not ok then ns.lastError = err end
+    end
+    UI.PlaceToggle()
     Paint(GetTime())
 end
 
@@ -284,6 +386,18 @@ function UI.Init()
         end)
     end
 
+    toggle = CreateFrame("Button", "RunbackMinimizeButton", anchor)
+    toggle:SetSize(16, 16)
+    toggle:SetFrameLevel(anchor:GetFrameLevel() + 5)
+    toggle:Hide()
+    pcall(toggle.SetHighlightAtlas, toggle, "ui-questtrackerbutton-yellow-highlight", "ADD")
+    toggle:SetScript("OnClick", function()
+        if PlaySound and SOUNDKIT and SOUNDKIT.IG_MAINMENU_OPTION_CHECKBOX_ON then
+            pcall(PlaySound, SOUNDKIT.IG_MAINMENU_OPTION_CHECKBOX_ON)
+        end
+        UI.SetMinimized(not ns.db.minimized)
+    end)
+
     -- between Core's ticks the bars keep moving
     local since = 0
     anchor:SetScript("OnUpdate", function(_, elapsed)
@@ -300,7 +414,7 @@ function UI.Describe()
     for _, bar in ipairs(bars) do
         if bar:IsShown() then n = n + 1 end
     end
-    return (anchor and "ready" or "not built") .. ", readout " .. (shownTip and "shown" or "hidden") .. ", bars " .. n
+    return (anchor and "ready" or "not built") .. (ns.db and ns.db.minimized and ", minimized" or "") .. ", readout " .. (shownTip and "shown" or "hidden") .. ", bars " .. n
 end
 
 local function Version()
@@ -314,6 +428,7 @@ LookShotsTargets[ADDON_NAME] = {
     version = Version(),
     frames = {
         { label = "readout", frame = function() return shownTip and tip or nil end },
+        { label = "minimize button", frame = function() return toggle and toggle:IsShown() and toggle or nil end, pad = 40 },
         { label = "timer bars", frame = function() return bars[1] and bars[1]:IsShown() and bars[1] or nil end, pad = 80 },
     },
 }

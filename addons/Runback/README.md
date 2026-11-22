@@ -12,6 +12,8 @@ For WoW Forever (Interface 16001).
   - **Group members** who release: counted from where their ghost really is on the way back.
   - **You**, once you release: counted from where you are to your corpse, including the wait the game puts on your corpse.
 
+The small button at the right of the readout (the same minus/plus button as on the quest tracker) minimizes everything: the bars hide and the readout becomes one line with the soonest countdown. Click it again, or use `/runback min`, to bring it all back.
+
 Point at a bar for the graveyard, the distance and what the countdown is counted from. Right-click a bar to dismiss it. Drag the readout or a bar to move them.
 
 ## Setup
@@ -46,6 +48,7 @@ Point at a bar for the graveyard, the distance and what the countdown is counted
 | `/runback enemy` / `group` / `own` | Each kind of timer on / off |
 | `/runback allowance <0-60>` | Percent added to the straight line for the path |
 | `/runback sound` / `chat` | The sound and the chat lines for enemy timers |
+| `/runback min` | Minimize / restore the readout and bars (`min on`, `min off` also work) |
 | `/runback lock` / `move` | Lock in place / back to the middle |
 | `/runback forget` | Forget learned graveyards and the measured ghost speed |
 | `/runback on` / `off` / `reset` / `minimap` / `debug` | Enable, disable, defaults, minimap button, bug-report info |

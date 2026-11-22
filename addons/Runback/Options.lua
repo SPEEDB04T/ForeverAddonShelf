@@ -29,6 +29,9 @@ local function Rows()
           tip = "The run is counted in a straight line from the graveyard to the body. This much is added "
               .. "for the way round hills and walls.",
           get = Get("allowance"), set = Set("allowance") },
+        { kind = "check", label = "Minimized",
+          tip = "Hides the timer bars and shrinks the readout to one line. Same as the small button at its right, or /runback min.",
+          get = Get("minimized"), set = Set("minimized") },
         { kind = "check", label = "Lock in place",
           tip = "Unticked, drag the readout or a timer bar to move them.",
           get = Get("locked"), set = Set("locked") },

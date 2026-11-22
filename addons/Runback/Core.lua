@@ -18,6 +18,7 @@
     /runback            -> status and the commands
     /runback config     -> options window
     /runback test       -> three test timers
+    /runback min        -> minimize or restore the readout and the bars
 ]]
 
 local ADDON_NAME, ns = ...
@@ -34,6 +35,7 @@ local DEFAULTS = {
     sound     = true,       -- a sound when an enemy can be back
     chat      = true,       -- chat lines for enemy kills
     locked    = false,
+    minimized = false,      -- the bars hidden, the readout shrunk to one line (the button at its right)
 }
 local CHOICES = { readout = { always = true, pvp = true, never = true } }
 local ALLOW_MIN, ALLOW_MAX = 0, 60
@@ -907,7 +909,8 @@ local function PrintStatus()
         .. "  |  own timer " .. OnOff(db.own)
         .. "  |  path allowance " .. db.allowance .. "%"
         .. "  |  sound " .. OnOff(db.sound)
-        .. "  |  chat lines " .. OnOff(db.chat))
+        .. "  |  chat lines " .. OnOff(db.chat)
+        .. "  |  minimized " .. OnOff(db.minimized))
     for _, line in ipairs(ns.SurveyLines()) do print("  " .. line) end
 end
 
@@ -917,7 +920,7 @@ local function PrintHelp()
     print("  /runback readout always|pvp|never   -  /runback enemy   -  /runback group   -  /runback own")
     print("  /runback allowance <" .. ALLOW_MIN .. "-" .. ALLOW_MAX .. "> (percent added for the path)   -  /runback sound   -  /runback chat")
     print("  /runback lock   -  /runback move (back to the middle)   -  /runback forget (learned graveyards)")
-    print("  /runback minimap   -  /runback reset   -  /runback debug")
+    print("  /runback min (minimize or restore the readout and bars)   -  /runback minimap   -  /runback reset   -  /runback debug")
 end
 
 local function HasKit()
@@ -956,6 +959,15 @@ SlashCmdList.RUNBACK = function(msg)
     elseif cmd == "lock" or cmd == "unlock" then
         if cmd == "lock" then db.locked = not db.locked else db.locked = false end
         Print(db.locked and "the readout and the bars are locked in place." or "drag the readout or a bar to move them.")
+    elseif cmd == "min" or cmd == "minimize" or cmd == "max" or cmd == "restore" then
+        local on
+        if cmd == "max" or cmd == "restore" or arg == "off" then on = false
+        elseif arg == "on" then on = true
+        else on = not db.minimized end
+        ns.Set("minimized", on)
+        Print(on and "minimized. /runback min brings the bars back." or "restored.")
+        SyncOptions()
+        return
     elseif cmd == "readout" then
         if not CHOICES.readout[arg] then Print("/runback readout always|pvp|never") return end
         db.readout = arg
