@@ -2,7 +2,7 @@
 local ADDON, ns = ...
 local issecret = ns.issecret
 
-ns.VERSION = "1.3.6"
+ns.VERSION = "1.4.0"
 do
     local get = C_AddOns and C_AddOns.GetAddOnMetadata
     if get then
@@ -19,6 +19,7 @@ local defaults = {
     always = false,         -- show in groups without a warlock too
     clickTrade = true,      -- warlock: click a name to open a trade and offer the stone
     soul = true,            -- show the soulstone part of the window
+    minimized = false,      -- only the title line and the count; the button at its right restores it
     point = nil,            -- { left, top } of the window
 }
 local charDefaults = {
@@ -313,6 +314,12 @@ function ns.ToggleWindow()
     ns.dirty = true
 end
 
+function ns.SetMinimized(on)
+    ns.db.minimized = on and true or false
+    ns.dirty = true
+    if ns.UI and ns.UI.Refresh then ns.UI.Refresh() end
+end
+
 function ns.ToggleDemo()
     ns.Group.SetDemo(not ns.Group.demo)
     ns.Print(ns.Group.demo and "demo on: six pretend players joined. /hst demo again to remove them." or "demo off.")
@@ -346,6 +353,7 @@ local function Help()
     ns.Print("  /hst trade  - warlock: click a name to open a trade and offer your stone (" .. OnOff(ns.db.clickTrade) .. ")")
     ns.Print("  /hst config  - open the options window")
     ns.Print("  /hst minimap  - show or hide the minimap button")
+    ns.Print("  /hst min  - minimize the window to its title line, or restore it (now: " .. OnOff(ns.db.minimized) .. ")")
     ns.Print("  /hst lock | unlock | scale <0.5-2> | status | demo | reset")
 end
 
@@ -387,6 +395,13 @@ SlashCmdList.HEALTHSTONETRACKER = function(msg)
     elseif cmd == "soul" or cmd == "soulstone" or cmd == "soulstones" or cmd == "ss" then
         db.soul = not db.soul
         ns.Print("soulstones in the window: " .. OnOff(db.soul) .. ".")
+    elseif cmd == "min" or cmd == "minimize" or cmd == "max" or cmd == "restore" then
+        local on
+        if cmd == "max" or cmd == "restore" or arg == "off" then on = false
+        elseif arg == "on" then on = true
+        else on = not db.minimized end
+        ns.SetMinimized(on)
+        ns.Print(on and "window minimized. /hst min restores it." or "window restored.")
     elseif cmd == "lock" or cmd == "unlock" then
         db.locked = (cmd == "lock")
         ns.Print(db.locked and "window locked." or "window unlocked: drag it to move it.")

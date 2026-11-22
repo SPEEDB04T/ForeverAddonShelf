@@ -11,6 +11,12 @@ ns.UI = UI
 -- GameTooltipHeaderText first line, GameTooltipText lines with a 2 px gap,
 -- 12 px line icons, 10 px from every edge. Nothing a tooltip lacks: no title
 -- icon, no divider, no row highlight.
+-- Minimize: a 16 x 16 button at the right of the title line, the game's own tracker header
+-- button (ObjectiveTrackerModuleMinimizeButtonTemplate in Blizzard_ObjectiveTracker/
+-- Blizzard_ObjectiveTrackerModule.xml, branch forever): atlases
+-- ui-questtrackerbutton-secondary-collapse / -expand (and -pressed), highlight
+-- ui-questtrackerbutton-yellow-highlight (ADD). Minimized, the window is its title line
+-- and the "have / total" count only.
 local BACKDROP = {      -- only if the client lacks TooltipBorderedFrameTemplate
     bgFile = "Interface\\Tooltips\\UI-Tooltip-Background",
     edgeFile = "Interface\\Tooltips\\UI-Tooltip-Border",
@@ -23,6 +29,7 @@ local ICON = 12         -- TooltipTextureTemplate
 local TITLE_H = 14 + LINE_GAP   -- GameTooltipHeaderText is 14 px
 local ROW_H = 12 + LINE_GAP     -- GameTooltipText is 12 px
 local MIN_W, MAX_W, MAX_ROWS = 150, 320, 25
+local BTN = 16          -- the game's minimize button size
 
 -- The game's own font colours; the numbers are only for a client without them.
 local function GameColor(name, r, g, b)
@@ -48,7 +55,7 @@ local ACTION = COLOR.green      -- "Click: ..." lines, GameTooltip_AddInstructio
 local SOUL_ITEM_ICON = "Interface\\Icons\\INV_Misc_Orb_04"
 local SOUL_GAP = ROW_H  -- one blank tooltip line above the soulstones
 
-local frame, title, count, note
+local frame, title, count, note, toggle
 local rows = {}
 local soulRows = {}
 
@@ -334,7 +341,7 @@ local function FitWidth()
     for _, row in ipairs(rows) do rowWidth(row) end
     for _, row in ipairs(soulRows) do rowWidth(row) end
     if TextWidth(note) > widest then widest = TextWidth(note) end
-    local w = math.ceil(widest) + PAD * 2
+    local w = math.ceil(widest) + BTN + 4 + PAD * 2
     frame:SetWidth(math.max(MIN_W, math.min(MAX_W, w)))
 end
 
@@ -378,6 +385,13 @@ LookShotsTargets[ADDON] = {
     },
 }
 
+function UI.ToggleLook()
+    if not toggle then return end
+    local what = (ns.db and ns.db.minimized) and "expand" or "collapse"
+    pcall(toggle.SetNormalAtlas, toggle, "ui-questtrackerbutton-secondary-" .. what)
+    pcall(toggle.SetPushedAtlas, toggle, "ui-questtrackerbutton-secondary-" .. what .. "-pressed")
+end
+
 function UI.Create()
     frame = NewWindow()
     frame:SetSize(MIN_W, TITLE_H + PAD * 2)
@@ -404,9 +418,22 @@ function UI.Create()
     title:SetText("Healthstones")
 
     count = frame:CreateFontString(nil, "ARTWORK", "GameTooltipHeaderText")
-    count:SetPoint("TOPRIGHT", frame, "TOPRIGHT", -PAD, -PAD)
+    count:SetPoint("TOPRIGHT", frame, "TOPRIGHT", -(PAD + BTN + 4), -PAD)
     count:SetJustifyH("RIGHT")
     count:SetTextColor(COLOR.white[1], COLOR.white[2], COLOR.white[3])
+
+    -- the game's tracker minimize button, right of the count
+    toggle = CreateFrame("Button", "HealthstoneTrackerMinimizeButton", frame)
+    toggle:SetSize(BTN, BTN)
+    toggle:SetPoint("TOPRIGHT", frame, "TOPRIGHT", -PAD, -(PAD - 1))
+    pcall(toggle.SetHighlightAtlas, toggle, "ui-questtrackerbutton-yellow-highlight", "ADD")
+    toggle:SetScript("OnClick", function()
+        if PlaySound and SOUNDKIT and SOUNDKIT.IG_MAINMENU_OPTION_CHECKBOX_ON then
+            pcall(PlaySound, SOUNDKIT.IG_MAINMENU_OPTION_CHECKBOX_ON)
+        end
+        ns.SetMinimized(not ns.db.minimized)
+    end)
+    UI.ToggleLook()
 
     -- one line under the list: "+3 more", or "everyone has one" (a disabled line)
     note = frame:CreateFontString(nil, "ARTWORK", "GameTooltipText")
@@ -430,6 +457,18 @@ function UI.Refresh()
     local G = ns.Group
     local have, need, unknown, total = G.Summary()
     count:SetText(("%d / %d"):format(have, total))
+    UI.ToggleLook()
+
+    if ns.db.minimized then
+        -- the title line and the count only
+        for i = 1, #rows do rows[i].member = nil rows[i]:Hide() end
+        for i = 1, #soulRows do soulRows[i].member, soulRows[i].kind = nil, nil soulRows[i]:Hide() end
+        note:Hide()
+        frame:SetHeight(PAD * 2 + TITLE_H - LINE_GAP)
+        FitWidth()
+        if not frame:IsShown() then frame:Show() end
+        return
+    end
 
     local missingOnly = MissingOnly()
     local shown, hidden = 0, 0

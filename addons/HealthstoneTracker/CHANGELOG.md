@@ -1,5 +1,9 @@
 # Changelog
 
+## 1.4.0
+
+- The window can be minimized. A small button at the right of the title line (the game's own quest tracker collapse button) shrinks the window to its title and the count, for example "Healthstones 3 / 5"; click it again to restore. Also `/hst min`, and a "Minimized" tick box in the options. Kept over a /reload; works in combat, and the window can still be dragged.
+
 ## 1.3.6
 
 - If the options window or minimap button is missing right after an update, the chat line now says a `/reload` brings them, instead of asking for a game restart.

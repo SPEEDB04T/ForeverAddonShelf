@@ -47,6 +47,7 @@ Who carries a soulstone is read from the buffs of everyone in the group, so it w
 - `/hst soul` shows or hides the soulstone part
 - `/hst always` shows the window in groups without a warlock too
 - `/hst trade` turns click-to-trade on or off (warlocks)
+- `/hst min` minimizes the window to its title line and the count, or restores it (`min on`, `min off`). The small minus/plus button at the right of the title does the same
 - `/hst lock`, `/hst unlock`, `/hst scale 1.2`
 - `/hst demo` adds six pretend players so you can see the window while solo
 - `/hst status`, `/hst reset`
