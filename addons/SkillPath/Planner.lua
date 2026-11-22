@@ -665,6 +665,7 @@ local function Build(args, banned, replay, upto)
 
     local s, cap = args.skill, args.max
     while s < args.target do
+        ns.Yield()      -- a rebuild in the background gives the frame back here
         if s >= cap then
             -- The next rank: what it costs joins the fees (a rank with no known fee: not in the cost).
             local step = { kind = "train", at = s, learn = {}, fee = 0, unknown = 0, ranks = {} }
@@ -961,6 +962,7 @@ function Pl.Build(args)
     local tested, tests = {}, 0
     local again = args.learn ~= nil or args.tools ~= nil
     while again and tests < MAX_TESTS do
+        ns.Yield()
         again = false
         local list = {}
         for id, l in pairs(plan.learned) do
@@ -1079,9 +1081,10 @@ function Pl.Options(plan, prof, limit)
     local out = {}
     local ctx = { offset = prof.offset or 0, seenSkill = prof.seenSkill, used = {}, made = {}, madeUsed = {},
         haveUsed = {}, bought = {}, var = {}, learn = {}, learned = {}, makers = {},
-        supply = plan.ctx.supply, marginal = ns.Prices.Marginal, value = ns.Prices.ValueOf }
+        supply = plan.ctx.supply, marginal = ns.Prices.Marginal, value = ns.Prices.Valuer() }
     local inPlan = plan.ctx and plan.ctx.learn or {}
     for _, r in ipairs(prof.recipes or {}) do
+        ns.Yield()
         local readable = not r.unreadable and r.slots and #r.slots > 0
         if not r.known and r.trust and readable and not inPlan[r.id] then
             local info, why = ns.Recipes.Learn(prof.line, r, plan.forOther)
@@ -1213,7 +1216,7 @@ function Pl.ForProfession(prof)
     local plan = Pl.Build({
         skill = skill, max = max, target = target, offset = prof.offset or 0, seenSkill = prof.seenSkill,
         recipes = prof.recipes or {}, supply = ns.Prices.Supply, marginal = ns.Prices.Marginal,
-        value = ns.Prices.ValueOf, learn = function(r) return R.Learn(prof.line, r) end,
+        value = ns.Prices.Valuer(), learn = function(r) return R.Learn(prof.line, r) end,
         rank = function(cap) return R.Rank(prof.line, cap) end,
         tools = function(r) return R.Tools(prof.line, r.id) end,
     })
@@ -1278,7 +1281,7 @@ function Pl.ForCustomer(order)
     local plan = Pl.Build({
         skill = from, max = Pl.CapAt(from), target = target, offset = 0, seenSkill = from,
         recipes = recipes, supply = ns.Prices.Bare, marginal = ns.Prices.Marginal,
-        value = ns.Prices.ValueOf, learn = function(r) return R.Learn(line, r, true) end,
+        value = ns.Prices.Valuer(), learn = function(r) return R.Learn(line, r, true) end,
         rank = function(cap) return R.Rank(line, cap) end,
         tools = function(r) return R.Tools(line, r.id) end,
     })

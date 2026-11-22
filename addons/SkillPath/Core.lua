@@ -2,7 +2,7 @@
 local ADDON, ns = ...
 
 ns.ADDON = ADDON
-ns.VERSION = "1.8.0"
+ns.VERSION = "1.9.0"
 ns.NAME = "SkillPath"
 ns.ICON = "Interface\\Icons\\INV_Misc_Note_01"
 
@@ -16,6 +16,7 @@ local defaults = {
     sellVendor = true,   -- what the guide makes and doesn't use again counts at its vendor sell price
     sellAH = true,       -- ...or at the auction house, for as many as were seen to sell there
     sellDays = 3,        -- how many days of those sales to count
+    cheapest = false,    -- "Cheapest path": leftovers count as worth nothing (least gold spent, no resale assumed)
 }
 
 ----------------------------------------------------------------------
@@ -56,9 +57,10 @@ function ns.Str(value)
     if type(value) == "string" and value ~= "" then return value end
 end
 
+local function Index(tbl, key) return tbl[key] end
 function ns.Field(tbl, key)
     if type(tbl) ~= "table" then return nil end
-    local ok, value = pcall(function() return tbl[key] end)
+    local ok, value = pcall(Index, tbl, key)      -- no new function per call: a sweep reads thousands of rows
     if not ok then return nil end
     return ns.Val(value)
 end
@@ -214,15 +216,109 @@ function ns.SetOrder(line, from, to)
     ns.Changed()
 end
 
+-- Working the path out takes up to a good part of a second on a long path. Done in one go, the
+-- game stood still for it, every few seconds through an auction scan. So a rebuild the window asks
+-- for runs a few milliseconds per frame (the planner calls ns.Yield in its loops), and the window
+-- keeps the last path on screen until the new one is ready. Anything that needs the path for what
+-- is known now (ns.Plan) gets it at once: a rebuild under way is finished on the spot.
+local shown           -- the last path worked out
+local job             -- the rebuild under way, a slice per frame
+local waiters = {}    -- called with the new path when it is ready
+local SLICE_MS = 6
+
+local function BuildPlan()
+    local order = ns.Order()
+    if order then return ns.Planner.ForCustomer(order) end
+    return ns.Planner.ForProfession((ns.Profession()))
+end
+
+-- The planner calls this in its loops: inside a rebuild that runs per frame, it gives the frame
+-- back once this frame's slice is used up.
+function ns.Yield()
+    local j = job
+    if j and j.slicing and debugprofilestop and coroutine.running() == j.co
+        and debugprofilestop() - j.sliceAt > SLICE_MS then
+        coroutine.yield()
+    end
+end
+
+local function Refresh()
+    if ns.UI and ns.UI.IsShown() then ns.UI.Update() end
+    if ns.Kit then ns.Kit.Sync() end
+end
+
+local function Ready(now)
+    local list = waiters
+    waiters = {}
+    local function Run()
+        Refresh()
+        for _, fn in ipairs(list) do fn(ns.Plan()) end
+    end
+    -- Finished on the spot for someone who asked: the window and the waiters are told right after.
+    if now then Run() else ns.After(0, Run) end
+end
+
+-- One slice of the rebuild. Returns true when it ended (done or failed).
+local function Resume(j, sliced)
+    j.slicing = sliced
+    j.sliceAt = debugprofilestop and debugprofilestop() or 0
+    local ok, err = coroutine.resume(j.co)
+    if job ~= j then return true end
+    if not ok then
+        job = nil
+        local report = geterrorhandler and geterrorhandler()
+        local text = debug and debug.traceback and debug.traceback(j.co, tostring(err)) or tostring(err)
+        if report then report(text) else error(text, 0) end
+        return true
+    end
+    if coroutine.status(j.co) ~= "dead" then return false end
+    job = nil
+    plan = j.result
+    shown = plan
+    Ready(sliced)
+    return true
+end
+
+local function StartJob()
+    if plan or job then return end
+    local j = {}
+    j.co = coroutine.create(function() j.result = BuildPlan() end)
+    job = j
+    local function Step()
+        if job ~= j then return end
+        if not Resume(j, true) then ns.After(0, Step) end
+    end
+    Step()
+end
+
 function ns.Plan()
     if plan then return plan end
-    local order = ns.Order()
-    if order then
-        plan = ns.Planner.ForCustomer(order)
-    else
-        plan = ns.Planner.ForProfession((ns.Profession()))
+    local j = job
+    if j and coroutine.running() ~= j.co then
+        while job == j and not Resume(j, false) do end
+        if plan then return plan end
     end
+    plan = BuildPlan()
+    shown = plan
+    if #waiters > 0 then Ready(false) end
     return plan
+end
+
+-- The path to draw: the one for what is known now, or while it is being worked out, the last one.
+function ns.ShownPlan()
+    if plan then return plan end
+    if job and shown then return shown end
+    return ns.Plan()
+end
+
+-- Whether a newer path is being worked out.
+function ns.Planning() return job ~= nil end
+
+-- Calls fn with the path for what is known now, once it is worked out (without stopping the game).
+function ns.WhenPlanned(fn)
+    if plan then return fn(plan) end
+    waiters[#waiters + 1] = fn
+    StartJob()
 end
 
 local refreshQueued = false
@@ -233,20 +329,22 @@ function ns.Redraw()
     refreshQueued = true
     ns.After(0.2, function()
         refreshQueued = false
-        if ns.UI and ns.UI.IsShown() then ns.UI.Update() end
-        if ns.Kit then ns.Kit.Sync() end
+        if plan or job then return Refresh() end
+        if (ns.UI and ns.UI.IsShown()) or #waiters > 0 then StartJob() else Refresh() end
     end)
 end
 
 function ns.Changed()
     plan = nil
+    job = nil          -- a rebuild under way was for what was known before
     if ns.Prices then ns.Prices.Invalidate() end
     if refreshQueued then return end
     refreshQueued = true
     ns.After(0.2, function()
         refreshQueued = false
-        if ns.UI and ns.UI.IsShown() then ns.UI.Update() end
-        if ns.Kit then ns.Kit.Sync() end
+        if plan then return Refresh() end
+        if job then return end      -- the window is redrawn when it is done
+        if (ns.UI and ns.UI.IsShown()) or #waiters > 0 then StartJob() else Refresh() end
     end)
 end
 
@@ -258,10 +356,13 @@ function ns.PricesChanged()
     if not (ns.Prices and ns.Prices.IsScanning()) then return ns.Changed() end
     if priceQueued then return end
     priceQueued = true
-    ns.After(PRICE_EVERY, function()
+    local function Later()
+        -- A path under way is finished first, so a slow rebuild isn't started over and over.
+        if ns.Planning() then return ns.After(0.5, Later) end
         priceQueued = false
         ns.Changed()
-    end)
+    end
+    ns.After(PRICE_EVERY, Later)
 end
 
 -- Item data that arrives one item at a time (names, vendor prices): one rebuild for the lot.
@@ -606,6 +707,13 @@ local function Slash(msg)
             ns.Print(n == 0 and ("%s target: as far as it goes."):format(prof.name)
                 or ("%s target: skill %d."):format(prof.name, n))
         end
+    elseif cmd == "cheapest" or cmd == "cheap" then
+        local a = (arg or ""):lower()
+        if a == "on" then ns.db.cheapest = true elseif a == "off" then ns.db.cheapest = false
+        else ns.db.cheapest = not ns.db.cheapest end
+        ns.Changed()
+        ns.Print(ns.db.cheapest and "Cheapest path: on. Leftovers count as worth nothing; the path spends the least gold."
+            or "Cheapest path: off. Leftovers count at what they sell for.")
     elseif cmd == "for" then
         For(arg)
     elseif cmd == "guide" or cmd == "copy" then
@@ -628,7 +736,7 @@ local function Slash(msg)
     elseif cmd == "debug" then
         Debug()
     else
-        ns.Print("Commands: /skillpath (the SkillPath tab), print, scan, target <skill>, for <profession> <from> "
+        ns.Print("Commands: /skillpath (the SkillPath tab), print, scan, target <skill>, cheapest, for <profession> <from> "
             .. "<to>, for me, guide, send <player>, forget, config, minimap, reset, debug")
     end
     if ns.Kit then ns.Kit.Sync() end      -- an open options window follows what was typed

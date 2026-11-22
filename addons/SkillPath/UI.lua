@@ -195,6 +195,7 @@ function UI.Totals(plan)
     for _, s in ipairs(steps) do
         if s.kind == "sell" then back = s.back end
     end
+    if ns.db and ns.db.cheapest then back = 0 end      -- leftovers aren't counted as sold
     local t = { spend = plan.spend or 0, back = back, missing = {} }
     for _, e in ipairs(plan.shopping or {}) do
         if e.buy > 0 and not e.cost then t.missing[#t.missing + 1] = ns.Prices.ItemName(e.item) end
@@ -236,11 +237,14 @@ end
 
 function UI.PriceStatus()
     local P = ns.Prices
+    local working = ns.Planning() and ", updating the path" or ""
     if P.IsScanning() then
         local done, total, phase = P.Progress()
-        if phase == "sweep" then return "Reading the auction house" end
-        return ("Reading prices: %d of %d"):format(done, total)
+        if phase == "sweep" then return "Reading the auction house" .. working end
+        if P.scanState.waiting then return "Updating the path" end
+        return ("Reading prices: %d of %d"):format(done, total) .. working
     end
+    if working ~= "" then return "Updating the path" end
     local n, age = P.Summary()
     if n == 0 then return "No auction prices yet" end
     return ("Prices: %d %s, scanned %s"):format(n, Plural(n, "item", "items"), ns.Age(age))
@@ -1430,8 +1434,37 @@ local function BuildHead(page, top, scan)
     page.Title:SetJustifyH("LEFT")
     page.Title:SetWordWrap(false)
 
+    -- "Cheapest path": the game's own check box, its label on the right like the game's options.
+    local cheap = CreateFrame("CheckButton", nil, page, "UICheckButtonTemplate")
+    cheap:SetSize(24, 24)
+    if type(cheap.Text) == "table" and cheap.Text.SetText then cheap.Text:SetText("") end
+    cheap.Label = page:CreateFontString(nil, "ARTWORK", "GameFontNormalSmall")
+    cheap.Label:SetPoint("TOPRIGHT", page, "TOPRIGHT", -12, -top - 29)
+    cheap.Label:SetText("Cheapest path")
+    cheap:SetPoint("RIGHT", cheap.Label, "LEFT", 0, 0)
+    cheap:SetScript("OnClick", function(self)
+        ns.db.cheapest = self:GetChecked() and true or false
+        ns.Changed()
+        if ns.Kit then ns.Kit.Sync() end
+    end)
+    cheap:SetScript("OnEnter", function(self)
+        if not GameTooltip then return end
+        GameTooltip:SetOwner(self, "ANCHOR_BOTTOMRIGHT")
+        GameTooltip:SetText("Cheapest path", Gold())
+        GameTooltip:AddLine("Spend the least gold to level, and nothing else. What the path makes and doesn't use "
+            .. "again counts as worth nothing, so no recipe is picked because its result might sell. The sell step "
+            .. "still says where leftovers can go.", 1, 1, 1, true)
+        GameTooltip:AddLine("Off: leftovers count at what they sell for, so a recipe whose result sells can be the "
+            .. "cheaper way up.", 1, 1, 1, true)
+        GameTooltip:Show()
+    end)
+    cheap:SetScript("OnLeave", function(self)
+        if OwnsTooltip(self) then GameTooltip:Hide() end
+    end)
+    page.Cheapest = cheap
+
     page.Prices = page:CreateFontString(nil, "ARTWORK", "GameFontDisableSmall")
-    page.Prices:SetPoint("TOPRIGHT", page, "TOPRIGHT", -12, -top - 29)
+    page.Prices:SetPoint("RIGHT", cheap, "LEFT", -6, 0)
     page.Cost = page:CreateFontString(nil, "ARTWORK", "GameFontHighlight")
     page.Cost:SetPoint("TOPLEFT", page.Title, "BOTTOMLEFT", 0, -6)
     page.Cost:SetPoint("RIGHT", page.Prices, "LEFT", -10, 0)
@@ -1447,6 +1480,7 @@ local function UpdateHead(page, plan)
     page.Mine:SetShown(ns.Order() ~= nil)
     page.Copy:SetEnabled(plan.ok and true or false)
     if type(page.Scan) == "table" then page.Scan:SetEnabled(not ns.Prices.IsScanning()) end
+    page.Cheapest:SetChecked(ns.db.cheapest and true or false)
 end
 
 ----------------------------------------------------------------------
@@ -1946,7 +1980,7 @@ end
 local function UpdateView(view)
     local page = view.page
     if not (page and page:IsVisible() and ns.db) then return end
-    local plan = ns.Plan()
+    local plan = ns.ShownPlan()
     UpdateHead(page, plan)
 
     local steps = UI.Steps(plan)
@@ -2459,7 +2493,7 @@ function UI.Update()
     UpdateTrade()
     UpdateAuction()
     if UI.GuideShown() then
-        local plan = ns.Plan()
+        local plan = ns.ShownPlan()
         if plan.ok then SetGuide(plan) end
     end
 end

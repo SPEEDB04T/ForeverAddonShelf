@@ -36,6 +36,12 @@ local function Rows()
               ns.db.targets[line] = value > 0 and value or nil
               ns.Changed()
           end },
+        { kind = "check", label = "Cheapest path",
+          tip = "Spend the least gold to level, and nothing else. What the path makes and doesn't use again "
+              .. "counts as worth nothing, so no recipe is picked because its result might sell, at the auction "
+              .. "house or to a vendor. The sell step still says where leftovers can go. Off: leftovers count at "
+              .. "what they sell for (the options under \"Selling what you make\"). Same as /skillpath cheapest.",
+          get = Get("cheapest"), set = Set("cheapest") },
         { kind = "check", label = "Show each skill point",
           tip = "Under a craft step: every skill point, the chance a craft gives it and what its reagents cost.",
           get = Get("showPoints"), set = Set("showPoints") },
@@ -104,7 +110,7 @@ Options.Rows = Rows
 
 local function Status()
     if not ns.db then return nil end
-    local plan = ns.Plan()
+    local plan = ns.ShownPlan()
     if not plan.ok then return { plan.why } end
     local title, line = ns.UI.Summary(plan)
     return { title .. ". " .. line }

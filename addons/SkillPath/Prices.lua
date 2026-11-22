@@ -464,7 +464,7 @@ function P.ScanList(all)
         local fresh = type(rec) == "table" and Num(rec.t) and now - rec.t < FRESH_SKIP
         if BindType(item) ~= 1 and (all or not (vendor or fresh)) then list[#list + 1] = item end
     end
-    local plan = ns.Plan and ns.Plan()
+    local plan = ns.ShownPlan and ns.ShownPlan()
     local used = plan and plan.ok and plan.used or {}
     table.sort(list, function(a, b)
         local ua, ub = used[a] ~= nil, used[b] ~= nil
@@ -545,7 +545,7 @@ end
 
 local function Finish()
     local wasActive = scan.active
-    scan.active = false
+    scan.active, scan.waiting = false, false
     scan.pending = nil
     scan.phase = nil
     if wasActive then
@@ -563,12 +563,12 @@ end
 
 -- The next set of searches: what the path uses now and wasn't looked at in this scan. The
 -- path is rebuilt between rounds, since new prices can send it to other recipes.
-local function NextRound()
-    scan.round = scan.round + 1
-    if scan.round > DETAIL_ROUNDS then return Finish() end
-    ns.Changed()
+local NextRound
+local function Searches(plan)
+    scan.waiting = false
+    if not scan.active then return end
     local queue = {}
-    for _, item in ipairs(P.PathItems(ns.Plan())) do
+    for _, item in ipairs(P.PathItems(plan)) do
         if not scan.looked[item] then
             scan.looked[item] = true
             local what = Settle(item, scan.manual)
@@ -588,6 +588,18 @@ local function NextRound()
     Pump()
 end
 
+-- The path is worked out a slice per frame (the game doesn't stop for it); the searches wait for it.
+NextRound = function()
+    scan.round = scan.round + 1
+    if scan.round > DETAIL_ROUNDS then return Finish() end
+    ns.Changed()
+    scan.waiting = true
+    local run = scan.run
+    ns.WhenPlanned(function(plan)
+        if scan.run == run then Searches(plan) end
+    end)
+end
+
 function P.StartScan(manual)
     if not P.CanScan() then
         if manual then ns.Print("This client has no auction house search for addons.") end
@@ -602,9 +614,10 @@ function P.StartScan(manual)
         return false
     end
     scan.manual = manual and true or false
+    scan.run = (scan.run or 0) + 1
     scan.done, scan.failed, scan.total, scan.tries = 0, 0, 0, {}
     scan.round, scan.looked, scan.swept, scan.same, scan.none = 0, {}, 0, 0, 0
-    scan.sweep, scan.queue = nil, {}
+    scan.sweep, scan.queue, scan.waiting = nil, {}, false
     if P.CanSweep() then
         local swept = P.SweptAt()
         scan.active = true
@@ -757,7 +770,7 @@ end
 
 -- Sends the next query when it is our turn.
 function P.Next()
-    if not (scan.active and scan.open) or scan.pending then return end
+    if not (scan.active and scan.open) or scan.pending or scan.waiting then return end
     if scan.phase == "sweep" and scan.sweep then return end      -- its pages come in as events
     local ah = AH()
     if scan.phase ~= "sweep" and #scan.queue == 0 then
@@ -1079,6 +1092,13 @@ function P.ValueOf(item, n)
         return atAH * res.ah + (n - atAH) * vendor
     end
     return n * vendor
+end
+
+-- How the planner values leftovers: nil with "Cheapest path" on (nothing made is counted as sold,
+-- so no recipe is picked for what its result might sell for), else ValueOf.
+function P.Valuer()
+    if ns.db.cheapest then return nil end
+    return P.ValueOf
 end
 
 -- Where n whole left-over units go: { item, n, ah = { n, each }, vendor = { n, each }, none (units
