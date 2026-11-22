@@ -1,5 +1,9 @@
 # Changelog
 
+## 1.0.1
+
+- Options: a note on how to get wider frames (Edit Mode's Frame Width and Height for the raid frames, then the size per group here).
+
 ## 1.0.0
 
 - First version. The game's raid frames and party frames stay centered on the middle of the box you placed in Edit Mode: they grow to both sides as people join, also in combat. Grow down, up, or up and down from the middle.

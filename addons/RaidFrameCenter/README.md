@@ -7,6 +7,10 @@ Improves the game's own raid frames and party frames:
 
 Move the frames in Edit Mode as usual. While Edit Mode is open they sit on Edit Mode's own anchor, so dragging and saving work as before; the middle of the box you see there is remembered for that Edit Mode layout.
 
+## Wider frames
+
+The shape comes from Edit Mode: click the raid frames there and raise Frame Width (up to 144) and Frame Height (up to 72). Then set the 10-player size high (up to 200%) and the 25 and 40 sizes lower, so big raids still fit on screen.
+
 ## Commands
 
 - `/rfc` — options (also Options > AddOns, and the minimap button)

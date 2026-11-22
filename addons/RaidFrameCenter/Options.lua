@@ -44,6 +44,9 @@ local function Rows()
         { kind = "header", text = "Size by group" },
         { kind = "note", text = "Percent of the size set in Edit Mode. Width and height keep Edit Mode's shape. "
               .. "A change during a fight waits for it to end." },
+        { kind = "note", text = "Wider frames: in Edit Mode, click the raid frames and raise Frame Width (up to 144) "
+              .. "and Frame Height (up to 72). Then set the 10 size high here and the 25 and 40 sizes low, "
+              .. "so big raids still fit." },
         Size("Party", "sizeParty", "Party frames, and raid frames in a party."),
         Size("Raid up to 10", "size10"),
         Size("Raid up to 20", "size20"),
