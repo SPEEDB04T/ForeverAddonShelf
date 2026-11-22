@@ -36,15 +36,20 @@ local DEFAULTS = {
     centerRaid  = true,     -- raid frames grow out from the middle
     centerParty = true,     -- party frames (raid style or not) too
     grow        = "down",   -- "down": top edge stays, "both": middle stays, "up": bottom edge stays
-    sizeParty   = 100,      -- percent of the Edit Mode size, by group size
+    sizeMode    = "fill",   -- "fill": every group scaled to fill the raid box Edit Mode shows; "percent": sliders only
+    fillMax     = 300,      -- fill never makes the frames bigger than this percent
+    sizeParty   = 100,      -- percent, by group size (on top of the fill)
     size10      = 100,
     size20      = 100,
     size25      = 100,
     size40      = 100,
 }
-local CHOICES = { grow = { down = true, both = true, up = true } }
+local CHOICES = { grow = { down = true, both = true, up = true }, sizeMode = { fill = true, percent = true } }
 local SIZE_MIN, SIZE_MAX = 50, 200
+local FILL_MIN, FILL_MAX = 100, 400
+local FILL_FLOOR = 0.25          -- a group bigger than the box is shrunk to fit, not below this
 ns.SIZE_MIN, ns.SIZE_MAX = SIZE_MIN, SIZE_MAX
+ns.FILL_MIN, ns.FILL_MAX = FILL_MIN, FILL_MAX
 
 local GROW_POINT = { down = "TOP", both = "CENTER", up = "BOTTOM" }
 
@@ -75,7 +80,10 @@ local function LoadDB()
     for _, k in ipairs({ "sizeParty", "size10", "size20", "size25", "size40" }) do
         db[k] = math.max(SIZE_MIN, math.min(SIZE_MAX, math.floor(db[k] + 0.5)))
     end
-    if type(db.spots) ~= "table" then db.spots = {} end   -- [layout] = { raid = {l,b,w,h}, party = {...} }
+    db.fillMax = math.max(FILL_MIN, math.min(FILL_MAX, math.floor(db.fillMax + 0.5)))
+    -- [layout] = { raid = {l,b,w,h, w1,h1}, party = {...} }: the box on screen, and its size
+    -- without this addon's scale (what Edit Mode alone draws)
+    if type(db.spots) ~= "table" then db.spots = {} end
     ns.db = db
 end
 
@@ -126,16 +134,29 @@ local function Num(v)
     return v
 end
 
--- The frame's box in UIParent units, from UIParent's bottom left: l, b, w, h.
-local function Box(frame)
-    local l, b, w, h = frame:GetRect()
-    l, b, w, h = Num(l), Num(b), Num(w), Num(h)
-    if not (l and b and w and h) or w < 2 or h < 2 then return nil end
-    local k = frame:GetEffectiveScale() / UIParent:GetEffectiveScale()
+-- The frame's size in UIParent units at Edit Mode's own scale (without ours): w, h.
+local function PlainSize(t)
+    local f = t.frame
+    local w, h, s = Num(f:GetWidth()), Num(f:GetHeight()), Num(f:GetScale())
+    if not (w and h and s) or w < 2 or h < 2 or s <= 0 then return nil end
+    local k = (t.baseScale or 1) * (f:GetEffectiveScale() / s) / UIParent:GetEffectiveScale()
     -- Wider than the screen: the raid container's 3000-wide layout pass, not a real box.
     local screen = Num(UIParent:GetWidth())
     if screen and w * k > screen then return nil end
-    return { l * k, b * k, w * k, h * k }
+    return w * k, h * k
+end
+
+-- The frame's box in UIParent units, from UIParent's bottom left: l, b, w, h, then its
+-- plain size (PlainSize).
+local function Box(t)
+    local frame = t.frame
+    local l, b, w, h = frame:GetRect()
+    l, b, w, h = Num(l), Num(b), Num(w), Num(h)
+    if not (l and b and w and h) or w < 2 or h < 2 then return nil end
+    local w1, h1 = PlainSize(t)
+    if not w1 then return nil end
+    local k = frame:GetEffectiveScale() / UIParent:GetEffectiveScale()
+    return { l * k, b * k, w * k, h * k, w1, h1 }
 end
 
 local function Spot(which)
@@ -178,10 +199,27 @@ local function RestorePoints(t)
     end
 end
 
+-- Fill: how much bigger the frames must be to fill the raid box Edit Mode shows (set its
+-- View Raid Size to 40 and every smaller group takes a 40-man's space). Keeps the layout's
+-- proportions, so it fills the box's width or its height, whichever comes first.
+local function FillFactor(t)
+    local box = Spot("raid") or Spot(t.which)
+    if not box then return nil end
+    local tw, th = Num(box[5]) or box[3], Num(box[6]) or box[4]
+    local cw, ch = PlainSize(t)
+    if not cw then return t.lastFill end           -- mid-layout: keep what it was
+    local fill = math.min(tw / cw, th / ch)
+    fill = math.max(FILL_FLOOR, math.min(db.fillMax / 100, fill))
+    t.lastFill = fill
+    return fill
+end
+ns.FillFactor = FillFactor
+
 local function TargetScale(t)
     local base = t.baseScale or 1
-    if not db.enabled then return base end
-    return base * (db[SizeKey(t.which)] or 100) / 100
+    if not db.enabled or EditModeActive() then return base end   -- Edit Mode shows its own size
+    local fill = db.sizeMode == "fill" and FillFactor(t) or 1
+    return base * fill * (db[SizeKey(t.which)] or 100) / 100
 end
 
 local function ApplyScale(t)
@@ -209,6 +247,13 @@ local function Apply(t)
         t.dirty = false
     end
 
+    -- The first spot, before any scale of ours (Edit Mode's place and size).
+    local spot = Spot(t.which)
+    if not spot and not t.ours then
+        spot = Box(t)
+        if spot then SaveSpot(t.which, spot) end
+    end
+
     ApplyScale(t)
 
     if not Wanted(t) then
@@ -219,11 +264,6 @@ local function Apply(t)
         return
     end
 
-    local spot = Spot(t.which)
-    if not spot and not t.ours then
-        spot = Box(f)
-        if spot then SaveSpot(t.which, spot) end
-    end
     if not spot then return end
 
     local l, b, w, h = spot[1], spot[2], spot[3], spot[4]
@@ -268,7 +308,7 @@ local function CaptureEditSpots()
     if not db or not EditModeActive() then return end
     for which, t in pairs(targets) do
         if not t.ours and t.frame:IsShown() then
-            local box = Box(t.frame)
+            local box = Box(t)
             if box then SaveSpot(which, box) end
         end
     end
@@ -313,12 +353,11 @@ local function Track(which, frame)
             end
         end)
     end
-    -- The container's real size arrives a frame after its layout: a box can be taken then.
-    if which == "raid" and frame.RefreshSize then
-        hooksecurefunc(frame, "RefreshSize", function()
-            if not t.ours then Queue() end
-        end)
-    end
+    -- A new layout (people joined or left) changes how much fill it needs; the container's
+    -- real size also arrives a frame after its layout, so a box can be taken then.
+    frame:HookScript("OnSizeChanged", function()
+        if db and (db.sizeMode == "fill" or not t.ours) then Queue() end
+    end)
     Queue()
 end
 
@@ -332,8 +371,10 @@ end
 ---------------------------------------------------------------------------
 function ns.Set(key, value)
     if not db then return end
-    if key == "grow" then
-        if not CHOICES.grow[value] then return end
+    if CHOICES[key] then
+        if not CHOICES[key][value] then return end
+    elseif key == "fillMax" then
+        value = math.max(FILL_MIN, math.min(FILL_MAX, math.floor((tonumber(value) or 300) + 0.5)))
     elseif key:sub(1, 4) == "size" then
         value = math.max(SIZE_MIN, math.min(SIZE_MAX, math.floor((tonumber(value) or 100) + 0.5)))
     end
@@ -380,6 +421,15 @@ function ns.StatusLines()
     local n = GetNumGroupMembers and GetNumGroupMembers() or 0
     local key = SizeKey(inRaid and "raid" or "party")
     lines[#lines + 1] = string.format("Group: %s (%d), size %d%%.", SIZE_NAMES[key], n, db[key])
+    if db.sizeMode == "fill" then
+        local t = targets[inRaid and "raid" or "party"]
+        local fill = t and t.lastFill
+        if fill then
+            lines[#lines + 1] = string.format("Fill: %d%% to take the raid box's space.", math.floor(fill * 100 + 0.5))
+        else
+            lines[#lines + 1] = "Fill: no raid box yet. Open Edit Mode once with the raid frames' View Raid Size at 40."
+        end
+    end
     for _, which in ipairs({ "raid", "party" }) do
         local t = targets[which]
         local name = which == "raid" and "Raid frames" or "Party frames"

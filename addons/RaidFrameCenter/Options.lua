@@ -42,11 +42,21 @@ local function Rows()
               .. "is the middle they keep." },
 
         { kind = "header", text = "Size by group" },
-        { kind = "note", text = "Percent of the size set in Edit Mode. Width and height keep Edit Mode's shape. "
-              .. "A change during a fight waits for it to end." },
-        { kind = "note", text = "Wider frames: in Edit Mode, click the raid frames and raise Frame Width (up to 144) "
-              .. "and Frame Height (up to 72). Then set the 10 size high here and the 25 and 40 sizes low, "
-              .. "so big raids still fit." },
+        { kind = "choice", label = "Size",
+          options = {
+              { "fill", "Fill the raid box", "Every group is scaled up to take the space of the raid box "
+                  .. "you see in Edit Mode. Set the raid frames' View Raid Size to 40 there, and a 10-man "
+                  .. "takes a 40-man's space. The sliders below still apply on top." },
+              { "percent", "Percent only", "Only the sliders below, in percent of the Edit Mode size." },
+          },
+          get = Get("sizeMode"), set = Set("sizeMode") },
+        { kind = "slider", label = "Largest fill", min = ns.FILL_MIN, max = ns.FILL_MAX, step = 10, format = "%d%%",
+          tip = "Fill never makes the frames bigger than this, so a party of two does not cover the screen.",
+          get = Get("fillMax"), set = Set("fillMax") },
+        { kind = "note", text = "Fill keeps the layout's proportions: a group in fewer columns fills the box's "
+              .. "height, not its width. Edit Mode's Frame Width (up to 144) and Frame Height (up to 72) "
+              .. "set the shape. A change during a fight waits for it to end." },
+        { kind = "note", text = "Fine-tuning, in percent, on top of the fill:" },
         Size("Party", "sizeParty", "Party frames, and raid frames in a party."),
         Size("Raid up to 10", "size10"),
         Size("Raid up to 20", "size20"),

@@ -1,7 +1,7 @@
 ## Interface: 16001, 16002
 ## Title: Raid Frame Center
-## Notes: Keeps the game's raid and party frames centered where you put them in Edit Mode, growing out from the middle, with a size for each group size (party, 10, 20, 25, 40). /rfc for options.
-## Version: 1.0.1
+## Notes: Keeps the game's raid and party frames centered where you put them in Edit Mode, growing out from the middle, and scales smaller groups up to take the same space as a 40-man raid. /rfc for options.
+## Version: 1.1.0
 ## SavedVariables: RaidFrameCenterDB
 ## IconTexture: Interface\Icons\Spell_Holy_PrayerOfHealing
 ## AddonCompartmentFunc: RaidFrameCenter_OnAddonCompartmentClick
