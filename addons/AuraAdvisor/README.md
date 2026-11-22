@@ -15,9 +15,9 @@ For WoW Forever (Interface 16001).
 
 Only what actually happens counts: hits taken, casts pushed back, enemy spells seen being cast at you or your party. What an enemy is (its class, an elite or a boss) and what it might cast count for nothing, and in a fight no switch is suggested that can't say what caused it (`/aura` shows it).
 
-Hits on you count more than hits on your party. A party member's hits on themselves (a warlock's own Hellfire, Life Tap) don't count, nor do hits you are immune to, interrupted enemy casts, or casts at someone outside your party. One damage-over-time spell ticking on one of you isn't enough for a resistance aura. Everything fades over a few seconds, so the advice follows the fight. A switch costs a global cooldown, so another aura has to be clearly ahead before it is suggested, and one stray Fire hit changes nothing.
+Hits on you count more than hits on your party. Hits on a party member out of your aura's reach (about 40 yards, or out of sight) don't count: in a battleground your party is spread over the map. A party member's hits on themselves (a warlock's own Hellfire, Life Tap) don't count, nor do hits you are immune to, interrupted enemy casts, or casts at someone outside your party. One damage-over-time spell ticking on one of you isn't enough for a resistance aura. Everything fades over a few seconds, so the advice follows the fight. A switch costs a global cooldown, so another aura has to be clearly ahead before it is suggested, and one stray Fire hit changes nothing.
 
-Back to your usual aura is suggested only for a minute after a fight: an aura you keep on after that is your choice, and logging in with it suggests nothing. When the game won't say which aura you have on (right after dying, with the stance bar hidden), it doesn't guess "No aura".
+Back to your usual aura is suggested only for a minute after a fight (never in a battleground or arena, where fights stop and start all the time): an aura you keep on after that is your choice, and logging in with it suggests nothing. When the game won't say which aura you have on (right after dying, with the stance bar hidden), it doesn't guess "No aura".
 
 If another paladin in your party already has an aura up (seen on your buffs, or when they cast one), that aura is never suggested: two of the same aura give nothing extra. Its tooltip says "Already up"; /aura says who has it.
 
@@ -38,7 +38,7 @@ In a group, as a Protection paladin (tank role, the Tank play style, or most of 
 - a **raid warning**, "No Righteous Fury", shows in the middle of the screen with the game's raid warning sound: as a fight starts and every 8 seconds of it, when it comes off between fights (you died, joined a group, left town) and every 30 seconds after that. Not while mounted;
 - its action button glows, and its tooltip says "Not on".
 
-Cast it, in a fight too, and it all stops at once. Not solo, not in town or on a flight. `/aura fury` turns it off; `/aura furysound` turns off only the sound.
+Cast it, in a fight too, and it all stops at once. Not solo, not in town or on a flight, not in a battleground or arena. `/aura fury` turns it off; `/aura furysound` turns off only the sound.
 
 ## Blessings
 

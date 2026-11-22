@@ -42,6 +42,7 @@ ns.known = {}                   -- key -> { key, name, icon, spellID, form }
 ns.knownSet = {}                -- key -> true
 ns.buffOthers = {}              -- key -> name: auras other paladins have on you (seen on your buffs)
 ns.castOthers = {}              -- name -> key: auras party paladins were seen casting
+ns.castUnit = {}                -- name -> their party token when they cast it
 
 local Plain, Secret = Signals.Plain, Signals.Secret
 
@@ -245,7 +246,11 @@ end
 function ns.OtherAuras()
     local taken = {}
     for key, who in pairs(ns.buffOthers) do taken[key] = who end
-    for who, key in pairs(ns.castOthers) do taken[key] = who end
+    for who, key in pairs(ns.castOthers) do
+        -- their aura reaches you only when they are near (a battleground spreads the party out)
+        local unit = ns.castUnit[who]
+        if not unit or Signals.Near(unit) then taken[key] = who end
+    end
     return taken
 end
 
@@ -260,6 +265,7 @@ local function PartyAuraCast(unit, spellID)
         if name == who then ns.buffOthers[k] = nil end      -- that paladin switched
     end
     ns.castOthers[who] = key
+    ns.castUnit[who] = unit
 end
 
 -- Paladins who left the party take their aura with them.
@@ -267,10 +273,13 @@ local function PruneOthers()
     local here = {}
     for unit in pairs(PARTY) do
         local ok, who = pcall(UnitName, unit)
-        if ok and type(Plain(who)) == "string" then here[who] = true end
+        if ok and type(Plain(who)) == "string" then
+            here[who] = true
+            if ns.castUnit[who] then ns.castUnit[who] = unit end     -- party tokens shift when someone leaves
+        end
     end
     for who in pairs(ns.castOthers) do
-        if not here[who] then ns.castOthers[who] = nil end
+        if not here[who] then ns.castOthers[who], ns.castUnit[who] = nil, nil end
     end
     for key, who in pairs(ns.buffOthers) do
         if type(who) == "string" and not here[who] then ns.buffOthers[key] = nil end
@@ -363,7 +372,10 @@ function ns.Think(now)
     local sum = Signals.Summary(now)
     local style, styleWhy = ns.Style()
     -- Back to the default only just after a fight: an aura you keep on after that is your choice.
+    -- Not in a battleground: fights there stop and start every few seconds, and the aura you
+    -- picked for the enemy team (Fire Resistance against their mages) is still the right one.
     local afterFight = ns.fightEndedAt ~= nil and now - ns.fightEndedAt <= BACK_FOR and not OnTaxi()
+        and not Signals.InPvP()
     local res = Advisor.Advise(sum, {
         known = ns.knownSet, current = ns.CurrentAura(), others = ns.OtherAuras(),
         style = style, idle = ns.db.idle, sensitivity = ns.db.sensitivity,
@@ -620,6 +632,8 @@ function ns.PrintDebug()
     ns.Print(("hits seen on you and your party: %d (of %d events; school hidden: %d, event hidden: %d)"):format(
         st.hits, st.combat, st.hiddenSchool, st.hiddenEvent))
     ns.Print(("hits a party member dealt themselves (Hellfire, Life Tap), not counted: %d"):format(st.selfHarm or 0))
+    ns.Print(("hits and pushbacks on party members out of your aura's reach, not counted: %d"):format(st.far or 0))
+    ns.Print("in a battleground or arena: " .. tostring(Signals.InPvP()))
     ns.Print(("casts pushed back: %d. Enemy casts seen: %d (name readable: %d, school known: %d)"):format(
         st.pushes, st.enemyCasts, st.namedCasts, st.schoolCasts))
     local e = Signals.enemies

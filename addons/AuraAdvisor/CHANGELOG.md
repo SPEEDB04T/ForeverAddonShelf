@@ -1,5 +1,15 @@
 # Changelog
 
+## 1.4.0 (2026-11-22)
+
+Battleground fixes.
+
+- No Righteous Fury reminder in a battleground or arena: no raid warning, no sound, no glow. Threat means nothing against players. It comes back outside.
+- Hits, pushed-back casts and enemy casts on a party member out of your aura's reach (about 40 yards, or out of sight) no longer count. In a battleground your party is spread over the map, and Fire hits on someone at the other base were suggesting Fire Resistance to you. When the game won't say how far they are, they still count.
+- A party paladin's aura seen from their cast counts as "Already up" only while they are near you.
+- No "Fight over, back to your usual aura" in a battleground: fights there stop and start every few seconds, and the aura you picked against the enemy team stays right.
+- `/aura debug` shows how many hits were left out as out of reach, and whether you are in a battleground.
+
 ## 1.3.1 (2026-11-16)
 
 - Righteous Fury is harder to miss: while it is off, a raid warning ("No Righteous Fury") shows in the middle of the screen with the raid warning sound, when a fight starts, every 8 seconds of it, when it comes off between fights and every 30 seconds after that. Not while mounted. Its button still glows. The sound can be turned off on its own ("Sound with the warning", `/aura furysound`).

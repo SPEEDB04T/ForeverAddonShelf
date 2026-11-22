@@ -192,6 +192,8 @@ end
 function R.FuryWanted(now)
     if not (ns.db and ns.db.fury and R.knowsFury) or R.FuryOn(now) then return false end
     if ns.IsDead() or not InGroup() or AtRest() then return false end
+    -- a battleground or arena raid is no group you tank for: threat means nothing against players
+    if ns.Signals.InPvP() then return false end
     return R.IsProt()
 end
 

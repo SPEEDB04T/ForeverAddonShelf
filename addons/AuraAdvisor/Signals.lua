@@ -27,7 +27,7 @@ S.log = {}
 S.enemies = { engaged = 0 }
 S.selfHarm = {}             -- unit -> { school, untilT }: that unit is hurting itself (Hellfire, Life Tap)
 S.stats = { combat = 0, hits = 0, hiddenSchool = 0, hiddenEvent = 0, pushes = 0,
-            enemyCasts = 0, namedCasts = 0, schoolCasts = 0, selfHarm = 0 }
+            enemyCasts = 0, namedCasts = 0, schoolCasts = 0, selfHarm = 0, far = 0 }
 local SelfInflicted         -- below
 
 -- A hidden value may not even be compared, so ask before anything else.
@@ -45,6 +45,35 @@ S.Plain = Plain
 local function Now()
     return GetTime and GetTime() or 0
 end
+
+-- In a battleground or an arena? (IsInInstance's second return: "pvp" or "arena")
+function S.InPvP()
+    if not IsInInstance then return false end
+    local ok, _, kind = pcall(IsInInstance)
+    kind = ok and Plain(kind) or nil
+    return kind == "pvp" or kind == "arena"
+end
+
+-- Is a party member near enough for your aura to reach them? An aura reaches the party within
+-- 30 yards; the game tells an addon only "within about 40 yards" (UnitInRange), which is close
+-- enough. In a battleground your party is spread over the map: hits on someone at the other
+-- base say nothing about which aura you should wear. When the game won't say, they count.
+function S.Near(unit)
+    if unit == "player" then return true end
+    if UnitIsVisible then
+        local ok, v = pcall(UnitIsVisible, unit)
+        if ok and Plain(v) == false then return false end
+    end
+    if UnitInRange then
+        local ok, inRange, checked = pcall(UnitInRange, unit)
+        if ok then
+            inRange, checked = Plain(inRange), Plain(checked)
+            if inRange == false and checked ~= false then return false end
+        end
+    end
+    return true
+end
+local Near = S.Near
 
 function S.Reset()
     S.log = {}
@@ -100,6 +129,10 @@ function S.OnUnitCombat(unit, action, flag, amount, mask)
     unit = Plain(unit)
     if type(unit) ~= "string" or MINE[unit] == nil then return end
     S.stats.combat = S.stats.combat + 1
+    if not Near(unit) then
+        S.stats.far = S.stats.far + 1
+        return
+    end
     action = Plain(action)
     if type(action) ~= "string" then
         S.stats.hiddenEvent = S.stats.hiddenEvent + 1
@@ -141,6 +174,10 @@ end
 function S.OnCastDelayed(unit)
     unit = Plain(unit)
     if type(unit) ~= "string" or MINE[unit] == nil then return end
+    if not Near(unit) then
+        S.stats.far = S.stats.far + 1
+        return
+    end
     S.Push(Now(), MINE[unit])
 end
 
@@ -273,7 +310,7 @@ local function AimedAtUs(unit)
     local target = unit .. "target"
     for _, u in ipairs(GROUP) do
         local ok, same = pcall(UnitIsUnit, target, u)
-        if ok and Plain(same) == true then return true end
+        if ok and Plain(same) == true then return Near(u) end
     end
     return false
 end
