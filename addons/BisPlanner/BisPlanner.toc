@@ -1,7 +1,7 @@
 ## Interface: 16001, 16002
 ## Title: BiS Planner
 ## Notes: Your best gear for the stat weights and goals you set, planned across the whole set.
-## Version: 1.4.2
+## Version: 1.5.0
 ## SavedVariables: BisPlannerDB
 ## IconTexture: Interface\Icons\INV_Chest_Plate04
 ## AddonCompartmentFunc: BisPlanner_Toggle

@@ -6,7 +6,7 @@
 -- again until a weight, a goal, a filter or your level changes.
 local ADDON, ns = ...
 ns.NAME = "BiS Planner"
-ns.VERSION = "1.4.2"
+ns.VERSION = "1.5.0"
 ns.ICON = "Interface\\Icons\\INV_Chest_Plate04"
 
 local Solver = ns.Solver
@@ -651,6 +651,7 @@ function ns.MakePlan()
     local plan = {
         stamp = Stamp(), level = ctx.level, profile = char.profile, time = time(),
         score = result.score, feasible = result.feasible, rows = {}, goals = {}, totals = {},
+        lambda = result.lambda,     -- what a goal point was worth: rankings order items the same way
     }
     for _, row in ipairs(ns.ROWS) do
         local p = picked[row]
@@ -698,6 +699,115 @@ function ns.PlanRow(slot)
     for _, row in ipairs(plan.rows) do
         if row.slot == slot then return row end
     end
+end
+
+----------------------------------------------------------------------
+-- Rankings: every item you can wear in a slot, best first. Ordered the way the plan picks:
+-- the weighted score, plus what the plan paid per point of a goal stat.
+----------------------------------------------------------------------
+ns.RANK_SLOTS = {
+    "Head", "Neck", "Shoulder", "Back", "Chest", "Wrist", "Hands", "Waist", "Legs", "Feet",
+    "Ring", "Trinket", "Main hand", "Off hand", "Ranged",
+}
+local RANK_OF_ROW = { ["Ring 1"] = "Ring", ["Ring 2"] = "Ring", ["Trinket 1"] = "Trinket", ["Trinket 2"] = "Trinket" }
+local RANK_OF_POOL = {
+    TwoHand = "Main hand", OneHand = "Main hand", MainHand = "Main hand",
+    OffHand = "Off hand", Shield = "Off hand", Held = "Off hand",
+}
+-- the ranking a plan row belongs to: "Ring 2" -> "Ring"
+function ns.RankSlot(row)
+    return RANK_OF_ROW[row] or row
+end
+
+-- "head", "main", "off hand", "rings": the ranking whose name starts with it, or nil
+function ns.FindRankSlot(text)
+    text = tostring(text or ""):lower():gsub("%s+", " "):gsub("^ ", ""):gsub(" $", "")
+    if text == "" then return nil end
+    for _, slot in ipairs(ns.RANK_SLOTS) do
+        local name = slot:lower()
+        if name:sub(1, #text) == text or text == name .. "s" then return slot end
+    end
+end
+
+local ranked
+-- { lists = { Head = { { id, score, value, inPlan, twoHand }, ... }, ... }, pos = { Head = { [id] = rank } },
+--   priced = a goal moved the order }. peek: use the saved plan as it is, never plan here (tooltips).
+function ns.Rankings(peek)
+    local plan
+    if peek then plan = ns.char and ns.char.plan else plan = ns.Plan() end
+    if type(plan) ~= "table" then return nil end
+    if ranked and ranked.plan == plan then return ranked end
+    local weights, lambda = ns.Profile().weights, plan.lambda or {}
+    local ctx = Context()
+    local pools = Pools(ctx)
+    local inPlan = {}
+    for _, row in ipairs(plan.rows) do inPlan[ns.RankSlot(row.slot) .. ":" .. row.id] = true end
+    local lists = {}
+    for _, slot in ipairs(ns.RANK_SLOTS) do lists[slot] = {} end
+    local function Add(slot, pool, statKey, twoHand)
+        local list = lists[slot]
+        for _, item in ipairs(pools[pool] or {}) do
+            local stats = statKey and HandStats(item, statKey) or item.stats
+            local score = Solver.Score(stats, weights)
+            local value = score
+            for key, price in pairs(lambda) do value = value + price * (stats[key] or 0) end
+            local mine = inPlan[slot .. ":" .. item.id]
+            if value > 0 or mine then
+                list[#list + 1] = { id = item.id, score = score, value = value, inPlan = mine, twoHand = twoHand }
+            end
+        end
+    end
+    for _, def in ipairs(SIMPLE) do Add(def[1], def[1]) end
+    Add("Ranged", "Ranged")
+    Add("Ring", "Ring")
+    Add("Trinket", "Trinket")
+    local mode = ctx.filters.weapons or "any"
+    if mode ~= "1h" then Add("Main hand", "TwoHand", "mdps", true) end
+    if mode ~= "2h" then
+        Add("Main hand", "OneHand", "mdps")
+        Add("Main hand", "MainHand", "mdps")
+        Add("Off hand", "Shield")
+        Add("Off hand", "Held")
+        if ns.DualWield() then
+            Add("Off hand", "OneHand", "odps")
+            Add("Off hand", "OffHand", "odps")
+        end
+    end
+    local pos = {}
+    for slot, list in pairs(lists) do
+        table.sort(list, function(a, b)
+            if a.value ~= b.value then return a.value > b.value end
+            if a.score ~= b.score then return a.score > b.score end
+            return a.id < b.id
+        end)
+        local at = {}
+        for i, entry in ipairs(list) do at[entry.id] = i end
+        pos[slot] = at
+    end
+    local priced = false
+    for _, price in pairs(lambda) do
+        if price > 0 then priced = true end
+    end
+    ranked = { plan = plan, lists = lists, pos = pos, priced = priced }
+    return ranked
+end
+
+-- Where an item stands in its slot's ranking: slot, rank, how many are ranked. Nil when it
+-- isn't ranked (you can't wear it, or it has nothing you weigh).
+function ns.Rank(id)
+    local item = ns.Item(id)
+    local pool = item and POOL[item.inv]
+    if not pool then return nil end
+    local all = ns.Rankings(true)
+    if not all then return nil end
+    local slot = RANK_OF_POOL[pool] or pool
+    local rank = all.pos[slot] and all.pos[slot][id]
+    if not rank and pool == "OneHand" then      -- one-handed weapons only: it may still rank in the off hand
+        slot = "Off hand"
+        rank = all.pos[slot][id]
+    end
+    if not rank then return nil end
+    return slot, rank, #all.lists[slot]
 end
 
 -- A setting changed: plan again shortly (once, however many changes come together).
@@ -861,6 +971,12 @@ local function TooltipLine(tooltip, id)
             ("%s%s against %s"):format(verdict.diff > 0 and "+" or "", ns.Number(verdict.diff), other and other.name or "your plan"),
             gold.r, gold.g, gold.b, c.r, c.g, c.b)
     end
+    if verdict then
+        local slot, rank, total = ns.Rank(id)
+        if slot then
+            tooltip:AddDoubleLine("Rank", ("%d of %d, %s"):format(rank, total, slot), gold.r, gold.g, gold.b, white.r, white.g, white.b)
+        end
+    end
     local source = ns.SourceText(item)
     if source then
         tooltip:AddDoubleLine("Source", source, gold.r, gold.g, gold.b, white.r, white.g, white.b)
@@ -875,10 +991,13 @@ local function HookTooltips()
             local id = type(data) == "table" and ns.Clean(data.id) or nil
             pcall(TooltipLine, tooltip, id)
         end)
-        if ok then return end
+        if ok then
+            ns.tooltipHooked = true
+            return
+        end
     end
     if GameTooltip and GameTooltip.HookScript then
-        pcall(GameTooltip.HookScript, GameTooltip, "OnTooltipSetItem", function(tooltip)
+        ns.tooltipHooked = pcall(GameTooltip.HookScript, GameTooltip, "OnTooltipSetItem", function(tooltip)
             local _, link = ns.Call(tooltip.GetItem, tooltip)
             local id = type(link) == "string" and tonumber(link:match("item:(%d+)")) or nil
             pcall(TooltipLine, tooltip, id)
@@ -967,7 +1086,7 @@ end
 
 local function Help()
     ns.Print("Commands: /bisplan (the window), /bisplan print, /bisplan level <number> (or: /bisplan level auto), "
-        .. "/bisplan spec <name> (your spec's weights), "
+        .. "/bisplan spec <name> (your spec's weights), /bisplan rank <slot> (every item for a slot, best first), "
         .. "/bisplan unhide (items you left out come back), /bisplan options, /bisplan fetch")
 end
 
@@ -1002,6 +1121,13 @@ local function Slash(msg)
             ns.Print(("The weights in \"%s\" are now %s's. %s"):format(ns.char.profile, spec.name, spec.cap))
         else
             ns.ListSpecs()
+        end
+    elseif cmd == "rank" or cmd == "ranking" or cmd == "rankings" then
+        local slot = ns.FindRankSlot(rest)
+        if rest ~= "" and not slot then
+            ns.Print("Slots: " .. table.concat(ns.RANK_SLOTS, ", ") .. ".")
+        elseif ns.UI then
+            ns.UI.ShowRanking(slot)
         end
     elseif cmd == "unhide" then
         local n = ns.BringBack()

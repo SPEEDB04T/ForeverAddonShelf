@@ -23,8 +23,10 @@ local ROW_HIGHLIGHT = "Interface\\QuestFrame\\UI-QuestTitleHighlight"
 local NEW_POPUP, DELETE_POPUP = "BISPLANNER_NEW_PROFILE", "BISPLANNER_DELETE_PROFILE"
 local SPEC_POPUP = "BISPLANNER_SPEC_WEIGHTS"
 
+local RANK_MAX = 50     -- rows in a ranking
+
 local frame
-local planRows, statBoxes = {}, {}
+local planRows, rankRows, statBoxes = {}, {}, {}
 
 local function Has(t, k)
     return type(t) == "table" and type(t[k]) == "table"
@@ -223,7 +225,9 @@ local function RowEnter(self)
     end
     local item = ns.Item(data.id)
     if not shown and item then GameTooltip:SetText(item.name, QualityColor(item.quality)) end
-    local source = item and ns.SourceText(item)
+    -- the line on item tooltips names the source already, when it is on and the game drew the item
+    local hooked = shown and ns.tooltipHooked and ns.db.tooltip
+    local source = item and not hooked and ns.SourceText(item)
     if source then
         local gr, gg, gb = Color(NORMAL_FONT_COLOR, 1, 0.82, 0)
         local wr, wg, wb = Color(HIGHLIGHT_FONT_COLOR, 1, 1, 1)
@@ -248,6 +252,9 @@ local function RowEnter(self)
         end
     end
     GameTooltip:AddLine(" ")
+    if data.slot then
+        GameTooltip:AddLine("Click: every item for this slot, best first", Color(GRAY_FONT_COLOR, 0.5, 0.5, 0.5))
+    end
     GameTooltip:AddLine("Right-click: leave this item out of the plan", Color(GRAY_FONT_COLOR, 0.5, 0.5, 0.5))
     GameTooltip:AddLine("Shift-click: link it in chat", Color(GRAY_FONT_COLOR, 0.5, 0.5, 0.5))
     GameTooltip:Show()
@@ -271,13 +278,17 @@ local function RowClick(self, button)
         elseif type(ChatEdit_InsertLink) == "function" then
             pcall(ChatEdit_InsertLink, link)
         end
+    elseif data.slot then       -- a plan row: its slot's ranking
+        Sound(SOUNDKIT and SOUNDKIT.IG_CHARACTER_INFO_TAB)
+        HideTip()
+        UI.ShowRanking(ns.RankSlot(data.slot))
     end
 end
 
-local function PlanRow(i)
-    local row = planRows[i]
+-- One item row of a list (the plan's, a ranking's): made when first needed.
+local function ListRow(rows, content, i)
+    local row = rows[i]
     if row then return row end
-    local content = frame.planContent
     row = CreateFrame("Button", nil, content)
     row:SetHeight(ROW_H)
     row:SetPoint("TOPLEFT", content, "TOPLEFT", 0, -(i - 1) * ROW_H)
@@ -318,8 +329,38 @@ local function PlanRow(i)
     row:SetScript("OnEnter", RowEnter)
     row:SetScript("OnLeave", HideTip)
     row:SetScript("OnClick", RowClick)
-    planRows[i] = row
+    rows[i] = row
     return row
+end
+
+-- Icon, name and the line under it. lead: text put before that line ("In your plan").
+local function SetRowItem(row, item, name, lead)
+    local icon = ItemIcon(item.id)
+    if row.slotButton then
+        if type(SetItemButtonTexture) == "function" then pcall(SetItemButtonTexture, row.slotButton, icon) end
+        if type(SetItemButtonQuality) == "function" then pcall(SetItemButtonQuality, row.slotButton, item.quality, item.id) end
+    else
+        row.icon:SetTexture(icon)
+    end
+    row.name:SetText(name or item.name)
+    row.name:SetTextColor(QualityColor(item.quality))
+    local owned = ns.Owned(item.id)
+    local text
+    if owned == "equipped" then
+        text = "You wear it"
+    elseif owned then
+        text = "You have it"
+    else
+        local source = ns.SourceText(item)
+        local level = (item.guess and "Around level %d" or "Level %d"):format(item.level)
+        text = source and (level .. ". " .. source) or level
+    end
+    row.detail:SetText(lead and (lead .. ". " .. text) or text)
+    if owned then
+        row.detail:SetTextColor(Color(GREEN_FONT_COLOR, 0.1, 1, 0.1))
+    else
+        row.detail:SetTextColor(Color(HIGHLIGHT_FONT_COLOR, 1, 1, 1))
+    end
 end
 
 local function FillPlan(plan, why)
@@ -328,31 +369,10 @@ local function FillPlan(plan, why)
         local item = ns.Item(data.id)
         if item then
             shown = shown + 1
-            local row = PlanRow(shown)
+            local row = ListRow(planRows, frame.planContent, shown)
             row.data = data
-            local icon = ItemIcon(item.id)
-            if row.slotButton then
-                if type(SetItemButtonTexture) == "function" then pcall(SetItemButtonTexture, row.slotButton, icon) end
-                if type(SetItemButtonQuality) == "function" then pcall(SetItemButtonQuality, row.slotButton, item.quality, item.id) end
-            else
-                row.icon:SetTexture(icon)
-            end
-            row.name:SetText(item.name)
-            row.name:SetTextColor(QualityColor(item.quality))
+            SetRowItem(row, item)
             row.where:SetText(data.twoHand and "Two-hand" or data.slot)
-            local owned = ns.Owned(item.id)
-            local source = ns.SourceText(item)
-            local level = (item.guess and "Around level %d" or "Level %d"):format(item.level)
-            if owned == "equipped" then
-                row.detail:SetText("You wear it")
-                row.detail:SetTextColor(Color(GREEN_FONT_COLOR, 0.1, 1, 0.1))
-            elseif owned then
-                row.detail:SetText("You have it")
-                row.detail:SetTextColor(Color(GREEN_FONT_COLOR, 0.1, 1, 0.1))
-            else
-                row.detail:SetText(source and (level .. ". " .. source) or level)
-                row.detail:SetTextColor(Color(HIGHLIGHT_FONT_COLOR, 1, 1, 1))
-            end
             row:Show()
         end
     end
@@ -368,6 +388,106 @@ local function BuildPlan(page)
     frame.empty:SetPoint("TOPLEFT", page, "TOPLEFT", 40, -70)
     frame.empty:SetPoint("TOPRIGHT", page, "TOPRIGHT", -40, -70)
     frame.empty:SetJustifyH("CENTER")
+end
+
+---------------------------------------------------------------------------
+-- The rankings tab: every item you can wear in one slot, best first
+---------------------------------------------------------------------------
+local function SyncRank()
+    local dd = frame.rankSlotMenu
+    if not dd then return end
+    if dd.isMenu then
+        if type(dd.GenerateMenu) == "function" then pcall(dd.GenerateMenu, dd) end
+    else
+        dd:SetText(frame.rankSlot)
+    end
+end
+
+local function FillRanking(why)
+    local all = ns.Rankings()
+    local list = all and all.lists[frame.rankSlot] or {}
+    local shown = 0
+    for i = 1, math.min(RANK_MAX, #list) do
+        local data = list[i]
+        local item = ns.Item(data.id)
+        if item then
+            shown = shown + 1
+            local row = ListRow(rankRows, frame.rankContent, shown)
+            row.data = data
+            local lead = data.inPlan and "In your plan" or nil
+            if data.twoHand then lead = lead and (lead .. ". Two-hand") or "Two-hand" end
+            SetRowItem(row, item, ("%d. %s"):format(i, item.name), lead)
+            row.where:SetText(ns.Number(math.floor(data.score * 10 + 0.5) / 10))
+            row:Show()
+        end
+    end
+    for i = shown + 1, #rankRows do rankRows[i]:Hide() end
+    frame.rankContent:SetHeight(math.max(10, shown * ROW_H))
+    local note = ""
+    if #list > shown then
+        note = ("The %d best of %d"):format(shown, #list)
+    elseif shown > 0 then
+        note = shown == 1 and "1 item" or ("%d items"):format(shown)
+    end
+    if note ~= "" and all.priced then note = note .. ", your goals counted" end
+    frame.rankNote:SetText(note)
+    frame.rankEmpty:SetText(why or "Nothing you can wear here has a stat you gave a weight or a goal.")
+    frame.rankEmpty:SetShown(shown == 0)
+end
+
+local function BuildRanking(page)
+    frame.rankSlot = ns.RANK_SLOTS[1]
+    local dd = FromTemplate("DropdownButton", page, "WowStyle1DropdownTemplate")
+    if dd and type(dd.SetupMenu) == "function" then
+        dd.isMenu = true
+        dd:SetWidth(150)
+        dd:SetPoint("TOPLEFT", page, "TOPLEFT", 10, -4)
+        dd:SetupMenu(function(_, root)
+            for _, slot in ipairs(ns.RANK_SLOTS) do
+                root:CreateRadio(slot,
+                    function() return frame.rankSlot == slot end,
+                    function() UI.ShowRanking(slot) end,
+                    slot)
+            end
+        end)
+    else
+        if dd then dd:Hide() end
+        -- without the game's dropdown: a button that steps through the slots
+        dd = Button(page, "", 110)
+        dd:SetPoint("TOPLEFT", page, "TOPLEFT", 10, -4)
+        dd:SetScript("OnClick", function()
+            for i, slot in ipairs(ns.RANK_SLOTS) do
+                if slot == frame.rankSlot then
+                    UI.ShowRanking(ns.RANK_SLOTS[i % #ns.RANK_SLOTS + 1])
+                    break
+                end
+            end
+        end)
+    end
+    frame.rankSlotMenu = dd
+    frame.rankNote = Text(page, "GameFontHighlightSmall")
+    frame.rankNote:SetPoint("TOPRIGHT", page, "TOPRIGHT", -30, -10)
+    frame.rankNote:SetJustifyH("RIGHT")
+    local noteHover = CreateFrame("Frame", nil, page)
+    noteHover:SetAllPoints(frame.rankNote)
+    OnHover(noteHover, "Ranking", "Each item's number is its score: its stats times your weights.",
+        "With a goal set, items that bring the goal's stat move up by what the plan had to give up for it, "
+        .. "so the order can differ from the scores.")
+    frame.rankList, frame.rankContent = Scroll(page, 30)
+    frame.rankEmpty = Text(page, "GameFontDisable")
+    frame.rankEmpty:SetPoint("TOPLEFT", page, "TOPLEFT", 40, -70)
+    frame.rankEmpty:SetPoint("TOPRIGHT", page, "TOPRIGHT", -40, -70)
+    frame.rankEmpty:SetJustifyH("CENTER")
+end
+
+-- Opens the window on a slot's ranking (the one last shown when no slot is given).
+function UI.ShowRanking(slot)
+    if not ns.db then return end
+    local f = frame or UI.Build()
+    if slot then f.rankSlot = slot end
+    if not f:IsShown() then f:Show() end
+    UI.SelectTab(3)
+    if f.rankList and f.rankList.SetVerticalScroll then pcall(f.rankList.SetVerticalScroll, f.rankList, 0) end
 end
 
 ---------------------------------------------------------------------------
@@ -671,7 +791,7 @@ local function Build()
     BuildHeader(inset)
 
     f.pages = {}
-    for i = 1, 2 do
+    for i = 1, 3 do
         local page = CreateFrame("Frame", nil, inset)
         page:SetPoint("TOPLEFT", inset, "TOPLEFT", 0, -HEADER_H)
         page:SetPoint("BOTTOMRIGHT", inset, "BOTTOMRIGHT", 0, 0)
@@ -679,9 +799,10 @@ local function Build()
     end
     BuildPlan(f.pages[1])
     BuildWeights(f.pages[2])
+    BuildRanking(f.pages[3])
 
     f.tabs = {}
-    for i, label in ipairs({ "Plan", "Weights and goals" }) do
+    for i, label in ipairs({ "Plan", "Weights and goals", "Rankings" }) do
         local t = FromTemplate("Button", f, "PanelTopTabButtonTemplate", "BisPlannerFrameTab" .. i)
             or Button(f, label, 130)
         t:SetID(i)
@@ -730,6 +851,7 @@ local function Build()
     SelectTab(1)
     return f
 end
+UI.Build = Build
 
 ---------------------------------------------------------------------------
 -- Refreshing and opening
@@ -747,6 +869,8 @@ function UI.Refresh(waiting)
     local plan, why = ns.Plan()
     frame.shownPlan = plan
     FillPlan(plan, why)
+    SyncRank()
+    if frame.tab == 3 then FillRanking(why) end
     if plan then
         frame.status:SetText(ns.Summary(plan))
         local c = plan.feasible and HIGHLIGHT_FONT_COLOR or RED_FONT_COLOR

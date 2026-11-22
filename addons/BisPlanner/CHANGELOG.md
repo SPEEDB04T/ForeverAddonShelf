@@ -1,3 +1,9 @@
+## 1.5.0
+- Rankings: a new tab lists every item you can wear in a slot, best first, with its score, its level and where it comes from: the 50 best of each slot. Pick the slot from the menu, click a row on the Plan tab to open its slot's ranking, or type `/bisplan rank legs`. The plan's own item is marked; right-click leaves an item out there too.
+- Item tooltips anywhere in the game say where the item ranks for its slot ("Rank: 4 of 212, Head").
+- With a goal set, items that bring the goal's stat rank higher by what the plan gave up to reach it, the same way the plan picks.
+- The row tooltip in the planner named the source twice when the tooltip line was on.
+
 ## 1.4.2
 - Restoration shamans' spec defaults now weigh spirit (0.75). Sixtysim gives it nothing, as if Mindfulness didn't keep half your spirit's mana going while you cast; the weight is ours, worked out from how much mana a point of spirit gives.
 

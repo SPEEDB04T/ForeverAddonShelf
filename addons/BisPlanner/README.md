@@ -30,6 +30,7 @@ Keep more than one set of weights: **New** copies the one in use under a name yo
 The **Plan** tab lists one item per slot, with the level it needs and where it comes from: the dungeon and the boss ("Stratholme: Balnazzar"), the quest, the vendor, the profession that makes it, the faction and standing, or the PvP rank. The item's tooltip says it too ("Source"), in the planner and anywhere else in the game, and so does each of the next best items.
 
 - Hover a row for the item's tooltip and the **next best** items for that slot, with how much they lose.
+- **Click** a row for the whole ranking of its slot (see Rankings below).
 - **Right-click** a row to leave that item out (you'll never get it, or don't want it). The plan fills the slot again. `/bisplan unhide` brings every left-out item back.
 - **Shift-click** a row to link the item in chat.
 - The line at the bottom has the score and how many goals are reached. Hover it for every goal and the totals of the stats you asked for.
@@ -39,7 +40,16 @@ A slot with nothing you asked for stays empty rather than showing a random item.
 
 The plan is worked out once and saved. It is planned again only when a weight, a goal, a filter or your level changes.
 
-Item tooltips get a line: "In your plan: Head", or how the item scores against the plan's item for that slot. Options can turn it off.
+Item tooltips get a line: "In your plan: Head", or how the item scores against the plan's item for that slot, and its rank among everything you can wear there ("Rank: 4 of 212, Head"). Options can turn it off.
+
+## Rankings
+
+The **Rankings** tab lists every item you can wear in one slot, best first: the 50 best, each with its score (its stats times your weights), its level and where it comes from. Pick the slot from the menu at the top, click a row on the Plan tab, or type `/bisplan rank legs`.
+
+- The plan's own item says "In your plan". Rings and trinkets share one list each; the main hand lists two-handers and one-handers together (a two-hander says so), following the Hands option.
+- With a goal set, the order counts the goal: an item that brings the goal's stat moves up by what the plan had to give up to reach it, so it can stand above an item with a higher score. The line at the top right says "your goals counted" then.
+- Right-click leaves an item out, shift-click links it, as on the Plan tab.
+- The same filters apply as for the plan: level, armor, quality, sources.
 
 ## Options
 
@@ -59,6 +69,7 @@ Item tooltips get a line: "In your plan: Head", or how the item scores against t
 - `/bisplan print`: the plan in your chat window
 - `/bisplan level 40`, `/bisplan level auto`
 - `/bisplan spec <name>`: your spec's weights (`/bisplan spec` lists them)
+- `/bisplan rank <slot>`: the ranking for a slot (`/bisplan rank main`, `/bisplan rank ring`)
 - `/bisplan unhide`: items you left out may be used again
 - `/bisplan options`
 - `/bisplan fetch`: see below
